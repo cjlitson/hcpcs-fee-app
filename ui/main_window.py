@@ -186,6 +186,12 @@ class MainWindow(QMainWindow):
         states_action.triggered.connect(self._manage_states)
         settings_menu.addAction(states_action)
 
+        # Developer Tools
+        dev_menu = menubar.addMenu("&Developer Tools")
+        sql_action = QAction("&SQL Publisher…", self)
+        sql_action.triggered.connect(self._open_sql_publisher)
+        dev_menu.addAction(sql_action)
+
         # Help
         help_menu = menubar.addMenu("&Help")
 
@@ -308,6 +314,11 @@ class MainWindow(QMainWindow):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self._refresh_filters()
             self._apply_filters()
+
+    def _open_sql_publisher(self):
+        from ui.dev_tools_dialog import DevToolsDialog
+        dlg = DevToolsDialog(current_records=self._records, parent=self)
+        dlg.exec()
 
     def _sync_cms(self):
         selected = get_selected_states()
