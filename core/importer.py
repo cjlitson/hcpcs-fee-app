@@ -160,7 +160,7 @@ def parse_cms_csv(path, state_abbr, year):
             # CMS DMEPOS fee columns — try all known column name variants
             # The pipe-delimited 2025 format uses different column names than older CSV
             allowable_raw = (
-                norm.get("fee_schedule_price"]
+                norm.get("fee_schedule_price")
                 or norm.get("purchase_fee_amt")
                 or norm.get("pur_fee_amt")
                 or norm.get("capped_rental_1_month")
@@ -206,7 +206,7 @@ def import_visn_csv(filepath, selected_states=None):
         file_name=os.path.basename(filepath),
         source="VISN CSV",
         record_count=len(records),
-        states=", ".join(states_imported),
+        states="",.join(states_imported),
     )
     return len(records)
 
