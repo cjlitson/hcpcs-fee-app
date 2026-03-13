@@ -68,7 +68,7 @@ class MainWindow(QMainWindow):
         # ---- Toolbar row ----
         toolbar = QHBoxLayout()
 
-        sync_btn = QPushButton("⟳  Sync from CMS")
+        sync_btn = QPushButton("⚌  Sync from CMS")
         sync_btn.setStyleSheet(
             "background-color: #003366; color: white; padding: 6px 14px; font-weight: bold; font-size: 13px;"
         )
@@ -187,14 +187,15 @@ class MainWindow(QMainWindow):
         states_action.triggered.connect(self._manage_states)
         settings_menu.addAction(states_action)
 
+        years_action = QAction("Manage &Years…", self)
+        years_action.triggered.connect(self._manage_years)
+        settings_menu.addAction(years_action)
+
         # Developer Tools
         dev_menu = menubar.addMenu("&Developer Tools")
         sql_action = QAction("&SQL Publisher…", self)
         sql_action.triggered.connect(self._open_sql_publisher)
         dev_menu.addAction(sql_action)
-        years_action = QAction("Manage &Years…", self)
-        years_action.triggered.connect(self._manage_years)
-        settings_menu.addAction(years_action)
 
         # Help
         help_menu = menubar.addMenu("&Help")
@@ -322,11 +323,13 @@ class MainWindow(QMainWindow):
             self._refresh_filters()
             self._apply_filters()
 
+    def _manage_years(self):
+        dlg = YearSelectorDialog(self)
+        dlg.exec()
+
     def _open_sql_publisher(self):
         from ui.dev_tools_dialog import DevToolsDialog
         dlg = DevToolsDialog(current_records=self._records, parent=self)
-    def _manage_years(self):
-        dlg = YearSelectorDialog(self)
         dlg.exec()
 
     def _sync_cms(self):
