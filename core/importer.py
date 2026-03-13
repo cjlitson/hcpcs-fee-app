@@ -1,9 +1,27 @@
 import csv
+import io
 import os
 from datetime import datetime
 
 from core.database import insert_fees, add_import_log
 
+def _detect_delimiter(path):
+    """Detect whether a file is pipe-delimited or comma-delimited.
+
+    Reads the first non-empty line and counts pipes vs commas.
+    Returns '|' or ',' (defaults to ',' if unclear).
+    """
+    try:
+        with open(path, newline="", encoding="utf-8-sig", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    pipes = line.count("|")
+                    commas = line.count(",")
+                    return "|" if pipes > commas else ","
+    except Exception:
+        pass
+    return ","
 
 def parse_visn_csv(path):
     """Parse a VISN-format CSV file and return a list of record dicts.
@@ -89,25 +107,37 @@ def parse_visn_csv(path):
                 )
     return records
 
-
 def parse_cms_csv(path, state_abbr, year):
-    """Parse a CMS DMEPOS fee schedule CSV and return record dicts.
+    """Parse a CMS DMEPOS fee schedule file and return record dicts.
 
-    CMS DMEPOS files contain national data identified by locality/state.
+    Handles both:
+    - Comma-delimited .csv (older CMS format)
+    - Pipe-delimited .txt (current CMS format as of 2025, e.g. dme25-a.zip)
+
+    CMS DMEPOS files contain national data; state_abbr and year are supplied
+    by the caller since they are not always present in the file itself.
     """
+    delimiter = _detect_delimiter(path)
     records = []
-    with open(path, newline="", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
+    with open(path, newline="", encoding="utf-8-sig", errors="replace") as f:
+        reader = csv.DictReader(f, delimiter=delimiter)
         for row in reader:
+            # Skip rows where all values are empty (blank lines in TXT files)
+            if not any(v and v.strip() for v in row.values()):
+                continue
+
             norm = {
                 k.strip().lower().replace(" ", "_").replace("-", "_"): (v or "").strip()
                 for k, v in row.items()
+                if k is not None
             }
 
             hcpcs_code = (
                 norm.get("hcpcs_cd")
                 or norm.get("hcpcs_code")
                 or norm.get("hcpcs")
+                or norm.get("proc_cd")
+                or norm.get("procedure_code")
                 or ""
             ).upper().strip()
 
@@ -116,6 +146,8 @@ def parse_cms_csv(path, state_abbr, year):
                 or norm.get("short_description")
                 or norm.get("description")
                 or norm.get("item_description")
+                or norm.get("long_desc")
+                or norm.get("short_desc")
                 or ""
             )
 
@@ -125,13 +157,19 @@ def parse_cms_csv(path, state_abbr, year):
                 or ""
             ).strip() or None
 
-            # CMS DMEPOS fee columns (try common names)
+            # CMS DMEPOS fee columns — try all known column name variants
+            # The pipe-delimited 2025 format uses different column names than older CSV
             allowable_raw = (
-                norm.get("fee_schedule_price")
+                norm.get("fee_schedule_price"]
                 or norm.get("purchase_fee_amt")
+                or norm.get("pur_fee_amt")
                 or norm.get("capped_rental_1_month")
+                or norm.get("rent_1_mo_amt")
                 or norm.get("allowable")
                 or norm.get("fee")
+                or norm.get("payment_amount")
+                or norm.get("pay_amt")
+                or norm.get("fsc_price")
                 or ""
             )
             try:
@@ -154,7 +192,6 @@ def parse_cms_csv(path, state_abbr, year):
                 )
     return records
 
-
 def import_visn_csv(filepath, selected_states=None):
     """Parse and import a VISN-format CSV. Returns count of imported records."""
     records = parse_visn_csv(filepath)
@@ -172,7 +209,6 @@ def import_visn_csv(filepath, selected_states=None):
         states=", ".join(states_imported),
     )
     return len(records)
-
 
 def import_cms_csv(filepath, state_abbr, year):
     """Parse and import a CMS DMEPOS CSV file. Returns count of imported records."""
