@@ -195,27 +195,54 @@ def _try_download_zip(year, progress_callback=None):
             last_error = str(exc)
 
     raise DownloadError(
-        f"Could not download CMS DMEPOS fee schedule for {year}.\n"
+        f"Could not download CMS DMEPOS fee schedule for {year}.
         f"Last error: {last_error}\n\n"
         "Please visit https://www.cms.gov/medicare/payment/fee-schedules/dmepos "
         "to download the file manually and use File → Import CSV."
     )
 
-
 def _extract_csv_from_zip(zip_bytes):
-    """Extract the first CSV file found inside a ZIP archive.
+    """Extract the main data file from a CMS DMEPOS ZIP archive.
 
-    Returns (filename, file_bytes) or raises DownloadError.
+    CMS ZIPs may contain:
+    - .csv files (older format)
+    - .txt files (pipe-delimited, current format as of 2025)
+    - README / layout description .txt files (excluded)
+
+    Returns (filename, file_bytes) for the largest data file found,
+    or raises DownloadError if no suitable file is found.
     """
-    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
-        csv_names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
-        if not csv_names:
-            raise DownloadError("No CSV file found inside the downloaded ZIP archive.")
-        # Prefer the largest CSV (likely the main data file)
-        csv_names.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
-        name = csv_names[0]
-        return name, zf.read(name)
+    # Keywords that identify non-data files to skip
+    _SKIP_KEYWORDS = ("readme", "read_me", "read me", "layout", "record layout", "codebook")
 
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        all_names = zf.namelist()
+
+        # First try: look for CSV files
+        data_names = [
+            n for n in all_names
+            if n.lower().endswith(".csv")
+            and not any(kw in n.lower() for kw in _SKIP_KEYWORDS)
+        ]
+
+        # Second try: pipe-delimited TXT files (CMS 2025 format)
+        if not data_names:
+            data_names = [
+                n for n in all_names
+                if n.lower().endswith(".txt")
+                and not any(kw in n.lower() for kw in _SKIP_KEYWORDS)
+            ]
+
+        if not data_names:
+            raise DownloadError(
+                "No CSV or data file found inside the downloaded ZIP archive.\n"
+                f"ZIP contents: {', '.join(all_names) or '(empty)'}"
+            )
+
+        # Prefer the largest file — most likely the main fee schedule data
+        data_names.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
+        name = data_names[0]
+        return name, zf.read(name)
 
 def download_cms_fees(year, selected_states, progress_callback=None):
     """Download CMS DMEPOS fee schedule for *year* and import for *selected_states*.
@@ -236,13 +263,13 @@ def download_cms_fees(year, selected_states, progress_callback=None):
     if progress_callback:
         progress_callback("Extracting archive…")
 
-    csv_name, csv_bytes = _extract_csv_from_zip(zip_bytes)
+    data_name, data_bytes = _extract_csv_from_zip(zip_bytes)
 
     # Write to a temp file so parse_cms_csv can read it
     tmp_dir = _get_app_dir() / "data"
     tmp_dir.mkdir(exist_ok=True)
-    tmp_path = tmp_dir / f"_cms_tmp_{year}.csv"
-    tmp_path.write_bytes(csv_bytes)
+    tmp_path = tmp_dir / f"_cms_tmp_{year}.txt"
+    tmp_path.write_bytes(data_bytes)
 
     total = 0
     try:
@@ -252,7 +279,7 @@ def download_cms_fees(year, selected_states, progress_callback=None):
             records = parse_cms_csv(str(tmp_path), state_abbr=state_abbr, year=year)
             insert_fees(records, data_source="cms_download")
             add_import_log(
-                file_name=csv_name,
+                file_name=data_name,
                 source=f"CMS Download {year}",
                 record_count=len(records),
                 states=state_abbr,
