@@ -187,6 +187,11 @@ class MainWindow(QMainWindow):
         states_action.triggered.connect(self._manage_states)
         settings_menu.addAction(states_action)
 
+        # Developer Tools
+        dev_menu = menubar.addMenu("&Developer Tools")
+        sql_action = QAction("&SQL Publisher…", self)
+        sql_action.triggered.connect(self._open_sql_publisher)
+        dev_menu.addAction(sql_action)
         years_action = QAction("Manage &Years…", self)
         years_action.triggered.connect(self._manage_years)
         settings_menu.addAction(years_action)
@@ -317,6 +322,9 @@ class MainWindow(QMainWindow):
             self._refresh_filters()
             self._apply_filters()
 
+    def _open_sql_publisher(self):
+        from ui.dev_tools_dialog import DevToolsDialog
+        dlg = DevToolsDialog(current_records=self._records, parent=self)
     def _manage_years(self):
         dlg = YearSelectorDialog(self)
         dlg.exec()
