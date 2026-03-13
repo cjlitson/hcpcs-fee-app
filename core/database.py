@@ -1,7 +1,19 @@
+import sys
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent / "data" / "hcpcs_fees.db"
+
+def _get_app_dir() -> Path:
+    """Return the directory where the app (or .exe) lives."""
+    if getattr(sys, "frozen", False):
+        # Running as a PyInstaller .exe — use the directory of the .exe
+        return Path(sys.executable).parent
+    else:
+        # Running from source — use the project root
+        return Path(__file__).parent.parent
+
+
+DB_PATH = _get_app_dir() / "data" / "hcpcs_fees.db"
 
 
 def _get_conn():
