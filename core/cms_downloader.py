@@ -12,12 +12,12 @@ import io
 import os
 import re
 import zipfile
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import requests
 
-from core.database import add_import_log, insert_fees
+from core.database import _get_app_dir, add_import_log, insert_fees
 from core.importer import parse_cms_csv
 
 # CMS publishes quarterly DMEPOS fee schedule updates.
@@ -49,7 +49,7 @@ ALL_STATES = {
     "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
 }
 
-SUPPORTED_YEARS = [2024, 2025, 2026]
+SUPPORTED_YEARS = list(range(2024, date.today().year + 2))
 
 
 class DownloadError(Exception):
@@ -118,7 +118,7 @@ def download_cms_fees(year, selected_states, progress_callback=None):
     csv_name, csv_bytes = _extract_csv_from_zip(zip_bytes)
 
     # Write to a temp file so parse_cms_csv can read it
-    tmp_dir = Path(__file__).parent.parent / "data"
+    tmp_dir = _get_app_dir() / "data"
     tmp_dir.mkdir(exist_ok=True)
     tmp_path = tmp_dir / f"_cms_tmp_{year}.csv"
     tmp_path.write_bytes(csv_bytes)

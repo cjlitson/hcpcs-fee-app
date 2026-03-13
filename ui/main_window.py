@@ -9,12 +9,13 @@ from PyQt6.QtGui import QAction, QFont
 
 from core.database import (
     get_fees, get_selected_states, get_available_years, get_import_log,
-    get_preference, set_preference,
+    get_preference, set_preference, get_selected_years, save_selected_years,
 )
 from core.cms_downloader import download_cms_fees, SUPPORTED_YEARS
 from ui.import_dialog import ImportDialog
 from ui.export_dialog import ExportDialog
 from ui.state_selector_dialog import StateSelectorDialog
+from ui.year_selector_dialog import YearSelectorDialog
 
 
 class SyncWorker(QThread):
@@ -191,6 +192,9 @@ class MainWindow(QMainWindow):
         sql_action = QAction("&SQL Publisher…", self)
         sql_action.triggered.connect(self._open_sql_publisher)
         dev_menu.addAction(sql_action)
+        years_action = QAction("Manage &Years…", self)
+        years_action.triggered.connect(self._manage_years)
+        settings_menu.addAction(years_action)
 
         # Help
         help_menu = menubar.addMenu("&Help")
@@ -209,7 +213,8 @@ class MainWindow(QMainWindow):
                 "Welcome!\n\n"
                 "To get started:\n"
                 "  1. Go to Settings → Manage States and select the states you track.\n"
-                "  2. Click \"Sync from CMS\" to download the latest fee schedules,\n"
+                "  2. Go to Settings → Manage Years and select the years you need.\n"
+                "  3. Click \"Sync from CMS\" to download the latest fee schedules,\n"
                 "     OR use File → Import CSV to load an existing VISN CSV file.\n\n"
                 "Data is stored locally in a SQLite database — no network connection\n"
                 "is required after the initial sync.",
@@ -217,6 +222,8 @@ class MainWindow(QMainWindow):
             set_preference("first_run_done", "1")
             dlg = StateSelectorDialog(self)
             dlg.exec()
+            year_dlg = YearSelectorDialog(self)
+            year_dlg.exec()
             self._refresh_filters()
 
     def _refresh_filters(self):
@@ -318,6 +325,8 @@ class MainWindow(QMainWindow):
     def _open_sql_publisher(self):
         from ui.dev_tools_dialog import DevToolsDialog
         dlg = DevToolsDialog(current_records=self._records, parent=self)
+    def _manage_years(self):
+        dlg = YearSelectorDialog(self)
         dlg.exec()
 
     def _sync_cms(self):
@@ -400,9 +409,14 @@ class _SyncYearsDialog(QDialog):
 
         for year in SUPPORTED_YEARS:
             cb = QCheckBox(str(year))
-            cb.setChecked(True)
             layout.addWidget(cb)
             self._checks[year] = cb
+
+        saved_years = get_selected_years()
+        # If nothing saved, default to all checked
+        defaults = saved_years if saved_years else list(SUPPORTED_YEARS)
+        for year, cb in self._checks.items():
+            cb.setChecked(year in defaults)
 
         btn_row = QHBoxLayout()
         cancel_btn = QPushButton("Cancel")
