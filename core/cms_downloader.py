@@ -8,29 +8,116 @@ CMS DMEPOS fee schedule data source:
   https://www.cms.gov/medicare/payment/fee-schedules/dmepos
 """
 
+import html.parser
 import io
+import json
 import os
 import re
 import zipfile
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
+from urllib.parse import urljoin
 
 import requests
 
-from core.database import _get_app_dir, add_import_log, insert_fees
+from core.database import _get_app_dir, add_import_log, get_preference, insert_fees, set_preference
 from core.importer import parse_cms_csv
+
+# CMS DMEPOS page used to scrape current download links
+CMS_DMEPOS_PAGE = "https://www.cms.gov/medicare/payment/fee-schedules/dmepos"
+_URL_CACHE_KEY_PREFIX = "cms_url_cache_"
+_URL_CACHE_TTL_HOURS = 24
 
 # CMS publishes quarterly DMEPOS fee schedule updates.
 # URL templates — CMS sometimes changes the naming convention between years;
 # multiple candidates are tried in order.
+# {year2d} = 2-digit year (e.g. "25" for 2025); {year} = 4-digit year.
 _CMS_URL_TEMPLATES = [
-    # Newer naming pattern (2025+)
+    # Quarterly pattern — current CMS convention (most recent quarter first)
+    "https://www.cms.gov/files/zip/dme{year2d}-d.zip",
+    "https://www.cms.gov/files/zip/dme{year2d}-c.zip",
+    "https://www.cms.gov/files/zip/dme{year2d}-b.zip",
+    "https://www.cms.gov/files/zip/dme{year2d}-a.zip",
+    # Legacy patterns
     "https://www.cms.gov/files/zip/{year}-dmepos-fee-schedule.zip",
-    # Older naming pattern
-    "https://www.cms.gov/Medicare/Medicare-Fee-for-Service-Payment/DMEPOSFeeSched/Downloads/DMEPOSFS{year}Q1.zip",
-    # Alternative
     "https://www.cms.gov/files/zip/dmepos-{year}-fee-schedule.zip",
+    "https://www.cms.gov/Medicare/Medicare-Fee-for-Service-Payment/DMEPOSFeeSched/Downloads/DMEPOSFS{year}Q1.zip",
 ]
+
+
+class _LinkExtractor(html.parser.HTMLParser):
+    """Extracts all href values from <a> tags that end with '.zip'."""
+
+    def __init__(self):
+        super().__init__()
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            for attr, val in attrs:
+                if attr == "href" and val and val.lower().endswith(".zip"):
+                    self.links.append(val)
+
+
+def _scrape_cms_urls(year):
+    """Scrape the CMS DMEPOS page for ZIP download links relevant to *year*.
+
+    Returns a deduplicated list of absolute URLs, or an empty list on any error.
+    """
+    year2d = str(year)[-2:]
+    try:
+        resp = requests.get(CMS_DMEPOS_PAGE, timeout=15)
+        if resp.status_code != 200:
+            return []
+        extractor = _LinkExtractor()
+        extractor.feed(resp.text)
+        seen = set()
+        urls = []
+        for href in extractor.links:
+            # Resolve relative URLs against the CMS base
+            abs_url = urljoin("https://www.cms.gov", href)
+            lower = abs_url.lower()
+            # Keep links that match the quarterly pattern for this year (e.g. "dme25")
+            # OR contain "dmepos" with the 4-digit year — avoids false positives from
+            # unrelated numeric substrings (e.g. version numbers, other years).
+            if f"dme{year2d}" in lower or ("dmepos" in lower and str(year) in lower):
+                if abs_url not in seen:
+                    seen.add(abs_url)
+                    urls.append(abs_url)
+        return urls
+    except Exception:
+        return []
+
+
+def _get_cached_urls(year):
+    """Return cached URL list for *year* if cache is still valid, else empty list."""
+    key = f"{_URL_CACHE_KEY_PREFIX}{year}"
+    raw = get_preference(key)
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        cached_at = datetime.fromisoformat(data["cached_at"])
+        # Ensure timezone-aware comparison even if stored timestamp lacks tzinfo
+        if cached_at.tzinfo is None:
+            cached_at = cached_at.replace(tzinfo=timezone.utc)
+        age_hours = (datetime.now(timezone.utc) - cached_at).total_seconds() / 3600
+        if age_hours > _URL_CACHE_TTL_HOURS:
+            return []
+        return data["urls"]
+    except Exception:
+        return []
+
+
+def _set_cached_urls(year, urls):
+    """Cache URL list for *year* with the current timestamp."""
+    key = f"{_URL_CACHE_KEY_PREFIX}{year}"
+    data = {
+        "cached_at": datetime.now(timezone.utc).isoformat(),
+        "urls": urls,
+    }
+    set_preference(key, json.dumps(data))
+
 
 # Mapping of US state abbreviations to state names
 ALL_STATES = {
@@ -57,13 +144,46 @@ class DownloadError(Exception):
 
 
 def _try_download_zip(year, progress_callback=None):
-    """Try each URL template for the given year and return the ZIP bytes.
+    """Try to download the CMS DMEPOS ZIP for the given year.
 
-    Raises DownloadError if none succeed.
+    Strategy:
+    1. Check cache for previously discovered URLs for this year.
+    2. If cache miss or expired, scrape the CMS DMEPOS page to discover URLs.
+    3. Cache any discovered URLs.
+    4. Try discovered URLs first, then fall back to hardcoded templates.
+    5. Raise DownloadError if all attempts fail.
     """
-    last_error = None
+    year2d = str(year)[-2:]
+
+    # Build candidate URL list
+    candidate_urls = []
+
+    # Step 1: Check cache
+    cached = _get_cached_urls(year)
+    if cached:
+        if progress_callback:
+            progress_callback(f"Using {len(cached)} cached URL(s) for {year}…")
+        candidate_urls.extend(cached)
+    else:
+        # Step 2: Scrape CMS page
+        if progress_callback:
+            progress_callback("Checking CMS website for current download links…")
+        scraped = _scrape_cms_urls(year)
+        if scraped:
+            if progress_callback:
+                progress_callback(f"Found {len(scraped)} download link(s) on CMS website.")
+            _set_cached_urls(year, scraped)
+            candidate_urls.extend(scraped)
+
+    # Step 3: Add hardcoded fallback templates
     for template in _CMS_URL_TEMPLATES:
-        url = template.format(year=year)
+        url = template.format(year=year, year2d=year2d)
+        if url not in candidate_urls:
+            candidate_urls.append(url)
+
+    # Step 4: Try each candidate
+    last_error = None
+    for url in candidate_urls:
         try:
             if progress_callback:
                 progress_callback(f"Trying {url} …")
@@ -73,6 +193,7 @@ def _try_download_zip(year, progress_callback=None):
             last_error = f"HTTP {resp.status_code} from {url}"
         except requests.RequestException as exc:
             last_error = str(exc)
+
     raise DownloadError(
         f"Could not download CMS DMEPOS fee schedule for {year}.\n"
         f"Last error: {last_error}\n\n"
