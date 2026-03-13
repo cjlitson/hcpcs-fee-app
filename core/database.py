@@ -193,3 +193,19 @@ def set_preference(key, value):
             (key, value),
         )
     conn.close()
+
+
+def get_selected_years():
+    """Return list of persisted selected years, or empty list if none saved."""
+    val = get_preference("selected_years")
+    if not val:
+        return []
+    try:
+        return [int(y) for y in val.split(",") if y.strip()]
+    except ValueError:
+        return []
+
+
+def save_selected_years(years):
+    """Persist selected years to user preferences."""
+    set_preference("selected_years", ",".join(str(y) for y in sorted(years)))
