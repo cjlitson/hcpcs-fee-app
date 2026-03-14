@@ -5,6 +5,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from core.database import get_selected_states, save_selected_states
 
+# NOTE: ALL_STATES is also defined in core/cms_downloader.py. Both definitions
+# must be kept in sync. Consider consolidating into a shared module in the future.
 ALL_STATES = {
     "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas",
     "CA": "California", "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware",

@@ -1,5 +1,4 @@
 import csv
-import io
 import os
 from datetime import datetime
 
@@ -206,7 +205,7 @@ def import_visn_csv(filepath, selected_states=None):
         file_name=os.path.basename(filepath),
         source="VISN CSV",
         record_count=len(records),
-        states="",.join(states_imported),
+        states=",".join(states_imported),
     )
     return len(records)
 
