@@ -14,6 +14,9 @@ pyinstaller ^
   --name HCPCSFeeApp ^
   --hidden-import PyQt6.QtPrintSupport ^
   --hidden-import reportlab.graphics ^
+  --hidden-import pyodbc ^
+  --hidden-import databricks.sql ^
+  --hidden-import databricks.sql.client ^
   main.py
 
 echo.
