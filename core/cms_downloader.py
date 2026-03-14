@@ -11,8 +11,6 @@ CMS DMEPOS fee schedule data source:
 import html.parser
 import io
 import json
-import os
-import re
 import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -195,11 +193,12 @@ def _try_download_zip(year, progress_callback=None):
             last_error = str(exc)
 
     raise DownloadError(
-        f"Could not download CMS DMEPOS fee schedule for {year}.
+        f"Could not download CMS DMEPOS fee schedule for {year}.\n"
         f"Last error: {last_error}\n\n"
         "Please visit https://www.cms.gov/medicare/payment/fee-schedules/dmepos "
         "to download the file manually and use File → Import CSV."
     )
+
 
 def _extract_csv_from_zip(zip_bytes):
     """Extract the main data file from a CMS DMEPOS ZIP archive.
@@ -243,6 +242,7 @@ def _extract_csv_from_zip(zip_bytes):
         data_names.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
         name = data_names[0]
         return name, zf.read(name)
+
 
 def download_cms_fees(year, selected_states, progress_callback=None):
     """Download CMS DMEPOS fee schedule for *year* and import for *selected_states*.

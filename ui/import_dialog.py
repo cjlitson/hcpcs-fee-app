@@ -93,7 +93,7 @@ class ImportDialog(QDialog):
         layout.addLayout(btn_row)
 
     def _browse(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Select CSV File", "", "CSV Files (*.csv);;All Files (*)")
+        path, _ = QFileDialog.getOpenFileName(self, "Select CSV/TXT File", "", "Data Files (*.csv *.txt);;CSV Files (*.csv);;Text Files (*.txt);;All Files (*)")
         if path:
             self.filepath = path
             self.file_label.setText(os.path.basename(path))
