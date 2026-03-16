@@ -12,6 +12,7 @@ import html.parser
 import io
 import json
 import os
+import re as _re
 import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -19,13 +20,21 @@ from urllib.parse import urljoin
 
 import requests
 
-from core.database import _get_app_dir, add_import_log, get_preference, insert_fees, set_preference
+from core.database import (
+    _get_app_dir,
+    add_import_log,
+    delete_fees_by_year_state_source,
+    get_preference,
+    insert_fees,
+    set_preference,
+)
 from core.importer import parse_cms_csv
 
 # CMS DMEPOS page used to scrape current download links
 CMS_DMEPOS_PAGE = "https://www.cms.gov/medicare/payment/fee-schedules/dmepos"
 _URL_CACHE_KEY_PREFIX = "cms_url_cache_"
 _URL_CACHE_TTL_HOURS = 24
+_AVAILABLE_YEARS_CACHE_KEY = "cms_available_years_cache"
 
 # CMS publishes quarterly DMEPOS fee schedule updates.
 # URL templates — CMS sometimes changes the naming convention between years;
@@ -118,6 +127,68 @@ def _set_cached_urls(year, urls):
     set_preference(key, json.dumps(data))
 
 
+def discover_available_cms_years():
+    """Scrape the CMS DMEPOS page and return a set of years currently available.
+
+    Results are cached for 24 hours in user_preferences.  On any error (network
+    failure, unexpected page format, etc.) returns an empty set so callers can
+    fall back gracefully.
+
+    Year patterns detected:
+    - ``dme{yy}-a/b/c/d.zip``  → 2000 + yy
+    - URLs containing ``dmepos`` and a 4-digit year
+    - ``DMEPOSFS{year}Q{n}.zip``
+    """
+    # Check cache first
+    raw = get_preference(_AVAILABLE_YEARS_CACHE_KEY)
+    if raw:
+        try:
+            data = json.loads(raw)
+            cached_at = datetime.fromisoformat(data["cached_at"])
+            if cached_at.tzinfo is None:
+                cached_at = cached_at.replace(tzinfo=timezone.utc)
+            age_hours = (datetime.now(timezone.utc) - cached_at).total_seconds() / 3600
+            if age_hours <= _URL_CACHE_TTL_HOURS:
+                return set(data["years"])
+        except Exception:
+            pass
+
+    try:
+        resp = requests.get(CMS_DMEPOS_PAGE, timeout=15)
+        if resp.status_code != 200:
+            return set()
+        extractor = _LinkExtractor()
+        extractor.feed(resp.text)
+        years = set()
+        for href in extractor.links:
+            abs_url = urljoin("https://www.cms.gov", href)
+            lower = abs_url.lower()
+            # Pattern: dme{yy}-[a-d].zip  (e.g. dme26-a.zip)
+            m = _re.search(r"dme(\d{2})-[a-d]\.zip", lower)
+            if m:
+                years.add(2000 + int(m.group(1)))
+                continue
+            # Pattern: dmepos + 4-digit year anywhere in URL
+            m = _re.search(r"dmepos.*?(\b20\d{2}\b)", lower)
+            if m:
+                years.add(int(m.group(1)))
+                continue
+            # Pattern: DMEPOSFS{year}Q{n}.zip
+            m = _re.search(r"dmeposfs(20\d{2})q\d", lower)
+            if m:
+                years.add(int(m.group(1)))
+                continue
+        # Cache the result
+        cache_data = {
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+            "years": sorted(years),
+        }
+        set_preference(_AVAILABLE_YEARS_CACHE_KEY, json.dumps(cache_data))
+        return years
+    except Exception:
+        return set()
+
+
 # Mapping of US state abbreviations to state names
 ALL_STATES = {
     "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas",
@@ -135,7 +206,7 @@ ALL_STATES = {
     "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
 }
 
-SUPPORTED_YEARS = list(range(2024, date.today().year + 2))
+SUPPORTED_YEARS = list(range(2024, date.today().year + 1))
 
 
 class DownloadError(Exception):
@@ -345,6 +416,16 @@ def download_cms_fees(year, selected_states, progress_callback=None):
             if progress_callback:
                 progress_callback(f"Importing {state_abbr} ({year})…")
             records = parse_cms_csv(str(tmp_path), state_abbr=state_abbr, year=year)
+            if len(records) == 0:
+                raise DownloadError(
+                    f"Parsed 0 records from {data_name} for {state_abbr} ({year}). "
+                    "Aborting update to avoid wiping existing data. "
+                    "Please verify the downloaded file or use File → Import CSV."
+                )
+            # Replace: delete existing cms_download rows for this year/state, then insert
+            delete_fees_by_year_state_source(
+                state_abbr=state_abbr, year=year, data_source="cms_download"
+            )
             insert_fees(records, data_source="cms_download")
             add_import_log(
                 file_name=data_name,

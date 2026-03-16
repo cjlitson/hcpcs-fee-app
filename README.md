@@ -6,8 +6,9 @@ A standalone Windows desktop application for VA staff to manage, view, filter, a
 
 ## Features
 
-- **Auto-download** CMS DMEPOS fee schedules for user-selected states (2024–2026), with live URL scraping and 24-hour cache
-- **Smart file detection** — handles both comma-delimited `.csv` (older CMS format) and pipe-delimited `.txt` (current CMS format as of 2025)
+- **Auto-download** CMS DMEPOS fee schedules for user-selected states (2024 through the current calendar year), with live URL scraping and 24-hour cache
+- **Smart file detection** — selects the main DMEPOS schedule file (`DMEPOS*.txt` / `DMEPOS*.csv`) by name pattern, excluding auxiliary datasets (Rural ZIP, Former CBA, PEN schedules)
+- **Quarterly replace** — each CMS sync replaces prior data for the same year/state so quarterly updates stay current without duplicates
 - **Import** existing VISN-format CSV files
 - **Filter** by state, year, HCPCS code, and description keyword
 - **Export** to CSV, Excel (.xlsx), or PDF
@@ -56,7 +57,7 @@ Output: `dist\HCPCSFeeApp.exe` — copy this single file anywhere and run it. No
 1. **First Launch** — A welcome dialog will appear. Select your tracked states and years.
 2. **Manage States** — Go to `Settings → Manage States`, check the states you want to track, and save.
 3. **Manage Years** — Go to `Settings → Manage Years` to select which fiscal years to include.
-4. **Sync Data** — Click `Sync from CMS` to auto-download the latest CMS DMEPOS fee schedules for your selected states. The downloader scrapes live URLs from the CMS website and falls back to known URL templates if needed.
+4. **Sync Data** — Click `Sync from CMS` to auto-download the latest CMS DMEPOS fee schedules for your selected states. The downloader scrapes live URLs from the CMS website and falls back to known URL templates if needed. Only years up to the current calendar year are offered; years not currently detected on CMS are shown as disabled in the Manage Years dialog.
 5. **Import CSV** — Use `File → Import CSV` to load an existing VISN 22 CSV or a manually downloaded CMS file (`.csv` or pipe-delimited `.txt`).
 6. **Filter** — Use the toolbar to filter by state, year, HCPCS code, or description keyword.
 7. **Export** — Click `Export...` to save filtered results as CSV, Excel, or PDF.
@@ -79,6 +80,9 @@ When syncing from CMS, the downloader uses a multi-step strategy:
    - Files matching documentation keywords (`readme`, `layout`, `codebook`, etc.) are always excluded.
 
    The UI status bar shows which internal file was selected from the archive.
+5. **Quarterly replace** — for each `(state, year)` the sync deletes existing `cms_download` rows and inserts the freshly parsed records. If the parse yields 0 records the delete is skipped and an error is shown, protecting existing data.
+
+**Supported years:** The app only offers years from 2024 through the current calendar year. Years not currently detected on the CMS page are shown as disabled (greyed out) in the Manage Years dialog.
 
 If all download attempts fail, a clear error message is shown with a link to manually download the file from CMS.
 

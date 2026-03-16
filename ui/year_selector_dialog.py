@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QCheckBox, QMessageBox, QFrame
 )
-from core.cms_downloader import SUPPORTED_YEARS
+from core.cms_downloader import SUPPORTED_YEARS, discover_available_cms_years
 from core.database import get_selected_years, save_selected_years
 
 
@@ -10,7 +10,7 @@ class YearSelectorDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Manage Years")
-        self.setMinimumWidth(280)
+        self.setMinimumWidth(320)
         self._checkboxes = {}
         self._init_ui()
         self._load_current()
@@ -23,8 +23,19 @@ class YearSelectorDialog(QDialog):
         sep.setFrameShape(QFrame.Shape.HLine)
         layout.addWidget(sep)
 
+        # Best-effort: discover which years CMS currently publishes.
+        # If scraping fails, available_years will be empty and all years stay enabled.
+        try:
+            available_years = discover_available_cms_years()
+        except Exception:
+            available_years = set()
+
         for year in sorted(SUPPORTED_YEARS):
-            cb = QCheckBox(str(year))
+            if available_years and year not in available_years:
+                cb = QCheckBox(f"{year}  (not currently available on CMS)")
+                cb.setEnabled(False)
+            else:
+                cb = QCheckBox(str(year))
             self._checkboxes[year] = cb
             layout.addWidget(cb)
 
@@ -47,10 +58,11 @@ class YearSelectorDialog(QDialog):
 
     def _load_current(self):
         saved = get_selected_years()
-        # If nothing saved yet, check all by default
+        # If nothing saved yet, check all enabled checkboxes by default
         defaults = saved if saved else list(SUPPORTED_YEARS)
         for year, cb in self._checkboxes.items():
-            cb.setChecked(year in defaults)
+            if cb.isEnabled():
+                cb.setChecked(year in defaults)
 
     def _save(self):
         selected = [year for year, cb in self._checkboxes.items() if cb.isChecked()]
