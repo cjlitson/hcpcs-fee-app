@@ -44,16 +44,19 @@ _AVAILABLE_YEARS_CACHE_KEY = "cms_available_years_cache"
 # URL templates — CMS sometimes changes the naming convention between years;
 # multiple candidates are tried in order.
 # {year2d} = 2-digit year (e.g. "25" for 2025); {year} = 4-digit year.
+# NOTE: Only include patterns that are known to be valid / current.
+# Legacy "DMEPOSFS{year}Q1.zip" is intentionally excluded — CMS retired that
+# URL scheme; including it caused spurious 404 errors when all other patterns
+# fail.
 _CMS_URL_TEMPLATES = [
     # Quarterly pattern — current CMS convention (most recent quarter first)
     "https://www.cms.gov/files/zip/dme{year2d}-d.zip",
     "https://www.cms.gov/files/zip/dme{year2d}-c.zip",
     "https://www.cms.gov/files/zip/dme{year2d}-b.zip",
     "https://www.cms.gov/files/zip/dme{year2d}-a.zip",
-    # Legacy patterns
+    # Legacy patterns (tried last; verified via HEAD before attempting download)
     "https://www.cms.gov/files/zip/{year}-dmepos-fee-schedule.zip",
     "https://www.cms.gov/files/zip/dmepos-{year}-fee-schedule.zip",
-    "https://www.cms.gov/Medicare/Medicare-Fee-for-Service-Payment/DMEPOSFeeSched/Downloads/DMEPOSFS{year}Q1.zip",
 ]
 
 # Pattern for quarterly fee schedule ZIPs: dme{YY}-[a-d].zip (case-insensitive)
@@ -242,6 +245,9 @@ def _try_download_zip(year, progress_callback=None):
 
     # Build candidate URL list
     candidate_urls = []
+    # Track which URLs were obtained via live scrape or cache (trusted sources).
+    # Template-only URLs get a HEAD check first to skip retired patterns quickly.
+    trusted_urls = set()
 
     # Step 1: Check cache
     cached = _get_cached_urls(year)
@@ -249,6 +255,7 @@ def _try_download_zip(year, progress_callback=None):
         if progress_callback:
             progress_callback(f"Using {len(cached)} cached URL(s) for {year}…")
         candidate_urls.extend(cached)
+        trusted_urls.update(cached)
     else:
         # Step 2: Scrape CMS page
         if progress_callback:
@@ -259,6 +266,7 @@ def _try_download_zip(year, progress_callback=None):
                 progress_callback(f"Found {len(scraped)} download link(s) on CMS website.")
             _set_cached_urls(year, scraped)
             candidate_urls.extend(scraped)
+            trusted_urls.update(scraped)
 
     # Step 3: Add hardcoded fallback templates
     for template in _CMS_URL_TEMPLATES:
@@ -267,11 +275,23 @@ def _try_download_zip(year, progress_callback=None):
             candidate_urls.append(url)
 
     # Step 4: Try each candidate
+    # For trusted URLs (discovered via live scrape or cache) go straight to GET.
+    # For fallback template URLs, first do a cheap HEAD request to skip known-missing
+    # URLs quickly and avoid long timeouts on retired URL patterns.
     last_error = None
     for url in candidate_urls:
         try:
             if progress_callback:
                 progress_callback(f"Trying {url} …")
+            if url not in trusted_urls:
+                # HEAD check to avoid spending time on 404 template URLs
+                try:
+                    head = requests.head(url, timeout=10, allow_redirects=True)
+                    if head.status_code not in (200, 301, 302):
+                        last_error = f"HTTP {head.status_code} (HEAD) from {url}"
+                        continue
+                except requests.RequestException:
+                    pass  # Proceed to GET anyway if HEAD itself fails
             resp = requests.get(url, timeout=60, stream=True)
             if resp.status_code == 200:
                 return resp.content

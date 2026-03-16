@@ -355,3 +355,156 @@ class TestDefaultSelectedYears:
     def test_descending_order(self):
         defaults = get_default_selected_years()
         assert defaults == sorted(defaults, reverse=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Effective allowable selection logic
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestEffectiveAllowableSelection:
+    """Tests for the NR-vs-R selection logic used by the history dialog and main grid.
+
+    The effective allowable is:
+      - allowable_r  when rural=True and allowable_r is not None
+      - allowable_nr otherwise (including fallback when allowable_r is None)
+    """
+
+    @staticmethod
+    def _effective(allowable_nr, allowable_r, is_rural):
+        """Mirror the selection logic used in _HcpcsHistoryDialog._build_primary_table."""
+        if is_rural and allowable_r is not None:
+            return allowable_r
+        return allowable_nr
+
+    def test_non_rural_returns_nr(self):
+        assert self._effective(10.0, 12.0, False) == 10.0
+
+    def test_rural_returns_r(self):
+        assert self._effective(10.0, 12.0, True) == 12.0
+
+    def test_rural_fallback_to_nr_when_r_is_none(self):
+        """If rural but no R rate is available, fall back to NR."""
+        assert self._effective(10.0, None, True) == 10.0
+
+    def test_non_rural_r_present_but_ignored(self):
+        """Non-rural should ignore an available R rate."""
+        assert self._effective(5.0, 8.0, False) == 5.0
+
+    def test_both_none_returns_none(self):
+        assert self._effective(None, None, False) is None
+        assert self._effective(None, None, True) is None
+
+    def test_only_r_present_but_non_rural(self):
+        """Non-rural with only R available → NR returned (None)."""
+        assert self._effective(None, 12.0, False) is None
+
+    def test_only_nr_present_rural(self):
+        """Rural with only NR available → NR returned as fallback."""
+        assert self._effective(9.0, None, True) == 9.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CSV column header normalization (state NR/R variants)
+# ─────────────────────────────────────────────────────────────────────────────
+
+import textwrap as _textwrap
+import tempfile as _tempfile
+
+
+class TestGridCsvHeaderNormalization:
+    """Tests that parse_dmepos_grid_csv handles alternate NR/R column header formats."""
+
+    def _write_tmp(self, content):
+        tmp = _tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8")
+        tmp.write(content)
+        tmp.close()
+        return tmp.name
+
+    def test_no_space_before_paren(self):
+        """'AZ(NR)' and 'AZ(R)' (no space) should be recognized."""
+        csv_content = _textwrap.dedent("""\
+            HCPCS,Description,AZ(NR),AZ(R)
+            A4216,Sterile water,0.53,0.61
+        """)
+        path = self._write_tmp(csv_content)
+        try:
+            records = parse_dmepos_grid_csv(path)
+            az = next(r for r in records if r["hcpcs_code"] == "A4216" and r["state_abbr"] == "AZ")
+            assert az["allowable_nr"] == pytest.approx(0.53, abs=1e-4)
+            assert az["allowable_r"] == pytest.approx(0.61, abs=1e-4)
+        finally:
+            os.unlink(path)
+
+    def test_space_separated_without_parens(self):
+        """'AZ NR' and 'AZ R' (space, no parens) should be recognized."""
+        csv_content = _textwrap.dedent("""\
+            HCPCS,Description,AZ NR,AZ R
+            A4216,Sterile water,0.53,0.61
+        """)
+        path = self._write_tmp(csv_content)
+        try:
+            records = parse_dmepos_grid_csv(path)
+            az = next(r for r in records if r["hcpcs_code"] == "A4216" and r["state_abbr"] == "AZ")
+            assert az["allowable_nr"] == pytest.approx(0.53, abs=1e-4)
+            assert az["allowable_r"] == pytest.approx(0.61, abs=1e-4)
+        finally:
+            os.unlink(path)
+
+    def test_preamble_then_alternate_header(self):
+        """Preamble skip + alternate column format combined."""
+        csv_content = _textwrap.dedent("""\
+            CMS DMEPOS Fee Schedule
+            January 2026
+            HCPCS,Description,AZ(NR),AZ(R),CA(NR),CA(R)
+            E0601,CPAP device,1.50,1.80,2.00,2.40
+        """)
+        path = self._write_tmp(csv_content)
+        try:
+            records = parse_dmepos_grid_csv(path)
+            hcpcs_set = {r["hcpcs_code"] for r in records}
+            states_set = {r["state_abbr"] for r in records}
+            assert "E0601" in hcpcs_set
+            assert {"AZ", "CA"} == states_set
+        finally:
+            os.unlink(path)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Preference persistence
+# ─────────────────────────────────────────────────────────────────────────────
+
+from core.database import get_preference, set_preference
+
+
+class TestPreferencePersistence:
+    """Tests for get_preference / set_preference round-trip."""
+
+    def test_set_and_get(self, tmp_db):
+        set_preference("test_key", "hello")
+        assert get_preference("test_key") == "hello"
+
+    def test_default_when_missing(self, tmp_db):
+        assert get_preference("nonexistent_key", "default_val") == "default_val"
+
+    def test_default_none_when_missing_no_default(self, tmp_db):
+        assert get_preference("nonexistent_key") is None
+
+    def test_overwrite_existing_value(self, tmp_db):
+        set_preference("k", "v1")
+        set_preference("k", "v2")
+        assert get_preference("k") == "v2"
+
+    def test_filter_preferences_round_trip(self, tmp_db):
+        """Simulate saving and restoring the full set of filter preferences."""
+        prefs = {
+            "filter_year": "2025",
+            "filter_state": "AZ",
+            "filter_zip": "86409",
+            "filter_hcpcs": "E0601",
+            "filter_keyword": "CPAP",
+        }
+        for key, val in prefs.items():
+            set_preference(key, val)
+        for key, expected in prefs.items():
+            assert get_preference(key) == expected
+

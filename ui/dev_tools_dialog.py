@@ -70,6 +70,9 @@ class DevToolsDialog(QDialog):
 
         self._build_connection_tab()
         self._build_publish_tab()
+        # Apply initial visibility NOW — after both tabs are built so that
+        # _on_db_type_changed can safely reference self._publish_btn.
+        self._on_db_type_changed(0)
 
         # Close button
         btn_row = QHBoxLayout()
@@ -175,8 +178,8 @@ class DevToolsDialog(QDialog):
         layout.addStretch()
         self._tabs.addTab(tab, "Connection")
 
-        # Initial visibility
-        self._on_db_type_changed(0)
+        # NOTE: Initial visibility is applied AFTER _build_publish_tab() so that
+        # _on_db_type_changed can safely reference self._publish_btn.
 
     def _form_layout(self):
         """Return a QFormLayout with standard settings."""

@@ -1,14 +1,14 @@
 from datetime import date
 
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QComboBox, QLineEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QStatusBar, QMessageBox,
     QDialog, QTextEdit, QSizePolicy, QFrame, QCheckBox,
-    QProgressDialog,
+    QProgressDialog, QMenu, QApplication, QScrollArea,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QAction, QFont
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt6.QtGui import QAction, QFont, QColor
 
 from core.database import (
     get_fees, get_selected_states, get_available_years, get_import_log,
@@ -55,10 +55,16 @@ class MainWindow(QMainWindow):
         self._records = []
         self._sync_worker = None
         self._progress_dlg = None
+        # Debounce timer for live search (HCPCS + Keyword fields)
+        self._search_timer = QTimer()
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(250)
+        self._search_timer.timeout.connect(self._apply_filters)
         self._init_ui()
         self._init_menu()
         self._check_first_run()
         self._refresh_filters()
+        self._restore_filter_preferences()
         self._apply_filters()
 
     # ------------------------------------------------------------------ UI --
@@ -90,6 +96,12 @@ class MainWindow(QMainWindow):
         self.year_combo.currentIndexChanged.connect(self._on_year_changed)
         toolbar.addWidget(self.year_combo)
 
+        # Label showing effective year (updated whenever year combo changes)
+        self.year_view_label = QLabel("")
+        self.year_view_label.setStyleSheet("color: #555555; font-style: italic; font-size: 11px;")
+        self.year_view_label.setMinimumWidth(220)
+        toolbar.addWidget(self.year_view_label)
+
         toolbar.addSpacing(8)
 
         # State filter
@@ -97,6 +109,7 @@ class MainWindow(QMainWindow):
         self.state_combo = QComboBox()
         self.state_combo.setMinimumWidth(130)
         self.state_combo.currentIndexChanged.connect(self._apply_filters)
+        self.state_combo.currentIndexChanged.connect(self._save_filter_preferences)
         toolbar.addWidget(self.state_combo)
 
         toolbar.addSpacing(8)
@@ -113,27 +126,30 @@ class MainWindow(QMainWindow):
         self.zip_edit.textChanged.connect(self._on_zip_changed)
         toolbar.addWidget(self.zip_edit)
 
-        self.rural_label = QLabel("")
-        self.rural_label.setMinimumWidth(80)
+        self.rural_label = QLabel("No ZIP (default NR)")
+        self.rural_label.setStyleSheet("color: #666666; font-size: 11px;")
+        self.rural_label.setMinimumWidth(160)
         toolbar.addWidget(self.rural_label)
 
         toolbar.addSpacing(8)
 
-        # HCPCS code search
+        # HCPCS code search (debounced)
         toolbar.addWidget(QLabel("HCPCS:"))
         self.code_edit = QLineEdit()
         self.code_edit.setPlaceholderText("e.g. E0601")
         self.code_edit.setMaximumWidth(100)
+        self.code_edit.textChanged.connect(self._on_search_text_changed)
         self.code_edit.returnPressed.connect(self._apply_filters)
         toolbar.addWidget(self.code_edit)
 
         toolbar.addSpacing(8)
 
-        # Keyword search
+        # Keyword search (debounced)
         toolbar.addWidget(QLabel("Keyword:"))
         self.keyword_edit = QLineEdit()
         self.keyword_edit.setPlaceholderText("Description keyword…")
         self.keyword_edit.setMaximumWidth(200)
+        self.keyword_edit.textChanged.connect(self._on_search_text_changed)
         self.keyword_edit.returnPressed.connect(self._apply_filters)
         toolbar.addWidget(self.keyword_edit)
 
@@ -172,8 +188,12 @@ class MainWindow(QMainWindow):
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
+        self.table.cellClicked.connect(self._on_cell_clicked)
         self.table.doubleClicked.connect(self._on_row_double_clicked)
-        self.table.setToolTip("Double-click a row to view historical NR/R data for that HCPCS code.")
+        self.table.setToolTip("Click HCPCS code to view history. Right-click for copy options.")
+        # Context menu
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._on_table_context_menu)
         root.addWidget(self.table, 1)
 
         # ---- Status bar ----
@@ -291,6 +311,30 @@ class MainWindow(QMainWindow):
         self.year_combo.blockSignals(False)
         self.state_combo.blockSignals(False)
 
+        self._update_year_view_label()
+
+    def _update_year_view_label(self):
+        """Update the year view label to show the effective year being displayed."""
+        if not hasattr(self, "year_view_label"):
+            return
+        y = self.year_combo.currentData()
+        if y is not None:
+            self.year_view_label.setText(f"(Showing year: {y})")
+        else:
+            fallback = get_current_year_or_fallback()
+            current_year = date.today().year
+            if fallback is None:
+                self.year_view_label.setText("(No data — sync from CMS)")
+                self.year_view_label.setStyleSheet("color: #CC3300; font-style: italic; font-size: 11px;")
+            elif fallback == current_year:
+                self.year_view_label.setText(f"(Showing current year: {current_year})")
+                self.year_view_label.setStyleSheet("color: #555555; font-style: italic; font-size: 11px;")
+            else:
+                self.year_view_label.setText(
+                    f"(Latest available: {fallback} — no data for {current_year})"
+                )
+                self.year_view_label.setStyleSheet("color: #AA5500; font-style: italic; font-size: 11px;")
+
     def _effective_year(self):
         """Return the year that should drive rural ZIP determination.
 
@@ -312,28 +356,34 @@ class MainWindow(QMainWindow):
             return False
         return is_rural_zip(eff_year, zip5)
 
+    def _on_year_changed(self):
+        """Re-evaluate rural label when year changes (rural ZIP sets are year-scoped)."""
+        self._update_year_view_label()
+        self._save_filter_preferences()
+        self._on_zip_changed(self.zip_edit.text())
+
     def _on_zip_changed(self, text):
         """Update rural label and refresh display when ZIP input changes."""
         zip5 = text.strip()
         if not zip5:
-            self.rural_label.setText("")
+            self.rural_label.setText("No ZIP (default NR)")
+            self.rural_label.setStyleSheet("color: #666666; font-size: 11px;")
+            self._save_filter_preferences()
             self._apply_filters()
             return
         if len(zip5) == 5 and zip5.isdigit():
             rural = self._is_rural()
             if rural:
-                self.rural_label.setText("🏘 Rural (R)")
-                self.rural_label.setStyleSheet("color: #006600; font-weight: bold;")
+                self.rural_label.setText(f"ZIP {zip5} → Rural (R)")
+                self.rural_label.setStyleSheet("color: #006600; font-weight: bold; font-size: 11px;")
             else:
-                self.rural_label.setText("🏙 Non-Rural (NR)")
-                self.rural_label.setStyleSheet("color: #003366; font-weight: bold;")
+                self.rural_label.setText(f"ZIP {zip5} → Non-Rural (NR)")
+                self.rural_label.setStyleSheet("color: #003366; font-weight: bold; font-size: 11px;")
+            self._save_filter_preferences()
             self._apply_filters()
         else:
             self.rural_label.setText("")
-
-    def _on_year_changed(self):
-        """Re-evaluate rural label when year changes (rural ZIP sets are year-scoped)."""
-        self._on_zip_changed(self.zip_edit.text())
+            self.rural_label.setStyleSheet("color: #666666; font-size: 11px;")
 
     def _query_year(self):
         """Return the year to pass to get_fees().
@@ -345,6 +395,10 @@ class MainWindow(QMainWindow):
             return y
         # "All Years" → show current year only (or fallback)
         return get_current_year_or_fallback()
+
+    def _on_search_text_changed(self):
+        """Restart the debounce timer when HCPCS or Keyword text changes."""
+        self._search_timer.start()
 
     def _apply_filters(self):
         year = self._query_year()
@@ -360,6 +414,7 @@ class MainWindow(QMainWindow):
         )
         self._populate_table(self._records)
         self._set_status(f"{len(self._records):,} records found.")
+        self._save_filter_preferences()
 
     def _clear_filters(self):
         self.year_combo.setCurrentIndex(0)
@@ -369,10 +424,59 @@ class MainWindow(QMainWindow):
         self.zip_edit.clear()
         self._apply_filters()
 
+    # ------------------------------------------------- Filter persistence ---
+
+    def _save_filter_preferences(self):
+        """Persist current filter values to user preferences."""
+        try:
+            set_preference("filter_year", str(self.year_combo.currentData() or ""))
+            set_preference("filter_state", str(self.state_combo.currentData() or ""))
+            set_preference("filter_zip", self.zip_edit.text().strip())
+            set_preference("filter_hcpcs", self.code_edit.text().strip())
+            set_preference("filter_keyword", self.keyword_edit.text().strip())
+        except Exception:
+            pass  # Persistence is best-effort; don't crash the UI
+
+    def _restore_filter_preferences(self):
+        """Restore previously saved filter values from user preferences."""
+        try:
+            saved_year = get_preference("filter_year", "")
+            if saved_year:
+                try:
+                    y = int(saved_year)
+                    idx = self.year_combo.findData(y)
+                    if idx >= 0:
+                        self.year_combo.setCurrentIndex(idx)
+                except ValueError:
+                    pass
+
+            saved_state = get_preference("filter_state", "")
+            if saved_state:
+                idx = self.state_combo.findData(saved_state)
+                if idx >= 0:
+                    self.state_combo.setCurrentIndex(idx)
+
+            saved_zip = get_preference("filter_zip", "")
+            if saved_zip:
+                self.zip_edit.setText(saved_zip)
+
+            saved_hcpcs = get_preference("filter_hcpcs", "")
+            if saved_hcpcs:
+                self.code_edit.setText(saved_hcpcs)
+
+            saved_keyword = get_preference("filter_keyword", "")
+            if saved_keyword:
+                self.keyword_edit.setText(saved_keyword)
+        except Exception:
+            pass  # Preference restore is best-effort
+
     def _populate_table(self, records):
         is_rural = self._is_rural()
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(records))
+        link_color = QColor("#0066CC")
+        link_font = QFont()
+        link_font.setUnderline(True)
         for row_i, r in enumerate(records):
             # Compute chosen allowable based on rural flag
             if is_rural:
@@ -385,24 +489,36 @@ class MainWindow(QMainWindow):
                 r.get("description", ""),
                 r.get("state_abbr", ""),
                 str(r.get("year", "")),
-                "#N/A" if chosen is None else f"{chosen:,.2f}",
+                "—" if chosen is None else f"{chosen:,.2f}",
                 r.get("modifier", "") or "",
                 r.get("data_source", "") or "",
             ]
             for col_i, v in enumerate(values):
                 item = QTableWidgetItem(str(v))
                 if col_i == 0:
-                    # Store the record index so double-click works even after sorting
+                    # Style as hyperlink; store original record index for click handling
+                    item.setForeground(link_color)
+                    item.setFont(link_font)
+                    item.setToolTip("Click to view history for this HCPCS code")
                     item.setData(Qt.ItemDataRole.UserRole, row_i)
                 if col_i == 4 and chosen is None:
-                    item.setForeground(Qt.GlobalColor.darkRed)
+                    item.setForeground(Qt.GlobalColor.darkGray)
                 self.table.setItem(row_i, col_i, item)
         self.table.setSortingEnabled(True)
+
+    def _on_cell_clicked(self, row, col):
+        """Open history dialog when the HCPCS code cell (column 0) is clicked."""
+        if col == 0:
+            self._open_history_for_row(row)
 
     def _on_row_double_clicked(self, index):
         """Open historical detail dialog for the double-clicked HCPCS row."""
         row = index.row()
-        # Read the original record index from UserRole (survives table sorting)
+        if index.column() != 0:
+            self._open_history_for_row(row)
+
+    def _open_history_for_row(self, row):
+        """Open the history dialog for the given table row."""
         first_item = self.table.item(row, 0)
         if first_item is None:
             return
@@ -412,6 +528,39 @@ class MainWindow(QMainWindow):
         record = self._records[rec_idx]
         dlg = _HcpcsHistoryDialog(record, self)
         dlg.exec()
+
+    # ---------------------------------------------------- Context menu ------
+
+    def _on_table_context_menu(self, pos):
+        """Show right-click context menu on main grid with copy actions."""
+        row = self.table.rowAt(pos.y())
+        if row < 0:
+            return
+        first_item = self.table.item(row, 0)
+        if first_item is None:
+            return
+
+        menu = QMenu(self)
+
+        def copy_text(col):
+            item = self.table.item(row, col)
+            if item:
+                QApplication.clipboard().setText(item.text())
+
+        def copy_row_csv():
+            vals = []
+            for c in range(self.table.columnCount()):
+                item = self.table.item(row, c)
+                v = item.text() if item else ""
+                vals.append(f'"{v}"')
+            QApplication.clipboard().setText(",".join(vals))
+
+        menu.addAction("Copy HCPCS", lambda: copy_text(0))
+        menu.addAction("Copy Description", lambda: copy_text(1))
+        menu.addAction("Copy Effective Allowable", lambda: copy_text(4))
+        menu.addSeparator()
+        menu.addAction("Copy Row as CSV", copy_row_csv)
+        menu.exec(self.table.viewport().mapToGlobal(pos))
 
     def _import_csv(self):
         dlg = ImportDialog(self)
@@ -586,55 +735,252 @@ class _SyncYearsDialog(QDialog):
 
 
 class _HcpcsHistoryDialog(QDialog):
-    """Shows historical NR/R values for a specific HCPCS code across all years."""
+    """Modernized history dialog showing NR/R/Effective across years for a HCPCS code.
+
+    Features:
+    - Summary card header (HCPCS, State, Description, ZIP / rural status)
+    - Primary state table: Year, NR ($), R ($), Effective ($), Modifier, Source
+    - Optional comparison state table (no Effective column; ZIP not applicable cross-state)
+    """
 
     def __init__(self, record, parent=None):
         super().__init__(parent)
         hcpcs = record.get("hcpcs_code", "")
         state = record.get("state_abbr", "")
         modifier = record.get("modifier") or ""
-        self.setWindowTitle(f"History: {hcpcs} — {state}")
-        self.setMinimumSize(700, 400)
-        layout = QVBoxLayout(self)
-
         desc = record.get("description", "")
-        header = QLabel(
-            f"<b>HCPCS:</b> {hcpcs}  <b>State:</b> {state}"
-            + (f"  <b>Modifier:</b> {modifier}" if modifier else "")
-            + (f"<br><small>{desc}</small>" if desc else "")
-        )
-        header.setWordWrap(True)
-        layout.addWidget(header)
 
-        # Fetch historical records for this HCPCS/state across all years
-        from core.database import get_fees
+        # Grab ZIP from parent MainWindow (if available) for Effective computation
+        self._zip5 = ""
+        if hasattr(parent, "zip_edit"):
+            self._zip5 = parent.zip_edit.text().strip()
+
+        self.setWindowTitle(f"History: {hcpcs} — {state}")
+        self.setMinimumSize(860, 520)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(8)
+
+        # ---- Summary card ----
+        card = QFrame()
+        card.setFrameShape(QFrame.Shape.StyledPanel)
+        card.setStyleSheet(
+            "QFrame { background: #eef2f7; border: 1px solid #c0c8d8; border-radius: 6px; }"
+        )
+        card_layout = QGridLayout(card)
+        card_layout.setContentsMargins(12, 8, 12, 8)
+        card_layout.setHorizontalSpacing(16)
+
+        def _bold(text):
+            lbl = QLabel(f"<b>{text}</b>")
+            return lbl
+
+        def _val(text):
+            lbl = QLabel(str(text) if text else "—")
+            lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            return lbl
+
+        card_layout.addWidget(_bold("HCPCS:"), 0, 0)
+        card_layout.addWidget(_val(hcpcs), 0, 1)
+        card_layout.addWidget(_bold("State:"), 0, 2)
+        card_layout.addWidget(_val(state), 0, 3)
+        if modifier:
+            card_layout.addWidget(_bold("Modifier:"), 0, 4)
+            card_layout.addWidget(_val(modifier), 0, 5)
+
+        desc_label = QLabel(str(desc) if desc else "—")
+        desc_label.setWordWrap(True)
+        desc_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        card_layout.addWidget(_bold("Description:"), 1, 0)
+        card_layout.addWidget(desc_label, 1, 1, 1, 5)
+
+        # ZIP / rural status
+        zip_text = self._zip5 if self._zip5 else "—"
+        card_layout.addWidget(_bold("ZIP:"), 2, 0)
+        card_layout.addWidget(_val(zip_text), 2, 1)
+
+        if self._zip5 and len(self._zip5) == 5 and self._zip5.isdigit():
+            # Show rural status for the most recent year with data (best proxy)
+            from core.database import get_available_years
+            avail = get_available_years()
+            rural_note = "—"
+            if avail:
+                rural = is_rural_zip(avail[0], self._zip5)
+                rural_note = f"{'Rural (R)' if rural else 'Non-Rural (NR)'} (as of {avail[0]})"
+            card_layout.addWidget(_bold("Rural Status:"), 2, 2)
+            card_layout.addWidget(_val(rural_note), 2, 3, 1, 3)
+        else:
+            card_layout.addWidget(_bold("Rural Status:"), 2, 2)
+            card_layout.addWidget(_val("No ZIP — defaulting to NR"), 2, 3, 1, 3)
+
+        layout.addWidget(card)
+
+        # ---- Fetch all historical records for this HCPCS/state ----
         hist = get_fees(state_abbr=state, hcpcs_code=hcpcs)
         if modifier:
             hist = [r for r in hist if (r.get("modifier") or "") == modifier]
-        # Sort by year desc
         hist.sort(key=lambda r: r.get("year", 0), reverse=True)
 
-        table = QTableWidget(len(hist), 5)
-        table.setHorizontalHeaderLabels(["Year", "NR ($)", "R ($)", "Modifier", "Source"])
-        table.horizontalHeader().setDefaultSectionSize(100)
-        table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        table.setAlternatingRowColors(True)
+        # ---- Primary state section label ----
+        prim_label = QLabel(f"<b>State: {state}</b>")
+        prim_label.setStyleSheet("font-size: 13px; margin-top: 4px;")
+        layout.addWidget(prim_label)
 
-        for i, r in enumerate(hist):
-            nr = r.get("allowable_nr") or r.get("allowable")
-            rv = r.get("allowable_r")
-            table.setItem(i, 0, QTableWidgetItem(str(r.get("year", ""))))
-            table.setItem(i, 1, QTableWidgetItem("#N/A" if nr is None else f"{nr:,.2f}"))
-            table.setItem(i, 2, QTableWidgetItem("#N/A" if rv is None else f"{rv:,.2f}"))
-            table.setItem(i, 3, QTableWidgetItem(r.get("modifier") or ""))
-            table.setItem(i, 4, QTableWidgetItem(r.get("data_source") or ""))
+        # ---- Primary table ----
+        primary_table = self._build_primary_table(hist)
+        layout.addWidget(primary_table)
 
-        layout.addWidget(table)
+        # ---- Comparison state section ----
+        comp_row = QHBoxLayout()
+        comp_row.addWidget(QLabel("Compare to state:"))
+        self._comp_combo = QComboBox()
+        self._comp_combo.setMinimumWidth(160)
+        self._comp_combo.addItem("— None —", None)
+        # Populate with all available states that have data for this HCPCS
+        from core.database import get_selected_states
+        for abbr, sname in get_selected_states():
+            if abbr != state:
+                self._comp_combo.addItem(f"{sname} ({abbr})", abbr)
+        comp_row.addWidget(self._comp_combo)
+        comp_row.addWidget(
+            QLabel("<small><i>Effective ($) not shown for comparison state "
+                   "(ZIP rural applies to primary state only)</i></small>")
+        )
+        comp_row.addStretch()
+        layout.addLayout(comp_row)
 
+        # Container for the comparison section (label + table)
+        self._comp_container = QWidget()
+        self._comp_layout = QVBoxLayout(self._comp_container)
+        self._comp_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._comp_container)
+
+        self._hcpcs = hcpcs
+        self._modifier = modifier
+        self._comp_combo.currentIndexChanged.connect(self._update_comparison)
+
+        # ---- Close button ----
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
+
+    # ---- Helpers ----
+
+    @staticmethod
+    def _fmt(val):
+        """Format a dollar amount or return '—' if None."""
+        if val is None:
+            return "—"
+        try:
+            return f"{float(val):,.2f}"
+        except (TypeError, ValueError):
+            return "—"
+
+    def _build_primary_table(self, hist):
+        """Build the primary state table with Year, NR, R, Effective, Modifier, Source."""
+        columns = ["Year", "NR ($)", "R ($)", "Effective ($)", "Modifier", "Source"]
+        table = QTableWidget(len(hist), len(columns))
+        table.setHorizontalHeaderLabels(columns)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setAlternatingRowColors(True)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.horizontalHeader().setDefaultSectionSize(110)
+        table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        table.setSortingEnabled(False)
+
+        right_align = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+
+        for i, r in enumerate(hist):
+            year = r.get("year", 0)
+            nr = r.get("allowable_nr") or r.get("allowable")
+            rv = r.get("allowable_r")
+            # Effective: prefer R if rural for that year, else NR; fallback NR
+            rural = (
+                is_rural_zip(year, self._zip5)
+                if self._zip5 and len(self._zip5) == 5 and self._zip5.isdigit()
+                else False
+            )
+            if rural and rv is not None:
+                effective = rv
+            else:
+                effective = nr
+
+            row_data = [
+                (str(year), Qt.AlignmentFlag.AlignCenter),
+                (self._fmt(nr), right_align),
+                (self._fmt(rv), right_align),
+                (self._fmt(effective), right_align),
+                (r.get("modifier") or "—", Qt.AlignmentFlag.AlignCenter),
+                (r.get("data_source") or "—", Qt.AlignmentFlag.AlignLeft),
+            ]
+            for col_i, (val, align) in enumerate(row_data):
+                item = QTableWidgetItem(val)
+                item.setTextAlignment(align)
+                table.setItem(i, col_i, item)
+
+        return table
+
+    def _build_comparison_table(self, hist_comp, comp_state):
+        """Build the comparison state table: Year, NR ($), R ($), Modifier, Source."""
+        columns = ["Year", "NR ($)", "R ($)", "Modifier", "Source"]
+        table = QTableWidget(len(hist_comp), len(columns))
+        table.setHorizontalHeaderLabels(columns)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setAlternatingRowColors(True)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.horizontalHeader().setDefaultSectionSize(110)
+        table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        table.setSortingEnabled(False)
+
+        right_align = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+
+        for i, r in enumerate(hist_comp):
+            year = r.get("year", 0)
+            nr = r.get("allowable_nr") or r.get("allowable")
+            rv = r.get("allowable_r")
+            row_data = [
+                (str(year), Qt.AlignmentFlag.AlignCenter),
+                (self._fmt(nr), right_align),
+                (self._fmt(rv), right_align),
+                (r.get("modifier") or "—", Qt.AlignmentFlag.AlignCenter),
+                (r.get("data_source") or "—", Qt.AlignmentFlag.AlignLeft),
+            ]
+            for col_i, (val, align) in enumerate(row_data):
+                item = QTableWidgetItem(val)
+                item.setTextAlignment(align)
+                table.setItem(i, col_i, item)
+        return table
+
+    def _update_comparison(self):
+        """Rebuild the comparison section when the combo selection changes."""
+        # Clear previous comparison widgets
+        while self._comp_layout.count():
+            item = self._comp_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        comp_state = self._comp_combo.currentData()
+        if not comp_state:
+            return
+
+        hist_comp = get_fees(state_abbr=comp_state, hcpcs_code=self._hcpcs)
+        if self._modifier:
+            hist_comp = [r for r in hist_comp if (r.get("modifier") or "") == self._modifier]
+        hist_comp.sort(key=lambda r: r.get("year", 0), reverse=True)
+
+        section_label = QLabel(f"<b>Comparison — State: {comp_state}</b>")
+        section_label.setStyleSheet(
+            "font-size: 13px; color: #003366; border-top: 1px solid #c0c8d8; padding-top: 6px;"
+        )
+        self._comp_layout.addWidget(section_label)
+
+        if hist_comp:
+            table = self._build_comparison_table(hist_comp, comp_state)
+            self._comp_layout.addWidget(table)
+        else:
+            self._comp_layout.addWidget(
+                QLabel(f"<i>No data available for {comp_state}.</i>")
+            )
 
 
 class _ImportLogDialog(QDialog):
