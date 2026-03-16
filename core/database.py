@@ -123,6 +123,22 @@ def insert_fees(records, data_source="import"):
     conn.close()
 
 
+def delete_fees_by_year_state_source(state_abbr, year, data_source="cms_download"):
+    """Delete all fee records matching the given state, year, and data_source.
+
+    Used by the CMS sync to implement "replace" semantics: existing rows for a
+    (state, year, data_source) triplet are removed before new rows are inserted,
+    so repeated quarterly syncs update rather than duplicate data.
+    """
+    conn = _get_conn()
+    with conn:
+        conn.execute(
+            "DELETE FROM hcpcs_fees WHERE state_abbr = ? AND year = ? AND data_source = ?",
+            (state_abbr, year, data_source),
+        )
+    conn.close()
+
+
 def get_fees(state_abbr=None, year=None, hcpcs_code=None, keyword=None):
     """Query fee records with optional filters. Returns list of dicts."""
     query = "SELECT * FROM hcpcs_fees WHERE 1=1"

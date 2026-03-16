@@ -1,11 +1,13 @@
-"""Unit tests for the CMS DMEPOS ZIP file-selection logic.
+"""Unit tests for the CMS DMEPOS ZIP file-selection logic, replace guard,
+and available-year scraping helpers.
 
-Tests focus on ``_select_main_dmepos_filename`` and ``_extract_csv_from_zip``
-without any network access — all ZIPs are built in-memory.
+Tests run without any network access — all ZIPs are built in-memory and the
+database layer is fully mocked where needed.
 """
 
 import io
 import zipfile
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -13,6 +15,7 @@ from core.cms_downloader import (
     DownloadError,
     _extract_csv_from_zip,
     _select_main_dmepos_filename,
+    discover_available_cms_years,
 )
 
 
@@ -210,3 +213,122 @@ class TestExtractCsvFromZip:
         zip_bytes = _make_zip({"README.txt": b"nothing here"})
         with pytest.raises(DownloadError):
             _extract_csv_from_zip(zip_bytes)
+
+
+# ---------------------------------------------------------------------------
+# Replace guard — delete must NOT be called when parse yields 0 records
+# ---------------------------------------------------------------------------
+
+class TestReplaceGuard:
+    """Tests for the replace-with-guard behaviour in download_cms_fees."""
+
+    def _make_dmepos_zip(self, content=b"HCPCS_CD|FEE\nA1234|10.00\n"):
+        """Return a minimal in-memory ZIP with a DMEPOS main file."""
+        return _make_zip({"DMEPOS26_JAN.txt": content})
+
+    @patch("core.cms_downloader.delete_fees_by_year_state_source")
+    @patch("core.cms_downloader.insert_fees")
+    @patch("core.cms_downloader.add_import_log")
+    @patch("core.cms_downloader.parse_cms_csv")
+    @patch("core.cms_downloader._try_download_zip")
+    def test_delete_not_called_when_zero_records(
+        self, mock_download, mock_parse, mock_log, mock_insert, mock_delete
+    ):
+        """If parse returns 0 records, delete_fees must never be called."""
+        mock_download.return_value = self._make_dmepos_zip()
+        mock_parse.return_value = []  # 0 records
+
+        from core.cms_downloader import download_cms_fees
+
+        with pytest.raises(DownloadError, match="Parsed 0 records"):
+            download_cms_fees(2026, ["CA"])
+
+        mock_delete.assert_not_called()
+        mock_insert.assert_not_called()
+
+    @patch("core.cms_downloader.delete_fees_by_year_state_source")
+    @patch("core.cms_downloader.insert_fees")
+    @patch("core.cms_downloader.add_import_log")
+    @patch("core.cms_downloader.parse_cms_csv")
+    @patch("core.cms_downloader._try_download_zip")
+    def test_delete_called_before_insert_when_records_present(
+        self, mock_download, mock_parse, mock_log, mock_insert, mock_delete
+    ):
+        """If parse returns >0 records, delete then insert must be called in order."""
+        mock_download.return_value = self._make_dmepos_zip()
+        fake_records = [
+            {"hcpcs_code": "A1234", "description": "Test", "state_abbr": "CA",
+             "year": 2026, "allowable": 10.0, "modifier": None}
+        ]
+        mock_parse.return_value = fake_records
+
+        from core.cms_downloader import download_cms_fees
+
+        result = download_cms_fees(2026, ["CA"])
+
+        mock_delete.assert_called_once_with(
+            state_abbr="CA", year=2026, data_source="cms_download"
+        )
+        mock_insert.assert_called_once()
+        assert result == 1
+
+
+# ---------------------------------------------------------------------------
+# discover_available_cms_years — URL parsing (no network required)
+# ---------------------------------------------------------------------------
+
+class TestDiscoverAvailableCmsYears:
+    """Tests for year-discovery URL parsing in discover_available_cms_years."""
+
+    def _make_html_with_links(self, hrefs):
+        links = "".join(f'<a href="{h}">link</a>' for h in hrefs)
+        return f"<html><body>{links}</body></html>"
+
+    @patch("core.cms_downloader.get_preference", return_value=None)
+    @patch("core.cms_downloader.set_preference")
+    @patch("core.cms_downloader.requests.get")
+    def test_detects_year_from_quarterly_pattern(self, mock_get, mock_set, mock_pref):
+        """dme{yy}-[a-d].zip links correctly map to the 4-digit year."""
+        html = self._make_html_with_links([
+            "/files/zip/dme26-a.zip",
+            "/files/zip/dme25-d.zip",
+        ])
+        mock_get.return_value = MagicMock(status_code=200, text=html)
+
+        years = discover_available_cms_years()
+
+        assert 2026 in years
+        assert 2025 in years
+
+    @patch("core.cms_downloader.get_preference", return_value=None)
+    @patch("core.cms_downloader.set_preference")
+    @patch("core.cms_downloader.requests.get")
+    def test_detects_year_from_dmeposfs_pattern(self, mock_get, mock_set, mock_pref):
+        """DMEPOSFS{year}Q{n}.zip links are parsed correctly."""
+        html = self._make_html_with_links([
+            "/Downloads/DMEPOSFS2024Q1.zip",
+        ])
+        mock_get.return_value = MagicMock(status_code=200, text=html)
+
+        years = discover_available_cms_years()
+
+        assert 2024 in years
+
+    @patch("core.cms_downloader.get_preference", return_value=None)
+    @patch("core.cms_downloader.set_preference")
+    @patch("core.cms_downloader.requests.get")
+    def test_returns_empty_set_on_http_error(self, mock_get, mock_set, mock_pref):
+        """Returns empty set gracefully when CMS page returns non-200."""
+        mock_get.return_value = MagicMock(status_code=404, text="")
+
+        years = discover_available_cms_years()
+
+        assert years == set()
+
+    @patch("core.cms_downloader.get_preference", return_value=None)
+    @patch("core.cms_downloader.set_preference")
+    @patch("core.cms_downloader.requests.get", side_effect=Exception("network error"))
+    def test_returns_empty_set_on_exception(self, mock_get, mock_set, mock_pref):
+        """Returns empty set gracefully on any network/parsing exception."""
+        years = discover_available_cms_years()
+        assert years == set()
