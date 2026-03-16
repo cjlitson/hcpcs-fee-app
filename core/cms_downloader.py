@@ -11,6 +11,7 @@ CMS DMEPOS fee schedule data source:
 import html.parser
 import io
 import json
+import os
 import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -200,47 +201,114 @@ def _try_download_zip(year, progress_callback=None):
     )
 
 
-def _extract_csv_from_zip(zip_bytes):
-    """Extract the main data file from a CMS DMEPOS ZIP archive.
+# Keywords that identify documentation / non-data files to always skip.
+_SKIP_KEYWORDS = ("readme", "read_me", "read me", "layout", "record layout", "codebook")
 
-    CMS ZIPs may contain:
-    - .csv files (older format)
-    - .txt files (pipe-delimited, current format as of 2025)
-    - README / layout description .txt files (excluded)
+# Keywords that strongly indicate auxiliary (non-fee-schedule) datasets inside a
+# CMS DMEPOS ZIP.  Files whose lowercased name contains any of these are
+# deprioritised in the selection process.
+_AUXILIARY_KEYWORDS = ("rural", "zip code", "cba", "dmepen", "back", "fad", "former", "schedule file")
 
-    Returns (filename, file_bytes) for the largest data file found,
-    or raises DownloadError if no suitable file is found.
+
+def _select_main_dmepos_filename(all_names, zf):
+    """Choose the main DMEPOS fee-schedule file from *all_names* (a ZIP name list).
+
+    Selection priority:
+    1. Files whose basename starts with "dmepos" (case-insensitive) and ends
+       with .txt  — matches e.g. ``DMEPOS26_JAN.txt``.
+    2. Files whose basename starts with "dmepos" and ends with .csv
+       — matches e.g. ``DMEPOS26_JAN.csv``.
+    3. Files that contain "dmepos" (anywhere) and do *not* contain any auxiliary
+       keyword, ending in .txt then .csv.
+    4. Fallback: any non-skipped .txt or .csv, sorted largest-first (legacy
+       heuristic).
+
+    Returns the chosen filename string, or raises ``DownloadError`` when the
+    ZIP contains no usable data file.
     """
-    # Keywords that identify non-data files to skip
-    _SKIP_KEYWORDS = ("readme", "read_me", "read me", "layout", "record layout", "codebook")
+    def basename_lower(name):
+        return os.path.basename(name).lower()
 
+    def is_skipped(name):
+        return any(kw in name.lower() for kw in _SKIP_KEYWORDS)
+
+    # --- Tier 1 & 2: starts-with "dmepos", not skipped -------------------------
+    dmepos_prefix_txt = [
+        n for n in all_names
+        if basename_lower(n).startswith("dmepos")
+        and n.lower().endswith(".txt")
+        and not is_skipped(n)
+    ]
+    dmepos_prefix_csv = [
+        n for n in all_names
+        if basename_lower(n).startswith("dmepos")
+        and n.lower().endswith(".csv")
+        and not is_skipped(n)
+    ]
+
+    # Prefer .txt first (current CMS format), then .csv
+    for candidates in (dmepos_prefix_txt, dmepos_prefix_csv):
+        if len(candidates) == 1:
+            return candidates[0]
+        if len(candidates) > 1:
+            # Among multiple matches take the largest
+            candidates.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
+            return candidates[0]
+
+    # --- Tier 3: contains "dmepos", no auxiliary keyword, not skipped ----------
+    dmepos_any_txt = [
+        n for n in all_names
+        if "dmepos" in n.lower()
+        and n.lower().endswith(".txt")
+        and not is_skipped(n)
+        and not any(kw in n.lower() for kw in _AUXILIARY_KEYWORDS)
+    ]
+    dmepos_any_csv = [
+        n for n in all_names
+        if "dmepos" in n.lower()
+        and n.lower().endswith(".csv")
+        and not is_skipped(n)
+        and not any(kw in n.lower() for kw in _AUXILIARY_KEYWORDS)
+    ]
+
+    for candidates in (dmepos_any_txt, dmepos_any_csv):
+        if candidates:
+            candidates.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
+            return candidates[0]
+
+    # --- Tier 4: fallback — any non-skipped data file, largest first -----------
+    fallback = [
+        n for n in all_names
+        if (n.lower().endswith(".csv") or n.lower().endswith(".txt"))
+        and not is_skipped(n)
+    ]
+    if not fallback:
+        raise DownloadError(
+            "No CSV or data file found inside the downloaded ZIP archive.\n"
+            f"ZIP contents: {', '.join(all_names) or '(empty)'}"
+        )
+
+    fallback.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
+    return fallback[0]
+
+
+def _extract_csv_from_zip(zip_bytes, progress_callback=None):
+    """Extract the main DMEPOS fee-schedule file from a CMS ZIP archive.
+
+    CMS ZIPs may contain multiple datasets (main fee schedule, PEN schedule,
+    Rural ZIP code mapping, Former CBA files, etc.).  This function selects
+    the *main* DMEPOS fee-schedule file by name pattern rather than by size.
+
+    See ``_select_main_dmepos_filename`` for the selection priority.
+
+    Returns ``(filename, file_bytes)`` for the selected file, or raises
+    ``DownloadError`` if no suitable file is found.
+    """
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
         all_names = zf.namelist()
-
-        # First try: look for CSV files
-        data_names = [
-            n for n in all_names
-            if n.lower().endswith(".csv")
-            and not any(kw in n.lower() for kw in _SKIP_KEYWORDS)
-        ]
-
-        # Second try: pipe-delimited TXT files (CMS 2025 format)
-        if not data_names:
-            data_names = [
-                n for n in all_names
-                if n.lower().endswith(".txt")
-                and not any(kw in n.lower() for kw in _SKIP_KEYWORDS)
-            ]
-
-        if not data_names:
-            raise DownloadError(
-                "No CSV or data file found inside the downloaded ZIP archive.\n"
-                f"ZIP contents: {', '.join(all_names) or '(empty)'}"
-            )
-
-        # Prefer the largest file — most likely the main fee schedule data
-        data_names.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
-        name = data_names[0]
+        name = _select_main_dmepos_filename(all_names, zf)
+        if progress_callback:
+            progress_callback(f"Selected file from archive: {name}")
         return name, zf.read(name)
 
 
@@ -263,7 +331,7 @@ def download_cms_fees(year, selected_states, progress_callback=None):
     if progress_callback:
         progress_callback("Extracting archive…")
 
-    data_name, data_bytes = _extract_csv_from_zip(zip_bytes)
+    data_name, data_bytes = _extract_csv_from_zip(zip_bytes, progress_callback=progress_callback)
 
     # Write to a temp file so parse_cms_csv can read it
     tmp_dir = _get_app_dir() / "data"

@@ -71,7 +71,14 @@ When syncing from CMS, the downloader uses a multi-step strategy:
 1. Check a 24-hour local cache for previously discovered download URLs.
 2. Scrape the [CMS DMEPOS page](https://www.cms.gov/medicare/payment/fee-schedules/dmepos) for current ZIP links.
 3. Fall back to hardcoded quarterly URL templates (e.g. `dme26-a.zip` through `dme26-d.zip`).
-4. Extract the largest data file from the downloaded ZIP (supports both `.csv` and pipe-delimited `.txt`).
+4. Select the main DMEPOS fee-schedule file from the ZIP by **name pattern** (not by file size):
+   - **Tier 1** — files whose name starts with `DMEPOS` and ends with `.txt` (e.g. `DMEPOS26_JAN.txt`).
+   - **Tier 2** — files whose name starts with `DMEPOS` and ends with `.csv` (e.g. `DMEPOS26_JAN.csv`).
+   - **Tier 3** — files containing `dmepos` that do not match auxiliary-dataset keywords (`rural`, `zip code`, `cba`, `pen`, `back`, `fad`, `former`, `schedule file`).
+   - **Tier 4** — fallback to the largest remaining non-documentation file (legacy heuristic).
+   - Files matching documentation keywords (`readme`, `layout`, `codebook`, etc.) are always excluded.
+
+   The UI status bar shows which internal file was selected from the archive.
 
 If all download attempts fail, a clear error message is shown with a link to manually download the file from CMS.
 
