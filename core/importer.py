@@ -161,8 +161,18 @@ def parse_dmepos_tilde_txt(path, state_abbr=None, year=None):
 # ---------------------------------------------------------------------------
 
 _HEADER_REQUIRED = {"hcpcs", "description"}
-# Column header pattern for state-specific NR/R columns: "AZ (NR)", "AZ (R)"
-_STATE_COL_RE = _re.compile(r"^([A-Z]{2})\s*\((NR|R)\)$", _re.IGNORECASE)
+# Column header pattern for state-specific NR/R columns.
+# Handles all observed CMS variants:
+#   "AZ (NR)" "AZ (R)"   — standard parentheses with space
+#   "AZ(NR)"  "AZ(R)"    — parentheses without space
+#   "AZ NR"   "AZ R"     — space-separated, no parens
+#   "AZ-NR"   "AZ-R"     — hyphen-separated
+# Brackets must be balanced: if an opening paren/bracket is present the
+# corresponding closing one is required; if absent, neither is required.
+_STATE_COL_RE = _re.compile(
+    r"^([A-Z]{2})\s*(?:\((?P<kind1>NR|R)\)|\[(?P<kind2>NR|R)\]|[-\s](?P<kind3>NR|R))$",
+    _re.IGNORECASE,
+)
 
 
 def _find_csv_header_line(fp):
@@ -232,7 +242,8 @@ def parse_dmepos_grid_csv(path, state_abbr=None, year=None):
                 m = _STATE_COL_RE.match(col_key.strip())
                 if m:
                     st = m.group(1).upper()
-                    kind = m.group(2).upper()
+                    # Extract whichever named group captured the NR/R indicator
+                    kind = (m.group("kind1") or m.group("kind2") or m.group("kind3") or "").upper()
                     amount = _parse_amount(val)
                     if kind == "NR":
                         nr_by_state[st] = amount
