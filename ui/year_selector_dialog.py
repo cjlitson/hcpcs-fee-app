@@ -1,23 +1,33 @@
+from datetime import date
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QCheckBox, QMessageBox, QFrame
 )
 from core.cms_downloader import SUPPORTED_YEARS, discover_available_cms_years
-from core.database import get_selected_years, save_selected_years
+from core.database import get_selected_years, save_selected_years, get_default_selected_years
+
+
+def _default_selected_years():
+    """Return the default set of years to select on first run (current + last 3)."""
+    return get_default_selected_years()
 
 
 class YearSelectorDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Manage Years")
-        self.setMinimumWidth(320)
+        self.setMinimumWidth(360)
         self._checkboxes = {}
         self._init_ui()
         self._load_current()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Select the years you want to track and sync data for:"))
+        layout.addWidget(QLabel(
+            "Select the years you want to track and sync data for.\n"
+            "Default shows current year + last 3; add more as needed."
+        ))
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
@@ -58,8 +68,8 @@ class YearSelectorDialog(QDialog):
 
     def _load_current(self):
         saved = get_selected_years()
-        # If nothing saved yet, check all enabled checkboxes by default
-        defaults = saved if saved else list(SUPPORTED_YEARS)
+        # If nothing saved yet, default to current year + last 3
+        defaults = saved if saved else _default_selected_years()
         for year, cb in self._checkboxes.items():
             if cb.isEnabled():
                 cb.setChecked(year in defaults)

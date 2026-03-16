@@ -5,7 +5,7 @@ and Supplies) fee schedule ZIP files for selected years, extracts the CSV data,
 and imports it into the local database.
 
 CMS DMEPOS fee schedule data source:
-  https://www.cms.gov/medicare/payment/fee-schedules/dmepos
+  https://www.cms.gov/medicare/payment/fee-schedules/dmepos/dmepos-fee-schedule
 """
 
 import html.parser
@@ -24,14 +24,18 @@ from core.database import (
     _get_app_dir,
     add_import_log,
     delete_fees_by_year_state_source,
+    delete_rural_zips_by_year,
     get_preference,
     insert_fees,
+    insert_rural_zips,
     set_preference,
 )
-from core.importer import parse_cms_csv
+from core.importer import parse_cms_csv, parse_rural_zip_file
 
-# CMS DMEPOS page used to scrape current download links
-CMS_DMEPOS_PAGE = "https://www.cms.gov/medicare/payment/fee-schedules/dmepos"
+# CMS DMEPOS *fee schedule* page — this is where quarterly fee schedule ZIPs are listed.
+# Using the dedicated fee schedule page avoids picking up jurisdiction-list ZIPs
+# that appear on the broader DMEPOS landing page.
+CMS_DMEPOS_PAGE = "https://www.cms.gov/medicare/payment/fee-schedules/dmepos/dmepos-fee-schedule"
 _URL_CACHE_KEY_PREFIX = "cms_url_cache_"
 _URL_CACHE_TTL_HOURS = 24
 _AVAILABLE_YEARS_CACHE_KEY = "cms_available_years_cache"
@@ -52,9 +56,14 @@ _CMS_URL_TEMPLATES = [
     "https://www.cms.gov/Medicare/Medicare-Fee-for-Service-Payment/DMEPOSFeeSched/Downloads/DMEPOSFS{year}Q1.zip",
 ]
 
+# Pattern for quarterly fee schedule ZIPs: dme{YY}-[a-d].zip (case-insensitive)
+_QUARTERLY_ZIP_RE = _re.compile(r"dme\d{2}-[a-d]\.zip$", _re.IGNORECASE)
+
 
 class _LinkExtractor(html.parser.HTMLParser):
-    """Extracts all href values from <a> tags that end with '.zip'."""
+    """Extracts href values from <a> tags that end with '.zip' and match
+    the quarterly fee schedule pattern (dmeYY-[a-d].zip).
+    """
 
     def __init__(self):
         super().__init__()
@@ -68,9 +77,13 @@ class _LinkExtractor(html.parser.HTMLParser):
 
 
 def _scrape_cms_urls(year):
-    """Scrape the CMS DMEPOS page for ZIP download links relevant to *year*.
+    """Scrape the CMS DMEPOS fee schedule page for quarterly ZIP links for *year*.
 
-    Returns a deduplicated list of absolute URLs, or an empty list on any error.
+    Only accepts links matching ``dmeYY-[a-d].zip`` (case-insensitive) to
+    avoid picking up jurisdiction-list or other auxiliary ZIPs.
+
+    Returns a deduplicated list of absolute URLs (most-recent quarter first),
+    or an empty list on any error.
     """
     year2d = str(year)[-2:]
     try:
@@ -82,16 +95,18 @@ def _scrape_cms_urls(year):
         seen = set()
         urls = []
         for href in extractor.links:
-            # Resolve relative URLs against the CMS base
             abs_url = urljoin("https://www.cms.gov", href)
-            lower = abs_url.lower()
-            # Keep links that match the quarterly pattern for this year (e.g. "dme25")
-            # OR contain "dmepos" with the 4-digit year — avoids false positives from
-            # unrelated numeric substrings (e.g. version numbers, other years).
-            if f"dme{year2d}" in lower or ("dmepos" in lower and str(year) in lower):
-                if abs_url not in seen:
-                    seen.add(abs_url)
-                    urls.append(abs_url)
+            filename = abs_url.split("/")[-1]
+            # Only accept quarterly fee schedule ZIPs for the requested year
+            if not _QUARTERLY_ZIP_RE.match(filename):
+                continue
+            if f"dme{year2d}-" not in filename.lower():
+                continue
+            if abs_url not in seen:
+                seen.add(abs_url)
+                urls.append(abs_url)
+        # Sort descending (D > C > B > A) so the latest quarter is tried first
+        urls.sort(key=lambda u: u.lower(), reverse=True)
         return urls
     except Exception:
         return []
@@ -275,24 +290,43 @@ def _try_download_zip(year, progress_callback=None):
 # Keywords that identify documentation / non-data files to always skip.
 _SKIP_KEYWORDS = ("readme", "read_me", "read me", "layout", "record layout", "codebook")
 
+# Additional exclusion keywords for the *main* fee schedule selection.
+# Files containing any of these words are considered auxiliary datasets.
+_MAIN_EXCLUSION_KEYWORDS = (
+    "jurisdiction", "list", "rural", "zip code", "cba", "dmepen",
+    "back", "fad", "former", "schedule file", "chng", "pen",
+)
+
 # Keywords that strongly indicate auxiliary (non-fee-schedule) datasets inside a
 # CMS DMEPOS ZIP.  Files whose lowercased name contains any of these are
 # deprioritised in the selection process.
-_AUXILIARY_KEYWORDS = ("rural", "zip code", "cba", "dmepen", "back", "fad", "former", "schedule file")
+_AUXILIARY_KEYWORDS = _MAIN_EXCLUSION_KEYWORDS
+
+# Pattern for the rural ZIP code mapping file inside a CMS ZIP
+_RURAL_ZIP_FILE_RE = _re.compile(r"dmerural", _re.IGNORECASE)
+
+
+def _select_rural_zip_filename(all_names):
+    """Return the name of the rural ZIP code mapping file from *all_names*, or None."""
+    for name in all_names:
+        basename = os.path.basename(name).lower()
+        if _RURAL_ZIP_FILE_RE.match(basename) and (
+            name.lower().endswith(".csv") or name.lower().endswith(".txt")
+        ):
+            return name
+    return None
 
 
 def _select_main_dmepos_filename(all_names, zf):
     """Choose the main DMEPOS fee-schedule file from *all_names* (a ZIP name list).
 
     Selection priority:
-    1. Files whose basename starts with "dmepos" (case-insensitive) and ends
-       with .txt  — matches e.g. ``DMEPOS26_JAN.txt``.
-    2. Files whose basename starts with "dmepos" and ends with .csv
-       — matches e.g. ``DMEPOS26_JAN.csv``.
-    3. Files that contain "dmepos" (anywhere) and do *not* contain any auxiliary
-       keyword, ending in .txt then .csv.
-    4. Fallback: any non-skipped .txt or .csv, sorted largest-first (legacy
-       heuristic).
+    1. Files whose basename starts with "dmepos" (case-insensitive), ends
+       with .txt, and does NOT contain any exclusion keyword.
+    2. Same but .csv.
+    3. Files that contain "dmepos" (anywhere), no auxiliary keyword, not skipped,
+       ending .txt then .csv.
+    4. Fallback: any non-skipped .txt or .csv, sorted largest-first.
 
     Returns the chosen filename string, or raises ``DownloadError`` when the
     ZIP contains no usable data file.
@@ -303,18 +337,23 @@ def _select_main_dmepos_filename(all_names, zf):
     def is_skipped(name):
         return any(kw in name.lower() for kw in _SKIP_KEYWORDS)
 
-    # --- Tier 1 & 2: starts-with "dmepos", not skipped -------------------------
+    def has_exclusion(name):
+        return any(kw in name.lower() for kw in _MAIN_EXCLUSION_KEYWORDS)
+
+    # --- Tier 1 & 2: starts-with "dmepos", not skipped, no exclusion keywords ----
     dmepos_prefix_txt = [
         n for n in all_names
         if basename_lower(n).startswith("dmepos")
         and n.lower().endswith(".txt")
         and not is_skipped(n)
+        and not has_exclusion(n)
     ]
     dmepos_prefix_csv = [
         n for n in all_names
         if basename_lower(n).startswith("dmepos")
         and n.lower().endswith(".csv")
         and not is_skipped(n)
+        and not has_exclusion(n)
     ]
 
     # Prefer .txt first (current CMS format), then .csv
@@ -364,27 +403,34 @@ def _select_main_dmepos_filename(all_names, zf):
 
 
 def _extract_csv_from_zip(zip_bytes, progress_callback=None):
-    """Extract the main DMEPOS fee-schedule file from a CMS ZIP archive.
+    """Extract the main DMEPOS fee-schedule file (and optionally the rural ZIP file)
+    from a CMS ZIP archive.
 
-    CMS ZIPs may contain multiple datasets (main fee schedule, PEN schedule,
-    Rural ZIP code mapping, Former CBA files, etc.).  This function selects
-    the *main* DMEPOS fee-schedule file by name pattern rather than by size.
-
-    See ``_select_main_dmepos_filename`` for the selection priority.
-
-    Returns ``(filename, file_bytes)`` for the selected file, or raises
-    ``DownloadError`` if no suitable file is found.
+    Returns ``(filename, file_bytes, rural_filename_or_None, rural_bytes_or_None)``.
+    Raises ``DownloadError`` if no suitable main data file is found.
     """
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
         all_names = zf.namelist()
         name = _select_main_dmepos_filename(all_names, zf)
         if progress_callback:
-            progress_callback(f"Selected file from archive: {name}")
-        return name, zf.read(name)
+            progress_callback(f"Selected ZIP entry: {name}")
+        main_bytes = zf.read(name)
+
+        # Also extract rural ZIP code mapping file if present
+        rural_name = _select_rural_zip_filename(all_names)
+        rural_bytes = None
+        if rural_name:
+            if progress_callback:
+                progress_callback(f"Found rural ZIP mapping file: {rural_name}")
+            rural_bytes = zf.read(rural_name)
+
+        return name, main_bytes, rural_name, rural_bytes
 
 
 def download_cms_fees(year, selected_states, progress_callback=None):
     """Download CMS DMEPOS fee schedule for *year* and import for *selected_states*.
+
+    Also extracts and stores the rural ZIP code mapping for the year when present.
 
     Args:
         year: Integer year (e.g. 2024).
@@ -402,13 +448,20 @@ def download_cms_fees(year, selected_states, progress_callback=None):
     if progress_callback:
         progress_callback("Extracting archive…")
 
-    data_name, data_bytes = _extract_csv_from_zip(zip_bytes, progress_callback=progress_callback)
+    data_name, data_bytes, rural_name, rural_bytes = _extract_csv_from_zip(
+        zip_bytes, progress_callback=progress_callback
+    )
 
-    # Write to a temp file so parse_cms_csv can read it
+    # Write to temp files
     tmp_dir = _get_app_dir() / "data"
     tmp_dir.mkdir(exist_ok=True)
     tmp_path = tmp_dir / f"_cms_tmp_{year}.txt"
     tmp_path.write_bytes(data_bytes)
+
+    tmp_rural_path = None
+    if rural_bytes:
+        tmp_rural_path = tmp_dir / f"_cms_rural_tmp_{year}.txt"
+        tmp_rural_path.write_bytes(rural_bytes)
 
     total = 0
     try:
@@ -422,6 +475,8 @@ def download_cms_fees(year, selected_states, progress_callback=None):
                     "Aborting update to avoid wiping existing data. "
                     "Please verify the downloaded file or use File → Import CSV."
                 )
+            if progress_callback:
+                progress_callback(f"Parsed {len(records)} records from {data_name}")
             # Replace: delete existing cms_download rows for this year/state, then insert
             delete_fees_by_year_state_source(
                 state_abbr=state_abbr, year=year, data_source="cms_download"
@@ -434,10 +489,32 @@ def download_cms_fees(year, selected_states, progress_callback=None):
                 states=state_abbr,
             )
             total += len(records)
+
+        # Import rural ZIP codes for the year (replace-semantics: delete then insert)
+        if tmp_rural_path:
+            if progress_callback:
+                progress_callback(f"Importing rural ZIP codes for {year}…")
+            try:
+                from core.importer import parse_rural_zip_file
+                rural_records = parse_rural_zip_file(str(tmp_rural_path), year=year)
+                if rural_records:
+                    delete_rural_zips_by_year(year)
+                    insert_rural_zips(rural_records)
+                    if progress_callback:
+                        progress_callback(
+                            f"Stored {len(rural_records):,} rural ZIP codes for {year}."
+                        )
+            except Exception as exc:
+                # Rural ZIP failure is non-fatal — log and continue
+                if progress_callback:
+                    progress_callback(f"Warning: rural ZIP import failed: {exc}")
+
     finally:
-        try:
-            tmp_path.unlink()
-        except OSError:
-            pass
+        for p in (tmp_path, tmp_rural_path):
+            if p:
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
 
     return total

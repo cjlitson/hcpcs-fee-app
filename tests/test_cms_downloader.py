@@ -189,7 +189,7 @@ class TestExtractCsvFromZip:
             "DMEPOS26_JAN.txt": content,
             "Rural ZIP Code File.txt": b"x" * len(content) * 2,
         })
-        name, data = _extract_csv_from_zip(zip_bytes)
+        name, data, _rural_name, _rural_bytes = _extract_csv_from_zip(zip_bytes)
         assert name == "DMEPOS26_JAN.txt"
         assert data == content
 
@@ -205,7 +205,7 @@ class TestExtractCsvFromZip:
     def test_no_progress_callback_does_not_raise(self):
         """Calling without progress_callback must not raise."""
         zip_bytes = _make_zip({"DMEPOS26_JAN.csv": b"col1,col2\n"})
-        name, _ = _extract_csv_from_zip(zip_bytes)
+        name, _, _rn, _rb = _extract_csv_from_zip(zip_bytes)
         assert name == "DMEPOS26_JAN.csv"
 
     def test_raises_download_error_on_no_data_file(self):
