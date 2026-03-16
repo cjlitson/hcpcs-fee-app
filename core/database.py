@@ -1,5 +1,6 @@
 import sys
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 
@@ -59,6 +60,8 @@ def init_db():
                 state_abbr    TEXT NOT NULL,
                 year          INTEGER NOT NULL,
                 allowable     REAL,
+                allowable_nr  REAL,
+                allowable_r   REAL,
                 modifier      TEXT,
                 data_source   TEXT,
                 imported_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -75,9 +78,32 @@ def init_db():
                 states        TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS rural_zips (
+                year       INTEGER NOT NULL,
+                zip5       TEXT NOT NULL,
+                state_abbr TEXT,
+                PRIMARY KEY (year, zip5)
+            )
+        """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hcpcs_code ON hcpcs_fees(hcpcs_code)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_year_state ON hcpcs_fees(year, state_abbr)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_rural_zips ON rural_zips(year, zip5)")
+
+        # Lightweight migration: add new columns to hcpcs_fees if they don't exist
+        _migrate_hcpcs_fees(conn)
     conn.close()
+
+
+def _migrate_hcpcs_fees(conn):
+    """Add allowable_nr and allowable_r columns if they don't already exist."""
+    existing = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(hcpcs_fees)").fetchall()
+    }
+    for col, coltype in (("allowable_nr", "REAL"), ("allowable_r", "REAL")):
+        if col not in existing:
+            conn.execute(f"ALTER TABLE hcpcs_fees ADD COLUMN {col} {coltype}")
 
 
 def get_selected_states():
@@ -105,6 +131,7 @@ def save_selected_states(states):
 def insert_fees(records, data_source="import"):
     """Bulk-insert fee records. Each record is a dict with keys:
     hcpcs_code, description, state_abbr, year, allowable, modifier.
+    Optional keys: allowable_nr, allowable_r.
     """
     if not records:
         return
@@ -114,11 +141,26 @@ def insert_fees(records, data_source="import"):
         conn.executemany(
             """
             INSERT INTO hcpcs_fees
-                (hcpcs_code, description, state_abbr, year, allowable, modifier, data_source)
+                (hcpcs_code, description, state_abbr, year, allowable,
+                 allowable_nr, allowable_r, modifier, data_source)
             VALUES
-                (:hcpcs_code, :description, :state_abbr, :year, :allowable, :modifier, :data_source)
+                (:hcpcs_code, :description, :state_abbr, :year, :allowable,
+                 :allowable_nr, :allowable_r, :modifier, :data_source)
             """,
-            rows,
+            [
+                {
+                    "hcpcs_code": r.get("hcpcs_code", ""),
+                    "description": r.get("description", ""),
+                    "state_abbr": r.get("state_abbr", ""),
+                    "year": r.get("year"),
+                    "allowable": r.get("allowable"),
+                    "allowable_nr": r.get("allowable_nr"),
+                    "allowable_r": r.get("allowable_r"),
+                    "modifier": r.get("modifier"),
+                    "data_source": r.get("data_source", data_source),
+                }
+                for r in rows
+            ],
         )
     conn.close()
 
@@ -225,3 +267,91 @@ def get_selected_years():
 def save_selected_years(years):
     """Persist selected years to user preferences."""
     set_preference("selected_years", ",".join(str(y) for y in sorted(years)))
+
+
+# ---------------------------------------------------------------------------
+# Rural ZIP helpers
+# ---------------------------------------------------------------------------
+
+def _normalize_zip5(zip5):
+    """Normalize a ZIP code string to a 5-character zero-padded string."""
+    return str(zip5).strip().zfill(5)
+
+
+def insert_rural_zips(records):
+    """Bulk-insert rural ZIP records.
+
+    Each record is a dict with keys: year (int), zip5 (str), state_abbr (str or None).
+    Uses INSERT OR REPLACE to handle duplicates.
+    """
+    if not records:
+        return
+    conn = _get_conn()
+    with conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO rural_zips (year, zip5, state_abbr) VALUES (:year, :zip5, :state_abbr)",
+            [
+                {
+                    "year": r["year"],
+                    "zip5": _normalize_zip5(r["zip5"]),
+                    "state_abbr": r.get("state_abbr"),
+                }
+                for r in records
+            ],
+        )
+    conn.close()
+
+
+def delete_rural_zips_by_year(year):
+    """Delete all rural ZIP records for the given year."""
+    conn = _get_conn()
+    with conn:
+        conn.execute("DELETE FROM rural_zips WHERE year = ?", (year,))
+    conn.close()
+
+
+def is_rural_zip(year, zip5):
+    """Return True if *zip5* is classified as rural for *year*, else False.
+
+    If *year* has no rural ZIP data stored, returns False (default NR).
+    """
+    z = _normalize_zip5(zip5)
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT 1 FROM rural_zips WHERE year = ? AND zip5 = ?", (year, z)
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+# ---------------------------------------------------------------------------
+# Year fallback helper
+# ---------------------------------------------------------------------------
+
+def get_current_year_or_fallback():
+    """Return the current calendar year if it has data in DB, else the most recent year with data.
+
+    Returns None if the database has no fee data at all.
+    """
+    current = date.today().year
+    available = get_available_years()  # sorted DESC
+    if not available:
+        return None
+    if current in available:
+        return current
+    return available[0]  # most recent year present
+
+
+def get_default_selected_years(supported_years=None):
+    """Return the default set of years to select on first run.
+
+    Current year + last 3 years, bounded by *supported_years*.
+    If *supported_years* is None, imports from cms_downloader at call time.
+    """
+    current = date.today().year
+    if supported_years is None:
+        from core.cms_downloader import SUPPORTED_YEARS
+        supported_years = SUPPORTED_YEARS
+    supported_set = set(supported_years)
+    candidates = [current - i for i in range(4)]  # current, -1, -2, -3
+    return sorted([y for y in candidates if y in supported_set], reverse=True)
