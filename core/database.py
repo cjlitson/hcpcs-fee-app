@@ -273,6 +273,11 @@ def save_selected_years(years):
 # Rural ZIP helpers
 # ---------------------------------------------------------------------------
 
+def _normalize_zip5(zip5):
+    """Normalize a ZIP code string to a 5-character zero-padded string."""
+    return str(zip5).strip().zfill(5)
+
+
 def insert_rural_zips(records):
     """Bulk-insert rural ZIP records.
 
@@ -288,7 +293,7 @@ def insert_rural_zips(records):
             [
                 {
                     "year": r["year"],
-                    "zip5": str(r["zip5"]).strip().zfill(5),
+                    "zip5": _normalize_zip5(r["zip5"]),
                     "state_abbr": r.get("state_abbr"),
                 }
                 for r in records
@@ -310,7 +315,7 @@ def is_rural_zip(year, zip5):
 
     If *year* has no rural ZIP data stored, returns False (default NR).
     """
-    z = str(zip5).strip().zfill(5)
+    z = _normalize_zip5(zip5)
     conn = _get_conn()
     row = conn.execute(
         "SELECT 1 FROM rural_zips WHERE year = ? AND zip5 = ?", (year, z)

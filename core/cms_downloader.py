@@ -303,7 +303,7 @@ _MAIN_EXCLUSION_KEYWORDS = (
 _AUXILIARY_KEYWORDS = _MAIN_EXCLUSION_KEYWORDS
 
 # Pattern for the rural ZIP code mapping file inside a CMS ZIP
-_RURAL_ZIP_FILE_RE = _re.compile(r"dmerural", _re.IGNORECASE)
+_RURAL_ZIP_FILE_RE = _re.compile(r"^dmerural", _re.IGNORECASE)
 
 
 def _select_rural_zip_filename(all_names):

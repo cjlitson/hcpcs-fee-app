@@ -555,8 +555,8 @@ class _SyncYearsDialog(QDialog):
 
         saved_years = get_selected_years()
         # If nothing saved, default to current + last 3
-        from ui.year_selector_dialog import _default_selected_years
-        defaults = saved_years if saved_years else _default_selected_years()
+        from core.database import get_default_selected_years
+        defaults = saved_years if saved_years else get_default_selected_years()
         for year, cb in self._checks.items():
             cb.setChecked(year in defaults)
 
