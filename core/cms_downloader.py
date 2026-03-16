@@ -495,7 +495,6 @@ def download_cms_fees(year, selected_states, progress_callback=None):
             if progress_callback:
                 progress_callback(f"Importing rural ZIP codes for {year}…")
             try:
-                from core.importer import parse_rural_zip_file
                 rural_records = parse_rural_zip_file(str(tmp_rural_path), year=year)
                 if rural_records:
                     delete_rural_zips_by_year(year)

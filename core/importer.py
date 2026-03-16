@@ -263,14 +263,14 @@ def parse_dmepos_grid_csv(path, state_abbr=None, year=None):
 # General-purpose CMS file parser (dispatches to tilde or CSV)
 # ---------------------------------------------------------------------------
 
-def parse_cms_csv(path, state_abbr, year):
+def parse_cms_csv(path, state_abbr=None, year=None):
     """Parse a CMS DMEPOS fee schedule file and return record dicts.
 
     Handles:
     - Tilde-delimited .txt (current CMS DMEPOS format, no header)
     - Comma/pipe-delimited .csv (grid format with preamble rows)
 
-    state_abbr and year are used as filter / default values.
+    state_abbr and year are optional filter / default values.
     """
     delimiter = _detect_delimiter(path)
 
@@ -497,14 +497,24 @@ def import_visn_csv(filepath, selected_states=None):
     return len(records)
 
 
-def import_cms_csv(filepath, state_abbr, year):
-    """Parse and import a CMS DMEPOS CSV file. Returns count of imported records."""
-    records = parse_cms_csv(filepath, state_abbr, year)
+def import_cms_csv(filepath, state_abbr=None, year=None):
+    """Parse and import a CMS DMEPOS CSV/TXT file. Returns count of imported records.
+
+    Uses replace semantics: existing ``cms_download`` rows for the same
+    (state_abbr, year) are deleted before new rows are inserted, so
+    re-importing the same file does not create duplicates.
+    """
+    from core.database import delete_fees_by_year_state_source
+    records = parse_cms_csv(filepath, state_abbr=state_abbr, year=year)
+    if records and state_abbr and year:
+        delete_fees_by_year_state_source(
+            state_abbr=state_abbr, year=year, data_source="cms_download"
+        )
     insert_fees(records, data_source="cms_download")
     add_import_log(
         file_name=os.path.basename(filepath),
         source="CMS Download",
         record_count=len(records),
-        states=state_abbr,
+        states=state_abbr or ",".join(sorted({r.get("state_abbr", "") for r in records})),
     )
     return len(records)

@@ -391,6 +391,9 @@ class MainWindow(QMainWindow):
             ]
             for col_i, v in enumerate(values):
                 item = QTableWidgetItem(str(v))
+                if col_i == 0:
+                    # Store the record index so double-click works even after sorting
+                    item.setData(Qt.ItemDataRole.UserRole, row_i)
                 if col_i == 4 and chosen is None:
                     item.setForeground(Qt.GlobalColor.darkRed)
                 self.table.setItem(row_i, col_i, item)
@@ -399,9 +402,14 @@ class MainWindow(QMainWindow):
     def _on_row_double_clicked(self, index):
         """Open historical detail dialog for the double-clicked HCPCS row."""
         row = index.row()
-        if row < 0 or row >= len(self._records):
+        # Read the original record index from UserRole (survives table sorting)
+        first_item = self.table.item(row, 0)
+        if first_item is None:
             return
-        record = self._records[row]
+        rec_idx = first_item.data(Qt.ItemDataRole.UserRole)
+        if rec_idx is None or rec_idx < 0 or rec_idx >= len(self._records):
+            return
+        record = self._records[rec_idx]
         dlg = _HcpcsHistoryDialog(record, self)
         dlg.exec()
 

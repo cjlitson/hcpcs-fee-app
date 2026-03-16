@@ -27,7 +27,8 @@ def _make_splash(app):
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("VA HCPCS Fee Schedule Manager")
-    app.setOrganizationName("VA")
+    app.setOrganizationName("WSNC IMPACT Team")
+    app.setOrganizationDomain("va.gov")
     app.setFont(QFont("Segoe UI", 10))
 
     splash = _make_splash(app)

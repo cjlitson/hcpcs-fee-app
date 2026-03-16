@@ -12,6 +12,7 @@ pyinstaller ^
   --onefile ^
   --windowed ^
   --name HCPCSFeeApp ^
+  --version-file version_info.txt ^
   --hidden-import PyQt6.QtPrintSupport ^
   --hidden-import reportlab.graphics ^
   --hidden-import pyodbc ^
