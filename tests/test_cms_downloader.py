@@ -19,6 +19,7 @@ from core.cms_downloader import (
     _record_successful_pattern,
     _scrape_rss_urls,
     _select_main_dmepos_filename,
+    _select_rural_zip_filename,
     discover_available_cms_years,
 )
 
