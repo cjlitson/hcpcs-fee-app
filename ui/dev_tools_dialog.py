@@ -118,6 +118,10 @@ class DevToolsDialog(QDialog):
         self._ss_database.setPlaceholderText("e.g. my_database")
         ss_layout.addRow("Database:", self._ss_database)
 
+        self._ss_schema = QLineEdit("dbo")
+        self._ss_schema.setPlaceholderText("e.g. dbo")
+        ss_layout.addRow("Schema:", self._ss_schema)
+
         self._ss_windows_auth = QCheckBox("Use Windows Authentication")
         self._ss_windows_auth.toggled.connect(self._on_windows_auth_toggled)
         ss_layout.addRow("", self._ss_windows_auth)
@@ -409,7 +413,7 @@ class DevToolsDialog(QDialog):
 
     def _get_current_schema(self):
         if self._db_type == "sqlserver":
-            return "dbo"
+            return self._ss_schema.text().strip() or "dbo"
         else:
             return self._db_schema.text().strip() or "default"
 
@@ -488,6 +492,7 @@ class DevToolsDialog(QDialog):
         # SQL Server
         self._ss_server.setText(get_preference("sql_server", ""))
         self._ss_database.setText(get_preference("sql_database", ""))
+        self._ss_schema.setText(get_preference("sql_ss_schema", "dbo"))
         self._ss_username.setText(get_preference("sql_username", ""))
         self._ss_windows_auth.setChecked(get_preference("sql_windows_auth", "0") == "1")
 
@@ -504,6 +509,7 @@ class DevToolsDialog(QDialog):
         set_preference("sql_db_type", self._db_type_combo.currentData())
         set_preference("sql_server", self._ss_server.text().strip())
         set_preference("sql_database", self._ss_database.text().strip())
+        set_preference("sql_ss_schema", self._ss_schema.text().strip())
         set_preference("sql_username", self._ss_username.text().strip())
         set_preference("sql_windows_auth", "1" if self._ss_windows_auth.isChecked() else "0")
         set_preference("sql_databricks_host", self._db_host.text().strip())

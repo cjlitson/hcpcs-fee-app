@@ -14,11 +14,28 @@ def _get_app_dir() -> Path:
         return Path(__file__).parent.parent
 
 
-DB_PATH = _get_app_dir() / "data" / "hcpcs_fees.db"
+def _get_db_path() -> Path:
+    """Return the path to the SQLite database file.
+
+    Checks ``core.config`` for a user-configured data directory first;
+    falls back to ``{app_dir}/data/hcpcs_fees.db`` when no custom path is set.
+    The config import is done lazily so that ``database.py`` can still be
+    imported in environments where ``core.config`` might not yet exist.
+    """
+    try:
+        from core.config import get_data_dir
+        return get_data_dir() / "hcpcs_fees.db"
+    except Exception:
+        return _get_app_dir() / "data" / "hcpcs_fees.db"
+
+
+# DB_PATH is set at import time from the config (or default location).
+# Tests may monkeypatch this module-level name to redirect to a temp DB.
+DB_PATH = _get_db_path()
 
 
 def _get_conn():
-    DB_PATH.parent.mkdir(exist_ok=True)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     return conn
@@ -181,7 +198,7 @@ def delete_fees_by_year_state_source(state_abbr, year, data_source="cms_download
     conn.close()
 
 
-def get_fees(state_abbr=None, year=None, hcpcs_code=None, keyword=None):
+def get_fees(state_abbr=None, year=None, hcpcs_code=None, keyword=None, hcpcs_group=None):
     """Query fee records with optional filters. Returns list of dicts."""
     query = "SELECT * FROM hcpcs_fees WHERE 1=1"
     params = []
@@ -191,6 +208,9 @@ def get_fees(state_abbr=None, year=None, hcpcs_code=None, keyword=None):
     if year:
         query += " AND year = ?"
         params.append(year)
+    if hcpcs_group:
+        query += " AND hcpcs_code LIKE ?"
+        params.append(f"{hcpcs_group.upper()}%")
     if hcpcs_code:
         query += " AND hcpcs_code LIKE ?"
         params.append(f"%{hcpcs_code.upper()}%")

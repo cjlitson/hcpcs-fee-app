@@ -20,33 +20,43 @@ def _chosen_allowable(record, is_rural=False):
     return record.get("allowable")
 
 
-def export_to_csv(records, filepath, is_rural=False):
+def export_to_csv(records, filepath, is_rural=False, zip_code=""):
     if not records:
         return
     fieldnames = [
         "hcpcs_code", "description", "state_abbr", "year",
         "allowable_nr", "allowable_r", "allowable", "modifier", "data_source",
+        "zip_code", "rural_status",
     ]
+    rural_status = ""
+    if zip_code:
+        rural_status = "Rural (R)" if is_rural else "Non-Rural (NR)"
     with open(filepath, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         for r in records:
             row = {k: r.get(k, "") for k in fieldnames}
             chosen = _chosen_allowable(r, is_rural=is_rural)
-            row["allowable"] = "#N/A" if chosen is None else chosen
+            row["allowable"] = "" if chosen is None else chosen
             if row["allowable_nr"] is None:
-                row["allowable_nr"] = "#N/A"
+                row["allowable_nr"] = ""
             if row["allowable_r"] is None:
-                row["allowable_r"] = "#N/A"
+                row["allowable_r"] = ""
+            row["zip_code"] = zip_code
+            row["rural_status"] = rural_status
             writer.writerow(row)
 
 
-def export_to_excel(records, filepath, is_rural=False):
+def export_to_excel(records, filepath, is_rural=False, zip_code=""):
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill, Alignment
     except ImportError:
         raise ImportError("openpyxl is required for Excel export. Run: pip install openpyxl")
+
+    rural_status = ""
+    if zip_code:
+        rural_status = "Rural (R)" if is_rural else "Non-Rural (NR)"
 
     wb = Workbook()
     ws = wb.active
@@ -56,6 +66,7 @@ def export_to_excel(records, filepath, is_rural=False):
     headers = [
         "HCPCS Code", "Description", "State", "Year",
         "Allowable (NR)", "Allowable (R)", "Allowable ($)", "Modifier", "Source",
+        "ZIP Code", "Rural Status",
     ]
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="003366")
@@ -78,11 +89,13 @@ def export_to_excel(records, filepath, is_rural=False):
             r.get("description", ""),
             r.get("state_abbr", ""),
             r.get("year", ""),
-            "#N/A" if nr is None else nr,
-            "#N/A" if rv is None else rv,
-            "#N/A" if is_na else chosen,
+            "" if nr is None else nr,
+            "" if rv is None else rv,
+            "" if is_na else chosen,
             r.get("modifier", "") or "",
             r.get("data_source", "") or "",
+            zip_code,
+            rural_status,
         ]
         for col_i, v in enumerate(values, 1):
             cell = ws.cell(row=row_i, column=col_i, value=v)
@@ -92,14 +105,14 @@ def export_to_excel(records, filepath, is_rural=False):
                 cell.fill = alt_fill
 
     # Column widths
-    widths = [12, 60, 8, 6, 14, 14, 14, 10, 20]
+    widths = [12, 60, 8, 6, 14, 14, 14, 10, 20, 10, 14]
     for col, w in enumerate(widths, 1):
         ws.column_dimensions[ws.cell(row=1, column=col).column_letter].width = w
 
     wb.save(filepath)
 
 
-def export_to_pdf(records, filepath, is_rural=False):
+def export_to_pdf(records, filepath, is_rural=False, zip_code=""):
     try:
         from reportlab.lib.pagesizes import landscape, letter
         from reportlab.lib import colors
@@ -118,8 +131,14 @@ def export_to_pdf(records, filepath, is_rural=False):
     # Title
     title = Paragraph("<b>VA HCPCS Fee Schedule Report</b>", styles["Title"])
     story.append(title)
+
+    zip_part = ""
+    if zip_code:
+        rural_label = "Rural (R)" if is_rural else "Non-Rural (NR)"
+        zip_part = f"  |  ZIP: {zip_code} ({rural_label})"
+
     subtitle = Paragraph(
-        f"Generated: {datetime.now().strftime('%B %d, %Y %I:%M %p')}  |  {len(records):,} records",
+        f"Generated: {datetime.now().strftime('%B %d, %Y %I:%M %p')}  |  {len(records):,} records{zip_part}",
         styles["Normal"],
     )
     story.append(subtitle)
@@ -135,7 +154,7 @@ def export_to_pdf(records, filepath, is_rural=False):
             (r.get("description", "") or "")[:80],
             r.get("state_abbr", ""),
             str(r.get("year", "")),
-            "#N/A" if chosen is None else f"${chosen:,.2f}",
+            "" if chosen is None else f"${chosen:,.2f}",
             r.get("modifier", "") or "",
         ])
 

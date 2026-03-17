@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel, QComboBox, QLineEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QStatusBar, QMessageBox,
     QDialog, QTextEdit, QSizePolicy, QFrame, QCheckBox,
-    QProgressDialog, QMenu, QApplication, QScrollArea,
+    QProgressDialog, QMenu, QApplication, QScrollArea, QFileDialog,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt6.QtGui import QAction, QFont, QColor
@@ -48,8 +48,9 @@ class SyncWorker(QThread):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, splash=None):
         super().__init__()
+        self._splash = splash
         self.setWindowTitle("VA HCPCS Fee Schedule Manager")
         self.setMinimumSize(1200, 700)
         self._records = []
@@ -60,13 +61,27 @@ class MainWindow(QMainWindow):
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(250)
         self._search_timer.timeout.connect(self._apply_filters)
+        self._splash_update(30, "Building user interface…")
         self._init_ui()
         self._init_menu()
+        self._splash_update(55, "Loading year and state filters…")
         self._refresh_filters()
+        self._splash_update(70, "Restoring saved preferences…")
         self._restore_filter_preferences()
+        self._splash_update(82, "Querying fee records…")
         self._apply_filters()
+        self._splash_update(100, "Ready!")
+        self._splash = None  # release; splash lifetime managed by main.py
 
     # ------------------------------------------------------------------ UI --
+
+    def _splash_update(self, pct: int, message: str) -> None:
+        """Forward a progress update to the splash screen if one is attached."""
+        if self._splash is not None:
+            try:
+                self._splash.set_progress(pct, message)
+            except Exception:
+                pass  # Never let splash failures crash startup
 
     def _init_ui(self):
         central = QWidget()
@@ -138,9 +153,22 @@ class MainWindow(QMainWindow):
         row1.addStretch()
         toolbar_container.addLayout(row1)
 
-        # ---- Row 2: HCPCS | Keyword | Search | Clear | Export ----
+        # ---- Row 2: Group | HCPCS | Keyword | Search | Clear | Export ----
         row2 = QHBoxLayout()
         row2.setSpacing(6)
+
+        # HCPCS Group filter
+        row2.addWidget(QLabel("Group:"))
+        self.group_combo = QComboBox()
+        self.group_combo.setMinimumWidth(220)
+        self.group_combo.addItem("All Groups", None)
+        from core.hcpcs_groups import get_group_choices
+        for prefix, label in get_group_choices():
+            self.group_combo.addItem(label, prefix)
+        self.group_combo.currentIndexChanged.connect(self._apply_filters)
+        self.group_combo.currentIndexChanged.connect(self._save_filter_preferences)
+        row2.addWidget(self.group_combo)
+        row2.addSpacing(8)
 
         # HCPCS code search (debounced)
         row2.addWidget(QLabel("HCPCS:"))
@@ -254,6 +282,23 @@ class MainWindow(QMainWindow):
         years_action = QAction("Manage &Years…", self)
         years_action.triggered.connect(self._manage_years)
         settings_menu.addAction(years_action)
+
+        settings_menu.addSeparator()
+
+        db_path_action = QAction("Change &Database Path…", self)
+        db_path_action.triggered.connect(self._change_db_path)
+        settings_menu.addAction(db_path_action)
+
+        shortcut_action = QAction("Create &Desktop Shortcut", self)
+        shortcut_action.triggered.connect(self._create_desktop_shortcut)
+        settings_menu.addAction(shortcut_action)
+
+        # View
+        view_menu = menubar.addMenu("&View")
+
+        browse_groups_action = QAction("Browse HCPCS &Groups…", self)
+        browse_groups_action.triggered.connect(self._browse_groups)
+        view_menu.addAction(browse_groups_action)
 
         # Developer Tools
         dev_menu = menubar.addMenu("&Developer Tools")
@@ -409,12 +454,14 @@ class MainWindow(QMainWindow):
         state = self.state_combo.currentData()
         code = self.code_edit.text().strip() or None
         keyword = self.keyword_edit.text().strip() or None
+        group = self.group_combo.currentData() if hasattr(self, "group_combo") else None
 
         self._records = get_fees(
             state_abbr=state,
             year=year,
             hcpcs_code=code,
             keyword=keyword,
+            hcpcs_group=group,
         )
         self._populate_table(self._records)
         self._set_status(f"{len(self._records):,} records found.")
@@ -423,6 +470,7 @@ class MainWindow(QMainWindow):
     def _clear_filters(self):
         self.year_combo.setCurrentIndex(0)
         self.state_combo.setCurrentIndex(0)
+        self.group_combo.setCurrentIndex(0)
         self.code_edit.clear()
         self.keyword_edit.clear()
         self.zip_edit.clear()
@@ -435,6 +483,7 @@ class MainWindow(QMainWindow):
         try:
             set_preference("filter_year", str(self.year_combo.currentData() or ""))
             set_preference("filter_state", str(self.state_combo.currentData() or ""))
+            set_preference("filter_group", str(self.group_combo.currentData() or ""))
             set_preference("filter_zip", self.zip_edit.text().strip())
             set_preference("filter_hcpcs", self.code_edit.text().strip())
             set_preference("filter_keyword", self.keyword_edit.text().strip())
@@ -459,6 +508,12 @@ class MainWindow(QMainWindow):
                 idx = self.state_combo.findData(saved_state)
                 if idx >= 0:
                     self.state_combo.setCurrentIndex(idx)
+
+            saved_group = get_preference("filter_group", "")
+            if saved_group and hasattr(self, "group_combo"):
+                idx = self.group_combo.findData(saved_group)
+                if idx >= 0:
+                    self.group_combo.setCurrentIndex(idx)
 
             saved_zip = get_preference("filter_zip", "")
             if saved_zip:
@@ -580,7 +635,8 @@ class MainWindow(QMainWindow):
         if not self._records:
             QMessageBox.information(self, "No Data", "No records to export. Apply filters first.")
             return
-        dlg = ExportDialog(self._records, self, is_rural=self._is_rural())
+        zip_code = self.zip_edit.text().strip()
+        dlg = ExportDialog(self._records, self, is_rural=self._is_rural(), zip_code=zip_code)
         dlg.exec()
 
     def _manage_states(self):
@@ -592,6 +648,59 @@ class MainWindow(QMainWindow):
     def _manage_years(self):
         dlg = YearSelectorDialog(self)
         dlg.exec()
+
+    def _browse_groups(self):
+        from ui.group_browser_dialog import GroupBrowserDialog
+        dlg = GroupBrowserDialog(self)
+        dlg.exec()
+
+    def _create_desktop_shortcut(self):
+        from core.shortcut import can_create_shortcut, create_desktop_shortcut, shortcut_exists
+        if not can_create_shortcut():
+            QMessageBox.information(
+                self, "Desktop Shortcut",
+                "Desktop shortcuts can only be created when running as the installed .exe on Windows.",
+            )
+            return
+        if shortcut_exists():
+            ans = QMessageBox.question(
+                self, "Desktop Shortcut",
+                "A desktop shortcut already exists. Replace it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if ans != QMessageBox.StandardButton.Yes:
+                return
+        ok = create_desktop_shortcut()
+        if ok:
+            QMessageBox.information(self, "Desktop Shortcut", "Desktop shortcut created successfully.")
+        else:
+            QMessageBox.warning(self, "Desktop Shortcut", "Failed to create desktop shortcut.")
+
+    def _change_db_path(self):
+        from core.config import get_data_dir, set_data_dir
+        from pathlib import Path
+        current = str(get_data_dir())
+        folder = QFileDialog.getExistingDirectory(self, "Select Database Folder", current)
+        if not folder:
+            return
+        new_path = Path(folder)
+        if new_path == get_data_dir():
+            return
+        ans = QMessageBox.question(
+            self, "Change Database Path",
+            f"Change the database folder to:\n{folder}\n\n"
+            "The app will use this location the next time it starts.\n"
+            "Your existing data will NOT be moved automatically.\n\nContinue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if ans == QMessageBox.StandardButton.Yes:
+            set_data_dir(new_path)
+            QMessageBox.information(
+                self, "Database Path Changed",
+                f"Database folder set to:\n{folder}\n\nRestart the app for the change to take effect.",
+            )
 
     def _open_sql_publisher(self):
         from ui.dev_tools_dialog import DevToolsDialog
@@ -798,10 +907,18 @@ class _HcpcsHistoryDialog(QDialog):
         card_layout.addWidget(_bold("Description:"), 1, 0)
         card_layout.addWidget(desc_label, 1, 1, 1, 5)
 
+        # Group info
+        from core.hcpcs_groups import get_group_for_code
+        group_info = get_group_for_code(hcpcs)
+        if group_info:
+            prefix, short_name, _group_desc = group_info
+            card_layout.addWidget(_bold("Group:"), 2, 0)
+            card_layout.addWidget(_val(f"{prefix} — {short_name}"), 2, 1, 1, 5)
+
         # ZIP / rural status
         zip_text = self._zip5 if self._zip5 else "—"
-        card_layout.addWidget(_bold("ZIP:"), 2, 0)
-        card_layout.addWidget(_val(zip_text), 2, 1)
+        card_layout.addWidget(_bold("ZIP:"), 3, 0)
+        card_layout.addWidget(_val(zip_text), 3, 1)
 
         if self._zip5 and len(self._zip5) == 5 and self._zip5.isdigit():
             # Show rural status for the most recent year with data (best proxy)
@@ -811,11 +928,11 @@ class _HcpcsHistoryDialog(QDialog):
             if avail:
                 rural = is_rural_zip(avail[0], self._zip5)
                 rural_note = f"{'Rural (R)' if rural else 'Non-Rural (NR)'} (as of {avail[0]})"
-            card_layout.addWidget(_bold("Rural Status:"), 2, 2)
-            card_layout.addWidget(_val(rural_note), 2, 3, 1, 3)
+            card_layout.addWidget(_bold("Rural Status:"), 3, 2)
+            card_layout.addWidget(_val(rural_note), 3, 3, 1, 3)
         else:
-            card_layout.addWidget(_bold("Rural Status:"), 2, 2)
-            card_layout.addWidget(_val("No ZIP — defaulting to NR"), 2, 3, 1, 3)
+            card_layout.addWidget(_bold("Rural Status:"), 3, 2)
+            card_layout.addWidget(_val("No ZIP — defaulting to NR"), 3, 3, 1, 3)
 
         layout.addWidget(card)
 
