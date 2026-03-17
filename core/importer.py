@@ -240,10 +240,16 @@ def parse_dmepos_grid_csv(path, state_abbr=None, year=None):
             description = (
                 norm_lower.get("description") or norm_lower.get("long_description") or ""
             )
-            modifier_raw = (
-                norm_lower.get("mod") or norm_lower.get("modifier") or ""
-            )
-            modifier = modifier_raw.strip() or None
+            mod1_raw = (norm_lower.get("mod") or norm_lower.get("modifier") or "").strip()
+            mod2_raw = (norm_lower.get("mod2") or "").strip()
+            if mod1_raw and mod2_raw:
+                modifier = f"{mod1_raw},{mod2_raw}"
+            elif mod1_raw:
+                modifier = mod1_raw
+            elif mod2_raw:
+                modifier = mod2_raw
+            else:
+                modifier = None
 
             # Collect NR/R amounts per state from column headers
             nr_by_state = {}

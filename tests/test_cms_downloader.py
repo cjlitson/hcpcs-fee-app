@@ -332,3 +332,139 @@ class TestDiscoverAvailableCmsYears:
         """Returns empty set gracefully on any network/parsing exception."""
         years = discover_available_cms_years()
         assert years == set()
+
+    @patch("core.cms_downloader.get_preference", return_value=None)
+    @patch("core.cms_downloader.set_preference")
+    @patch("core.cms_downloader.requests.get")
+    def test_detects_year_from_no_hyphen_quarterly_pattern(self, mock_get, mock_set, mock_pref):
+        """dme{yy}[a-d].zip links (no hyphen) correctly map to the 4-digit year."""
+        html = self._make_html_with_links([
+            "/files/zip/dme26a.zip",
+            "/files/zip/dme25d.zip",
+        ])
+        mock_get.return_value = MagicMock(status_code=200, text=html)
+
+        years = discover_available_cms_years()
+
+        assert 2026 in years
+        assert 2025 in years
+
+    @patch("core.cms_downloader.get_preference", return_value=None)
+    @patch("core.cms_downloader.set_preference")
+    @patch("core.cms_downloader.requests.get")
+    def test_detects_year_from_subpage_link(self, mock_get, mock_set, mock_pref):
+        """Sub-page links like /dmepos-fee-schedule/dme26 map to the 4-digit year."""
+        html = self._make_html_with_links([
+            "/medicare/payment/fee-schedules/dmepos/dmepos-fee-schedule/dme26",
+        ])
+        mock_get.return_value = MagicMock(status_code=200, text=html)
+
+        years = discover_available_cms_years()
+
+        assert 2026 in years
+
+
+# ---------------------------------------------------------------------------
+# _scrape_cms_urls — sub-page following and no-hyphen variant
+# ---------------------------------------------------------------------------
+
+class TestScrapeCmsUrls:
+    """Tests for the _scrape_cms_urls helper."""
+
+    from unittest.mock import MagicMock, patch
+
+    def _make_html_with_links(self, hrefs):
+        links = "".join(f'<a href="{h}">link</a>' for h in hrefs)
+        return f"<html><body>{links}</body></html>"
+
+    @patch("core.cms_downloader.requests.get")
+    def test_finds_direct_zip_links(self, mock_get):
+        """Direct dme{yy}-a.zip links on the main page are returned."""
+        from core.cms_downloader import _scrape_cms_urls
+        html = self._make_html_with_links([
+            "/files/zip/dme26-a.zip",
+            "/files/zip/dme26-b.zip",
+        ])
+        mock_get.return_value = MagicMock(status_code=200, text=html)
+
+        urls = _scrape_cms_urls(2026)
+
+        assert any("dme26-b.zip" in u for u in urls)
+        assert any("dme26-a.zip" in u for u in urls)
+
+    @patch("core.cms_downloader.requests.get")
+    def test_finds_no_hyphen_zip_links(self, mock_get):
+        """dme{yy}a.zip links (no hyphen) on the main page are returned."""
+        from core.cms_downloader import _scrape_cms_urls
+        html = self._make_html_with_links([
+            "/files/zip/dme26a.zip",
+        ])
+        mock_get.return_value = MagicMock(status_code=200, text=html)
+
+        urls = _scrape_cms_urls(2026)
+
+        assert any("dme26a.zip" in u for u in urls)
+
+    @patch("core.cms_downloader.requests.get")
+    def test_follows_subpage_when_no_direct_links(self, mock_get):
+        """When no direct ZIP links are on the main page, sub-pages are scraped."""
+        from core.cms_downloader import _scrape_cms_urls
+        main_html = self._make_html_with_links([
+            "/medicare/payment/fee-schedules/dmepos/dmepos-fee-schedule/dme26",
+        ])
+        sub_html = self._make_html_with_links([
+            "/files/zip/dme26a.zip",
+        ])
+        mock_get.side_effect = [
+            MagicMock(status_code=200, text=main_html),
+            MagicMock(status_code=200, text=sub_html),
+        ]
+
+        urls = _scrape_cms_urls(2026)
+
+        assert any("dme26a.zip" in u for u in urls)
+
+    @patch("core.cms_downloader.requests.get")
+    def test_filters_out_wrong_year(self, mock_get):
+        """ZIP links for a different year are not included."""
+        from core.cms_downloader import _scrape_cms_urls
+        html = self._make_html_with_links([
+            "/files/zip/dme25-a.zip",
+            "/files/zip/dme26-a.zip",
+        ])
+        mock_get.return_value = MagicMock(status_code=200, text=html)
+
+        urls = _scrape_cms_urls(2026)
+
+        assert all("dme25" not in u for u in urls)
+        assert any("dme26" in u for u in urls)
+
+    @patch("core.cms_downloader.requests.get")
+    def test_returns_empty_on_http_error(self, mock_get):
+        """Returns empty list when the CMS page returns a non-200 status."""
+        from core.cms_downloader import _scrape_cms_urls
+        mock_get.return_value = MagicMock(status_code=503, text="")
+
+        urls = _scrape_cms_urls(2026)
+
+        assert urls == []
+
+
+# ---------------------------------------------------------------------------
+# ALL_STATES — territories included
+# ---------------------------------------------------------------------------
+
+class TestAllStates:
+    """Tests for the ALL_STATES mapping."""
+
+    def test_pr_in_all_states(self):
+        """Puerto Rico (PR) should be present in ALL_STATES."""
+        from core.cms_downloader import ALL_STATES
+        assert "PR" in ALL_STATES
+        assert ALL_STATES["PR"] == "Puerto Rico"
+
+    def test_vi_in_all_states(self):
+        """Virgin Islands (VI) should be present in ALL_STATES."""
+        from core.cms_downloader import ALL_STATES
+        assert "VI" in ALL_STATES
+        assert ALL_STATES["VI"] == "Virgin Islands"

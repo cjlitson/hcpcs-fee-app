@@ -50,23 +50,31 @@ _AVAILABLE_YEARS_CACHE_KEY = "cms_available_years_cache"
 # fail.
 _CMS_URL_TEMPLATES = [
     # Quarterly pattern — current CMS convention (most recent quarter first)
+    # With hyphen (e.g. dme26-d.zip)
     "https://www.cms.gov/files/zip/dme{year2d}-d.zip",
     "https://www.cms.gov/files/zip/dme{year2d}-c.zip",
     "https://www.cms.gov/files/zip/dme{year2d}-b.zip",
     "https://www.cms.gov/files/zip/dme{year2d}-a.zip",
+    # Without hyphen (e.g. dme26d.zip) — CMS has used both conventions
+    "https://www.cms.gov/files/zip/dme{year2d}d.zip",
+    "https://www.cms.gov/files/zip/dme{year2d}c.zip",
+    "https://www.cms.gov/files/zip/dme{year2d}b.zip",
+    "https://www.cms.gov/files/zip/dme{year2d}a.zip",
     # Legacy patterns (tried last; verified via HEAD before attempting download)
     "https://www.cms.gov/files/zip/{year}-dmepos-fee-schedule.zip",
     "https://www.cms.gov/files/zip/dmepos-{year}-fee-schedule.zip",
 ]
 
-# Pattern for quarterly fee schedule ZIPs: dme{YY}-[a-d].zip (case-insensitive)
-_QUARTERLY_ZIP_RE = _re.compile(r"dme\d{2}-[a-d]\.zip$", _re.IGNORECASE)
+# Pattern for quarterly fee schedule ZIPs: dme{YY}[-][a-d].zip (hyphen optional)
+_QUARTERLY_ZIP_RE = _re.compile(r"dme\d{2}-?[a-d]\.zip$", _re.IGNORECASE)
+
+# Pattern for CMS sub-pages that link to a specific year's fee schedule
+# e.g. /dmepos-fee-schedule/dme26 or /dme26
+_SUBPAGE_YEAR_RE = _re.compile(r"/dme(\d{2})(?:[^0-9]|$)", _re.IGNORECASE)
 
 
 class _LinkExtractor(html.parser.HTMLParser):
-    """Extracts href values from <a> tags that end with '.zip' and match
-    the quarterly fee schedule pattern (dmeYY-[a-d].zip).
-    """
+    """Extracts href values from all <a> tags."""
 
     def __init__(self):
         super().__init__()
@@ -75,15 +83,19 @@ class _LinkExtractor(html.parser.HTMLParser):
     def handle_starttag(self, tag, attrs):
         if tag == "a":
             for attr, val in attrs:
-                if attr == "href" and val and val.lower().endswith(".zip"):
+                if attr == "href" and val:
                     self.links.append(val)
 
 
 def _scrape_cms_urls(year):
     """Scrape the CMS DMEPOS fee schedule page for quarterly ZIP links for *year*.
 
-    Only accepts links matching ``dmeYY-[a-d].zip`` (case-insensitive) to
+    Only accepts links matching ``dmeYY[-][a-d].zip`` (case-insensitive) to
     avoid picking up jurisdiction-list or other auxiliary ZIPs.
+
+    For the current year, CMS may link to a sub-page (e.g. /dme26) rather than
+    directly to ZIP files.  When no direct ZIP links are found on the main page,
+    this function follows those sub-page links and scrapes them for ZIP downloads.
 
     Returns a deduplicated list of absolute URLs (most-recent quarter first),
     or an empty list on any error.
@@ -95,19 +107,47 @@ def _scrape_cms_urls(year):
             return []
         extractor = _LinkExtractor()
         extractor.feed(resp.text)
+
         seen = set()
         urls = []
+        subpage_candidates = []
+
         for href in extractor.links:
             abs_url = urljoin("https://www.cms.gov", href)
             filename = abs_url.split("/")[-1]
-            # Only accept quarterly fee schedule ZIPs for the requested year
-            if not _QUARTERLY_ZIP_RE.match(filename):
-                continue
-            if f"dme{year2d}-" not in filename.lower():
-                continue
-            if abs_url not in seen:
-                seen.add(abs_url)
-                urls.append(abs_url)
+            if _QUARTERLY_ZIP_RE.match(filename):
+                # Normalize filename to strip hyphens for year matching
+                if f"dme{year2d}" in filename.lower().replace("-", ""):
+                    if abs_url not in seen:
+                        seen.add(abs_url)
+                        urls.append(abs_url)
+            else:
+                # Collect sub-page links for the requested year (e.g. /dme26)
+                m = _SUBPAGE_YEAR_RE.search(abs_url)
+                if m and int(m.group(1)) == int(year2d):
+                    if abs_url not in subpage_candidates:
+                        subpage_candidates.append(abs_url)
+
+        # If no direct ZIP links found on the main page, follow sub-pages
+        if not urls:
+            for sub_url in subpage_candidates:
+                try:
+                    sub_resp = requests.get(sub_url, timeout=15)
+                    if sub_resp.status_code != 200:
+                        continue
+                    sub_ext = _LinkExtractor()
+                    sub_ext.feed(sub_resp.text)
+                    for href in sub_ext.links:
+                        abs_url = urljoin("https://www.cms.gov", href)
+                        filename = abs_url.split("/")[-1]
+                        if _QUARTERLY_ZIP_RE.match(filename):
+                            if f"dme{year2d}" in filename.lower().replace("-", ""):
+                                if abs_url not in seen:
+                                    seen.add(abs_url)
+                                    urls.append(abs_url)
+                except Exception:
+                    continue
+
         # Sort descending (D > C > B > A) so the latest quarter is tried first
         urls.sort(key=lambda u: u.lower(), reverse=True)
         return urls
@@ -153,7 +193,8 @@ def discover_available_cms_years():
     fall back gracefully.
 
     Year patterns detected:
-    - ``dme{yy}-a/b/c/d.zip``  → 2000 + yy
+    - ``dme{yy}[-][a-d].zip``  → 2000 + yy  (hyphen optional)
+    - Sub-page links like ``/dme{yy}`` (e.g. /dme26) → 2000 + yy
     - URLs containing ``dmepos`` and a 4-digit year
     - ``DMEPOSFS{year}Q{n}.zip``
     """
@@ -181,8 +222,13 @@ def discover_available_cms_years():
         for href in extractor.links:
             abs_url = urljoin("https://www.cms.gov", href)
             lower = abs_url.lower()
-            # Pattern: dme{yy}-[a-d].zip  (e.g. dme26-a.zip)
-            m = _re.search(r"dme(\d{2})-[a-d]\.zip", lower)
+            # Pattern: dme{yy}[-][a-d].zip  (e.g. dme26-a.zip or dme26a.zip)
+            m = _re.search(r"dme(\d{2})-?[a-d]\.zip", lower)
+            if m:
+                years.add(2000 + int(m.group(1)))
+                continue
+            # Pattern: sub-page link like /dme26 or /dmepos-fee-schedule/dme26
+            m = _SUBPAGE_YEAR_RE.search(abs_url)
             if m:
                 years.add(2000 + int(m.group(1)))
                 continue
@@ -222,6 +268,7 @@ ALL_STATES = {
     "SC": "South Carolina", "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas",
     "UT": "Utah", "VT": "Vermont", "VA": "Virginia", "WA": "Washington",
     "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+    "PR": "Puerto Rico", "VI": "Virgin Islands",
 }
 
 SUPPORTED_YEARS = list(range(2024, date.today().year + 1))
@@ -266,6 +313,10 @@ def _try_download_zip(year, progress_callback=None):
         f"https://www.cms.gov/files/zip/dme{year2d}-c.zip",
         f"https://www.cms.gov/files/zip/dme{year2d}-b.zip",
         f"https://www.cms.gov/files/zip/dme{year2d}-a.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}d.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}c.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}b.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}a.zip",
     }
     trusted_urls.update(quarterly_trusted)
 

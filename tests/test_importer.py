@@ -230,6 +230,58 @@ class TestParseDmeposGridCsv:
         finally:
             os.unlink(path)
 
+    def test_mod1_only_parsed(self):
+        """When only Mod is populated, modifier is that value."""
+        csv = textwrap.dedent("""\
+            HCPCS,Mod,Mod2,JURIS,CATG,AZ (NR),AZ (R),Description
+            A4217,AU,,J,OS,1.00,1.10,Item with mod1 only
+        """)
+        path = self._write_tmp(csv)
+        try:
+            records = parse_dmepos_grid_csv(path)
+            az = next(r for r in records if r["hcpcs_code"] == "A4217" and r["state_abbr"] == "AZ")
+            assert az["modifier"] == "AU"
+        finally:
+            os.unlink(path)
+
+    def test_mod2_only_parsed(self):
+        """When only Mod2 is populated, modifier is that value."""
+        csv = textwrap.dedent("""\
+            HCPCS,Mod,Mod2,JURIS,CATG,AZ (NR),AZ (R),Description
+            A4218,,RR,J,OS,2.00,2.10,Item with mod2 only
+        """)
+        path = self._write_tmp(csv)
+        try:
+            records = parse_dmepos_grid_csv(path)
+            az = next(r for r in records if r["hcpcs_code"] == "A4218" and r["state_abbr"] == "AZ")
+            assert az["modifier"] == "RR"
+        finally:
+            os.unlink(path)
+
+    def test_mod1_and_mod2_combined(self):
+        """When both Mod and Mod2 are populated, modifier combines them with comma."""
+        csv = textwrap.dedent("""\
+            HCPCS,Mod,Mod2,JURIS,CATG,AZ (NR),AZ (R),Description
+            A4219,AU,RR,J,OS,3.00,3.10,Item with both mods
+        """)
+        path = self._write_tmp(csv)
+        try:
+            records = parse_dmepos_grid_csv(path)
+            az = next(r for r in records if r["hcpcs_code"] == "A4219" and r["state_abbr"] == "AZ")
+            assert az["modifier"] == "AU,RR"
+        finally:
+            os.unlink(path)
+
+    def test_no_modifier_is_none(self):
+        """When both Mod and Mod2 are blank, modifier is None."""
+        path = self._write_tmp(_SAMPLE_CSV)
+        try:
+            records = parse_dmepos_grid_csv(path)
+            az_a4216 = next(r for r in records if r["hcpcs_code"] == "A4216" and r["state_abbr"] == "AZ")
+            assert az_a4216["modifier"] is None
+        finally:
+            os.unlink(path)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Rural ZIP lookup
