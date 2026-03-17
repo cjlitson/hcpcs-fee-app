@@ -100,7 +100,10 @@ def get_sqlserver_connection(server, database, username, password, use_windows_a
         )
 
     conn = pyodbc.connect(conn_str, timeout=15)
-    conn.fast_executemany = True
+    try:
+        conn.fast_executemany = True
+    except AttributeError:
+        pass  # Older pyodbc versions don't support this — bulk inserts still work, just slower
     return conn
 
 
