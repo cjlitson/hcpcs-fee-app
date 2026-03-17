@@ -69,23 +69,26 @@ class TestSelectMainDmeposFilename:
         }
         assert self._select(files) == "DMEPOS26_JAN.csv"
 
-    def test_prefers_dmepos_txt_over_dmepos_csv(self):
-        """When both .txt and .csv DMEPOS files are present, prefer .txt."""
+    def test_prefers_dmepos_csv_over_dmepos_txt(self):
+        """When both .txt and .csv DMEPOS files are present, prefer .csv."""
         files = {
             "DMEPOS26_JAN.txt": "a" * 4000,
             "DMEPOS26_JAN.csv": "b" * 4000,
         }
-        assert self._select(files) == "DMEPOS26_JAN.txt"
+        assert self._select(files) == "DMEPOS26_JAN.csv"
 
-    def test_txt_only_zip(self):
-        """Works correctly when the ZIP has only .txt data files."""
+    def test_txt_only_zip_raises(self):
+        """A ZIP with only .txt data files raises DownloadError (CSV required)."""
         files = {
             "DMEPOS26_JAN.txt": "a" * 5000,
             "DME Rural ZIP Code Quarter 1 2026.txt": "b" * 8000,
             "DMEPEN26_JAN.txt": "c" * 3000,
             "README.txt": "read me text",
         }
-        assert self._select(files) == "DMEPOS26_JAN.txt"
+        zip_bytes = _make_zip(files)
+        with _open_zip(zip_bytes) as zf:
+            with pytest.raises(DownloadError, match="No CSV"):
+                _select_main_dmepos_filename(list(files.keys()), zf)
 
     def test_csv_only_zip(self):
         """Works correctly when the ZIP has only .csv data files."""
@@ -143,26 +146,26 @@ class TestSelectMainDmeposFilename:
     # --- Fallback tier -------------------------------------------------------
 
     def test_fallback_when_no_dmepos_prefix(self):
-        """When no DMEPOS-prefixed file exists, fall back to largest non-skipped."""
+        """When no DMEPOS-prefixed file exists, fall back to largest non-skipped CSV."""
         files = {
             "fee_schedule_2026.csv": "a" * 7000,
             "Rural ZIP Codes.csv": "b" * 9000,
             "README.txt": "docs",
         }
-        # Fallback picks largest: Rural ZIP Codes (9000)
+        # Fallback picks largest CSV: Rural ZIP Codes (9000)
         result = self._select(files)
         assert result == "Rural ZIP Codes.csv"
 
     def test_raises_when_empty_zip(self):
-        """DownloadError raised for a ZIP with no usable data files."""
+        """DownloadError raised for a ZIP with no usable CSV data files."""
         files = {
             "README.txt": "just docs",
             "codebook.pdf": b"\x25\x50\x44\x46",
         }
-        # .pdf not matched; README is skipped
+        # .pdf not matched; README is skipped; no .csv present
         zip_bytes = _make_zip(files)
         with _open_zip(zip_bytes) as zf:
-            with pytest.raises(DownloadError, match="No CSV or data file"):
+            with pytest.raises(DownloadError, match="No CSV"):
                 _select_main_dmepos_filename(list(files.keys()), zf)
 
     def test_raises_includes_zip_contents_in_message(self):
@@ -184,13 +187,13 @@ class TestExtractCsvFromZip:
 
     def test_returns_correct_content(self):
         """Returned bytes match the selected file's content."""
-        content = b"HCPCS_CD|LONG_DESCRIPTION|FEE\nA1234|Item desc|10.00\n"
+        content = b"HCPCS,Description,AZ (NR),AZ (R)\nA1234,Item desc,10.00,\n"
         zip_bytes = _make_zip({
-            "DMEPOS26_JAN.txt": content,
-            "Rural ZIP Code File.txt": b"x" * len(content) * 2,
+            "DMEPOS26_JAN.csv": content,
+            "Rural ZIP Code File.csv": b"x" * len(content) * 2,
         })
         name, data, _rural_name, _rural_bytes = _extract_csv_from_zip(zip_bytes)
-        assert name == "DMEPOS26_JAN.txt"
+        assert name == "DMEPOS26_JAN.csv"
         assert data == content
 
     def test_progress_callback_reports_selected_file(self):
@@ -222,9 +225,9 @@ class TestExtractCsvFromZip:
 class TestReplaceGuard:
     """Tests for the replace-with-guard behaviour in download_cms_fees."""
 
-    def _make_dmepos_zip(self, content=b"HCPCS_CD|FEE\nA1234|10.00\n"):
-        """Return a minimal in-memory ZIP with a DMEPOS main file."""
-        return _make_zip({"DMEPOS26_JAN.txt": content})
+    def _make_dmepos_zip(self, content=b"HCPCS,Description,AZ (NR)\nA1234,Item desc,10.00\n"):
+        """Return a minimal in-memory ZIP with a DMEPOS main CSV file."""
+        return _make_zip({"DMEPOS26_JAN.csv": content})
 
     @patch("core.cms_downloader.delete_fees_by_year_state_source")
     @patch("core.cms_downloader.insert_fees")
@@ -332,3 +335,19 @@ class TestDiscoverAvailableCmsYears:
         """Returns empty set gracefully on any network/parsing exception."""
         years = discover_available_cms_years()
         assert years == set()
+
+    @patch("core.cms_downloader.get_preference", return_value=None)
+    @patch("core.cms_downloader.set_preference")
+    @patch("core.cms_downloader.requests.get")
+    def test_detects_year_from_no_hyphen_pattern(self, mock_get, mock_set, mock_pref):
+        """dme{yy}[a-d].zip links (no hyphen) correctly map to the 4-digit year."""
+        html = self._make_html_with_links([
+            "/files/zip/dme26a.zip",
+            "/files/zip/dme25d.zip",
+        ])
+        mock_get.return_value = MagicMock(status_code=200, text=html)
+
+        years = discover_available_cms_years()
+
+        assert 2026 in years
+        assert 2025 in years

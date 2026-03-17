@@ -230,6 +230,48 @@ class TestParseDmeposGridCsv:
         finally:
             os.unlink(path)
 
+    def test_mod2_combined_with_mod(self):
+        """Mod and Mod2 columns are combined as 'mod1,mod2' when both present."""
+        csv_content = textwrap.dedent("""\
+            HCPCS,Mod,Mod2,Description,AZ (NR)
+            E0601,RR,KX,CPAP device,1.50
+        """)
+        path = self._write_tmp(csv_content)
+        try:
+            records = parse_dmepos_grid_csv(path)
+            az = next(r for r in records if r["hcpcs_code"] == "E0601" and r["state_abbr"] == "AZ")
+            assert az["modifier"] == "RR,KX"
+        finally:
+            os.unlink(path)
+
+    def test_mod_only_no_mod2(self):
+        """Mod column alone sets modifier without a trailing comma."""
+        csv_content = textwrap.dedent("""\
+            HCPCS,Mod,Mod2,Description,AZ (NR)
+            E0601,RR,,CPAP device,1.50
+        """)
+        path = self._write_tmp(csv_content)
+        try:
+            records = parse_dmepos_grid_csv(path)
+            az = next(r for r in records if r["hcpcs_code"] == "E0601" and r["state_abbr"] == "AZ")
+            assert az["modifier"] == "RR"
+        finally:
+            os.unlink(path)
+
+    def test_no_modifier_columns(self):
+        """When neither Mod nor Mod2 are present, modifier is None."""
+        csv_content = textwrap.dedent("""\
+            HCPCS,Description,AZ (NR)
+            E0601,CPAP device,1.50
+        """)
+        path = self._write_tmp(csv_content)
+        try:
+            records = parse_dmepos_grid_csv(path)
+            az = next(r for r in records if r["hcpcs_code"] == "E0601" and r["state_abbr"] == "AZ")
+            assert az["modifier"] is None
+        finally:
+            os.unlink(path)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Rural ZIP lookup
