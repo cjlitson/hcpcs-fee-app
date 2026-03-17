@@ -161,6 +161,8 @@ def main():
     # ---- Step 2–5: build main window (it updates the splash internally) --
     splash.set_progress(25, "Building user interface…")
     window = MainWindow(splash=splash)
+    from core.version import APP_VERSION
+    window.setWindowTitle(f"VA HCPCS Fee Schedule Manager  v{APP_VERSION}")
 
     # ---- Center on the same screen the splash used ----------------------
     splash_screen = splash.screen()
