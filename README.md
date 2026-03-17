@@ -7,7 +7,7 @@ A standalone Windows desktop application for VA staff to manage, view, filter, a
 ## Features
 
 - **Auto-download** CMS DMEPOS fee schedules for user-selected states (2024 through the current calendar year), with live URL scraping and 24-hour cache
-- **Smart file detection** — selects the main DMEPOS schedule file (`DMEPOS*.txt` / `DMEPOS*.csv`) by name pattern, excluding auxiliary datasets (Rural ZIP, Former CBA, PEN schedules)
+- **Smart file detection** — selects the main DMEPOS schedule file (`DMEPOS*.csv`) by name pattern, excluding auxiliary datasets (Rural ZIP, Former CBA, PEN schedules)
 - **Quarterly replace** — each CMS sync replaces prior data for the same year/state so quarterly updates stay current without duplicates
 - **Import** existing VISN-format CSV files
 - **Filter** by state, year, HCPCS code, and description keyword
@@ -58,7 +58,7 @@ Output: `dist\HCPCSFeeApp.exe` — copy this single file anywhere and run it. No
 2. **Manage States** — Go to `Settings → Manage States`, check the states you want to track, and save.
 3. **Manage Years** — Go to `Settings → Manage Years` to select which fiscal years to include.
 4. **Sync Data** — Click `Sync from CMS` to auto-download the latest CMS DMEPOS fee schedules for your selected states. The downloader scrapes live URLs from the CMS website and falls back to known URL templates if needed. Only years up to the current calendar year are offered; years not currently detected on CMS are shown as disabled in the Manage Years dialog.
-5. **Import CSV** — Use `File → Import CSV` to load an existing VISN 22 CSV or a manually downloaded CMS file (`.csv` or pipe-delimited `.txt`).
+5. **Import CSV** — Use `File → Import CSV` to load an existing VISN 22 CSV or a manually downloaded CMS file (`.csv`).
 6. **Filter** — Use the toolbar to filter by state, year, HCPCS code, or description keyword.
 7. **Export** — Click `Export...` to save filtered results as CSV, Excel, or PDF.
 8. **Developer Tools** — Use `Developer Tools → SQL Publisher` to run direct SQL queries or publish data to a Databricks or ODBC endpoint.
@@ -70,14 +70,14 @@ Output: `dist\HCPCSFeeApp.exe` — copy this single file anywhere and run it. No
 When syncing from CMS, the downloader uses a multi-step strategy:
 
 1. Check a 24-hour local cache for previously discovered download URLs.
-2. Scrape the [CMS DMEPOS page](https://www.cms.gov/medicare/payment/fee-schedules/dmepos) for current ZIP links.
-3. Fall back to hardcoded quarterly URL templates (e.g. `dme26-a.zip` through `dme26-d.zip`).
-4. Select the main DMEPOS fee-schedule file from the ZIP by **name pattern** (not by file size):
-   - **Tier 1** — files whose name starts with `DMEPOS` and ends with `.txt` (e.g. `DMEPOS26_JAN.txt`).
-   - **Tier 2** — files whose name starts with `DMEPOS` and ends with `.csv` (e.g. `DMEPOS26_JAN.csv`).
-   - **Tier 3** — files containing `dmepos` that do not match auxiliary-dataset keywords (`rural`, `zip code`, `cba`, `pen`, `back`, `fad`, `former`, `schedule file`).
-   - **Tier 4** — fallback to the largest remaining non-documentation file (legacy heuristic).
+2. Scrape the [CMS DMEPOS page](https://www.cms.gov/medicare/payment/fee-schedules/dmepos) for current ZIP links, following year-specific sub-pages as needed.
+3. Fall back to hardcoded quarterly URL templates (e.g. `dme26-a.zip` through `dme26-d.zip`, and no-hyphen variants `dme26a.zip`).
+4. Select the main DMEPOS fee-schedule **CSV** file from the ZIP by name pattern (CSV-only):
+   - **Tier 1** — files whose name starts with `DMEPOS` and ends with `.csv` (e.g. `DMEPOS26_JAN.csv`).
+   - **Tier 2** — files containing `dmepos` that do not match auxiliary-dataset keywords (`rural`, `zip code`, `cba`, `pen`, `back`, `fad`, `former`, `schedule file`).
+   - **Tier 3** — fallback to the largest remaining non-documentation `.csv` file (legacy heuristic).
    - Files matching documentation keywords (`readme`, `layout`, `codebook`, etc.) are always excluded.
+   - `.txt` files are never selected — the CSV grid format is self-describing with named column headers and is more resilient to CMS format changes.
 
    The UI status bar shows which internal file was selected from the archive.
 5. **Quarterly replace** — for each `(state, year)` the sync deletes existing `cms_download` rows and inserts the freshly parsed records. If the parse yields 0 records the delete is skipped and an error is shown, protecting existing data.
@@ -115,7 +115,7 @@ hcpcs-fee-app/
 │   └── dev_tools_dialog.py          # Developer Tools / SQL Publisher
 ├── core/
 │   ├── database.py                  # SQLite operations + preferences
-│   ├── importer.py                  # CSV/TXT parser (VISN + CMS formats, auto-delimiter)
+│   ├── importer.py                  # CSV parser (VISN + CMS grid formats, auto-delimiter)
 │   ├── cms_downloader.py            # CMS auto-download (scrape + cache + fallback)
 │   └── exporter.py                  # CSV / Excel / PDF export
 ├── models/

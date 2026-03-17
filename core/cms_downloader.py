@@ -54,18 +54,30 @@ _CMS_URL_TEMPLATES = [
     "https://www.cms.gov/files/zip/dme{year2d}-c.zip",
     "https://www.cms.gov/files/zip/dme{year2d}-b.zip",
     "https://www.cms.gov/files/zip/dme{year2d}-a.zip",
+    # No-hyphen variants (CMS has used both forms)
+    "https://www.cms.gov/files/zip/dme{year2d}d.zip",
+    "https://www.cms.gov/files/zip/dme{year2d}c.zip",
+    "https://www.cms.gov/files/zip/dme{year2d}b.zip",
+    "https://www.cms.gov/files/zip/dme{year2d}a.zip",
     # Legacy patterns (tried last; verified via HEAD before attempting download)
     "https://www.cms.gov/files/zip/{year}-dmepos-fee-schedule.zip",
     "https://www.cms.gov/files/zip/dmepos-{year}-fee-schedule.zip",
 ]
 
-# Pattern for quarterly fee schedule ZIPs: dme{YY}-[a-d].zip (case-insensitive)
-_QUARTERLY_ZIP_RE = _re.compile(r"dme\d{2}-[a-d]\.zip$", _re.IGNORECASE)
+# Pattern for quarterly fee schedule ZIPs: dme{YY}[-][a-d].zip (case-insensitive)
+# Hyphen is optional to handle both dme26-a.zip and dme26a.zip forms.
+_QUARTERLY_ZIP_RE = _re.compile(r"dme\d{2}-?[a-d]\.zip$", _re.IGNORECASE)
+
+# Sub-page link pattern: year-specific detail pages on the CMS site
+# e.g. /dme26 or /dmepos-fee-schedule/dme26
+_SUBPAGE_LINK_RE = _re.compile(r"/dme\d{2}(?:[^/]*)$", _re.IGNORECASE)
 
 
 class _LinkExtractor(html.parser.HTMLParser):
-    """Extracts href values from <a> tags that end with '.zip' and match
-    the quarterly fee schedule pattern (dmeYY-[a-d].zip).
+    """Extracts href values from all <a> tags.
+
+    Collects all hrefs so that both ZIP links and sub-page links are captured
+    for two-level scraping.
     """
 
     def __init__(self):
@@ -75,39 +87,74 @@ class _LinkExtractor(html.parser.HTMLParser):
     def handle_starttag(self, tag, attrs):
         if tag == "a":
             for attr, val in attrs:
-                if attr == "href" and val and val.lower().endswith(".zip"):
+                if attr == "href" and val:
                     self.links.append(val)
 
 
 def _scrape_cms_urls(year):
     """Scrape the CMS DMEPOS fee schedule page for quarterly ZIP links for *year*.
 
-    Only accepts links matching ``dmeYY-[a-d].zip`` (case-insensitive) to
-    avoid picking up jurisdiction-list or other auxiliary ZIPs.
+    Follows sub-page links matching year-specific detail pages (e.g. /dme26 or
+    /dmepos-fee-schedule/dme26) and scrapes those for ZIP links as well.
+
+    Accepts links matching ``dmeYY[-][a-d].zip`` (hyphen optional, case-insensitive)
+    to handle both URL naming conventions CMS has used.
 
     Returns a deduplicated list of absolute URLs (most-recent quarter first),
     or an empty list on any error.
     """
     year2d = str(year)[-2:]
-    try:
-        resp = requests.get(CMS_DMEPOS_PAGE, timeout=15)
-        if resp.status_code != 200:
-            return []
+
+    def _collect_zip_urls(html_text, base_url, seen, urls):
         extractor = _LinkExtractor()
-        extractor.feed(resp.text)
-        seen = set()
-        urls = []
+        extractor.feed(html_text)
         for href in extractor.links:
-            abs_url = urljoin("https://www.cms.gov", href)
+            abs_url = urljoin(base_url, href)
             filename = abs_url.split("/")[-1]
-            # Only accept quarterly fee schedule ZIPs for the requested year
             if not _QUARTERLY_ZIP_RE.match(filename):
                 continue
-            if f"dme{year2d}-" not in filename.lower():
+            # Normalize by removing hyphen so dme26a.zip and dme26-a.zip both match
+            filename_nohyphen = filename.replace("-", "").lower()
+            if not filename_nohyphen.startswith(f"dme{year2d}"):
                 continue
             if abs_url not in seen:
                 seen.add(abs_url)
                 urls.append(abs_url)
+        return extractor.links
+
+    def _collect_subpage_links(html_text, base_url):
+        extractor = _LinkExtractor()
+        extractor.feed(html_text)
+        subpages = []
+        for href in extractor.links:
+            abs_url = urljoin(base_url, href)
+            path = abs_url.split("?")[0]
+            if _SUBPAGE_LINK_RE.search(path):
+                # Check that the sub-page matches the requested year
+                m = _re.search(r"dme(\d{2})", path, _re.IGNORECASE)
+                if m and m.group(1) == year2d:
+                    subpages.append(abs_url)
+        return subpages
+
+    try:
+        resp = requests.get(CMS_DMEPOS_PAGE, timeout=15)
+        if resp.status_code != 200:
+            return []
+
+        seen = set()
+        urls = []
+        _collect_zip_urls(resp.text, CMS_DMEPOS_PAGE, seen, urls)
+
+        # Follow year-specific sub-pages that may list the actual ZIP files
+        subpages = _collect_subpage_links(resp.text, CMS_DMEPOS_PAGE)
+        for subpage_url in subpages:
+            try:
+                sub_resp = requests.get(subpage_url, timeout=15)
+                if sub_resp.status_code == 200:
+                    _collect_zip_urls(sub_resp.text, subpage_url, seen, urls)
+            except Exception:
+                pass
+
         # Sort descending (D > C > B > A) so the latest quarter is tried first
         urls.sort(key=lambda u: u.lower(), reverse=True)
         return urls
@@ -171,18 +218,18 @@ def discover_available_cms_years():
         except Exception:
             pass
 
-    try:
-        resp = requests.get(CMS_DMEPOS_PAGE, timeout=15)
-        if resp.status_code != 200:
-            return set()
-        extractor = _LinkExtractor()
-        extractor.feed(resp.text)
+    def _extract_years_from_links(links, base_url="https://www.cms.gov"):
         years = set()
-        for href in extractor.links:
-            abs_url = urljoin("https://www.cms.gov", href)
+        for href in links:
+            abs_url = urljoin(base_url, href)
             lower = abs_url.lower()
-            # Pattern: dme{yy}-[a-d].zip  (e.g. dme26-a.zip)
-            m = _re.search(r"dme(\d{2})-[a-d]\.zip", lower)
+            # Pattern: dme{yy}-[a-d].zip or dme{yy}[a-d].zip (no hyphen)
+            m = _re.search(r"dme(\d{2})-?[a-d]\.zip", lower)
+            if m:
+                years.add(2000 + int(m.group(1)))
+                continue
+            # Pattern: sub-page link e.g. /dme26 or /dmepos-fee-schedule/dme26
+            m = _re.search(r"/dme(\d{2})(?:[^/\d]|$)", lower)
             if m:
                 years.add(2000 + int(m.group(1)))
                 continue
@@ -196,6 +243,30 @@ def discover_available_cms_years():
             if m:
                 years.add(int(m.group(1)))
                 continue
+        return years
+
+    try:
+        resp = requests.get(CMS_DMEPOS_PAGE, timeout=15)
+        if resp.status_code != 200:
+            return set()
+        extractor = _LinkExtractor()
+        extractor.feed(resp.text)
+        years = _extract_years_from_links(extractor.links)
+
+        # Also follow sub-page links to detect years listed only on detail pages
+        for href in extractor.links:
+            abs_url = urljoin("https://www.cms.gov", href)
+            path = abs_url.split("?")[0]
+            if _SUBPAGE_LINK_RE.search(path):
+                try:
+                    sub_resp = requests.get(abs_url, timeout=15)
+                    if sub_resp.status_code == 200:
+                        sub_extractor = _LinkExtractor()
+                        sub_extractor.feed(sub_resp.text)
+                        years |= _extract_years_from_links(sub_extractor.links, abs_url)
+                except Exception:
+                    pass
+
         # Cache the result
         cache_data = {
             "cached_at": datetime.now(timezone.utc).isoformat(),
@@ -222,6 +293,7 @@ ALL_STATES = {
     "SC": "South Carolina", "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas",
     "UT": "Utah", "VT": "Vermont", "VA": "Virginia", "WA": "Washington",
     "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+    "PR": "Puerto Rico", "VI": "Virgin Islands",
 }
 
 SUPPORTED_YEARS = list(range(2024, date.today().year + 1))
@@ -266,6 +338,10 @@ def _try_download_zip(year, progress_callback=None):
         f"https://www.cms.gov/files/zip/dme{year2d}-c.zip",
         f"https://www.cms.gov/files/zip/dme{year2d}-b.zip",
         f"https://www.cms.gov/files/zip/dme{year2d}-a.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}d.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}c.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}b.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}a.zip",
     }
     trusted_urls.update(quarterly_trusted)
 
@@ -364,16 +440,18 @@ def _select_rural_zip_filename(all_names):
 def _select_main_dmepos_filename(all_names, zf):
     """Choose the main DMEPOS fee-schedule file from *all_names* (a ZIP name list).
 
-    Selection priority:
+    Only CSV files are considered.  Selection priority:
     1. Files whose basename starts with "dmepos" (case-insensitive), ends
-       with .txt, and does NOT contain any exclusion keyword.
-    2. Same but .csv.
-    3. Files that contain "dmepos" (anywhere), no auxiliary keyword, not skipped,
-       ending .txt then .csv.
-    4. Fallback: any non-skipped .txt or .csv, sorted largest-first.
+       with .csv, and does NOT contain any exclusion keyword.
+    2. Files that contain "dmepos" (anywhere), no auxiliary keyword, not skipped,
+       ending .csv.
+    3. Fallback: any non-skipped .csv file, sorted largest-first.
+
+    .txt files are never selected — the CMS sync uses the grid-format CSV
+    exclusively, which has self-describing column headers.
 
     Returns the chosen filename string, or raises ``DownloadError`` when the
-    ZIP contains no usable data file.
+    ZIP contains no usable CSV data file.
     """
     def basename_lower(name):
         return os.path.basename(name).lower()
@@ -384,14 +462,7 @@ def _select_main_dmepos_filename(all_names, zf):
     def has_exclusion(name):
         return any(kw in name.lower() for kw in _MAIN_EXCLUSION_KEYWORDS)
 
-    # --- Tier 1 & 2: starts-with "dmepos", not skipped, no exclusion keywords ----
-    dmepos_prefix_txt = [
-        n for n in all_names
-        if basename_lower(n).startswith("dmepos")
-        and n.lower().endswith(".txt")
-        and not is_skipped(n)
-        and not has_exclusion(n)
-    ]
+    # --- Tier 1: starts-with "dmepos", .csv, not skipped, no exclusion keywords ---
     dmepos_prefix_csv = [
         n for n in all_names
         if basename_lower(n).startswith("dmepos")
@@ -400,23 +471,14 @@ def _select_main_dmepos_filename(all_names, zf):
         and not has_exclusion(n)
     ]
 
-    # Prefer .txt first (current CMS format), then .csv
-    for candidates in (dmepos_prefix_txt, dmepos_prefix_csv):
-        if len(candidates) == 1:
-            return candidates[0]
-        if len(candidates) > 1:
-            # Among multiple matches take the largest
-            candidates.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
-            return candidates[0]
+    if len(dmepos_prefix_csv) == 1:
+        return dmepos_prefix_csv[0]
+    if len(dmepos_prefix_csv) > 1:
+        # Among multiple matches take the largest
+        dmepos_prefix_csv.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
+        return dmepos_prefix_csv[0]
 
-    # --- Tier 3: contains "dmepos", no auxiliary keyword, not skipped ----------
-    dmepos_any_txt = [
-        n for n in all_names
-        if "dmepos" in n.lower()
-        and n.lower().endswith(".txt")
-        and not is_skipped(n)
-        and not any(kw in n.lower() for kw in _AUXILIARY_KEYWORDS)
-    ]
+    # --- Tier 2: contains "dmepos", .csv, no auxiliary keyword, not skipped -------
     dmepos_any_csv = [
         n for n in all_names
         if "dmepos" in n.lower()
@@ -425,20 +487,19 @@ def _select_main_dmepos_filename(all_names, zf):
         and not any(kw in n.lower() for kw in _AUXILIARY_KEYWORDS)
     ]
 
-    for candidates in (dmepos_any_txt, dmepos_any_csv):
-        if candidates:
-            candidates.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
-            return candidates[0]
+    if dmepos_any_csv:
+        dmepos_any_csv.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
+        return dmepos_any_csv[0]
 
-    # --- Tier 4: fallback — any non-skipped data file, largest first -----------
+    # --- Tier 3: fallback — any non-skipped .csv file, largest first ---------------
     fallback = [
         n for n in all_names
-        if (n.lower().endswith(".csv") or n.lower().endswith(".txt"))
+        if n.lower().endswith(".csv")
         and not is_skipped(n)
     ]
     if not fallback:
         raise DownloadError(
-            "No CSV or data file found inside the downloaded ZIP archive.\n"
+            "No CSV data file found inside the downloaded ZIP archive.\n"
             f"ZIP contents: {', '.join(all_names) or '(empty)'}"
         )
 
@@ -499,12 +560,12 @@ def download_cms_fees(year, selected_states, progress_callback=None):
     # Write to temp files
     tmp_dir = _get_app_dir() / "data"
     tmp_dir.mkdir(exist_ok=True)
-    tmp_path = tmp_dir / f"_cms_tmp_{year}.txt"
+    tmp_path = tmp_dir / f"_cms_tmp_{year}.csv"
     tmp_path.write_bytes(data_bytes)
 
     tmp_rural_path = None
     if rural_bytes:
-        tmp_rural_path = tmp_dir / f"_cms_rural_tmp_{year}.txt"
+        tmp_rural_path = tmp_dir / f"_cms_rural_tmp_{year}.csv"
         tmp_rural_path.write_bytes(rural_bytes)
 
     total = 0
