@@ -67,22 +67,51 @@ Output: `dist\HCPCSFeeApp.exe` — copy this single file anywhere and run it. No
 
 ## CMS Download Strategy
 
-When syncing from CMS, the downloader uses a multi-step strategy:
+When syncing from CMS, the downloader uses a **multi-layer self-correcting discovery system** to find the correct ZIP file even when CMS changes their URL conventions between years.
 
-1. Check a 24-hour local cache for previously discovered download URLs.
-2. Scrape the [CMS DMEPOS page](https://www.cms.gov/medicare/payment/fee-schedules/dmepos) for current ZIP links, following year-specific sub-pages as needed.
-3. Fall back to hardcoded quarterly URL templates (e.g. `dme26-a.zip` through `dme26-d.zip`, and no-hyphen variants `dme26a.zip`).
-4. Select the main DMEPOS fee-schedule **CSV** file from the ZIP by name pattern (CSV-only):
-   - **Tier 1** — files whose name starts with `DMEPOS` and ends with `.csv` (e.g. `DMEPOS26_JAN.csv`).
-   - **Tier 2** — files containing `dmepos` that do not match auxiliary-dataset keywords (`rural`, `zip code`, `cba`, `pen`, `back`, `fad`, `former`, `schedule file`).
-   - **Tier 3** — fallback to the largest remaining non-documentation `.csv` file (legacy heuristic).
-   - Files matching documentation keywords (`readme`, `layout`, `codebook`, etc.) are always excluded.
-   - `.txt` files are never selected — the CSV grid format is self-describing with named column headers and is more resilient to CMS format changes.
+### Discovery Layers (tried in order)
 
-   The UI status bar shows which internal file was selected from the archive.
-5. **Quarterly replace** — for each `(state, year)` the sync deletes existing `cms_download` rows and inserts the freshly parsed records. If the parse yields 0 records the delete is skipped and an error is shown, protecting existing data.
+1. **24-hour URL cache** — reuses previously discovered URLs for the same year, avoiding repeated scraping.
+2. **CMS RSS feed** (`https://www.cms.gov/rss/30881`) — parses the structured XML feed for sub-page links matching the requested year, then follows those sub-pages to find ZIP links. Checked before HTML scraping because it's lighter and more structured.
+3. **HTML scraping** — scrapes the [CMS DMEPOS fee schedule page](https://www.cms.gov/medicare/payment/fee-schedules/dmepos) and follows year-specific sub-pages (e.g. `/dme26`) to find ZIP links.
+4. **Pattern tracker** — records which URL patterns succeeded in prior syncs and generates candidate URLs for the current year from those patterns. If CMS switches from `dme{yy}-d.zip` to `dme{yy}.zip`, the tracker adapts within one sync cycle and informs future syncs.
+5. **Hardcoded URL templates** — last-resort fallback covering all known CMS naming conventions:
+   - `dme{yy}.zip` — no quarter letter (initial/only release)
+   - `dme{yy}-d.zip` through `dme{yy}-a.zip` — hyphenated quarterly variants
+   - `dme{yy}d.zip` through `dme{yy}a.zip` — no-hyphen quarterly variants
 
-**Supported years:** The app only offers years from 2024 through the current calendar year. Years not currently detected on the CMS page are shown as disabled (greyed out) in the Manage Years dialog.
+### ZIP Filename Regex
+
+The broadened regex `dme\d{2}(?:-?[a-d])?\.zip` matches all known CMS naming forms:
+
+| Filename | Matches? | Notes |
+|---|---|---|
+| `dme26.zip` | ✅ | Initial/only release — no quarter letter |
+| `dme26-a.zip` | ✅ | Hyphenated quarterly |
+| `dme26a.zip` | ✅ | No-hyphen quarterly |
+| `jurisdiction.zip` | ❌ | Excluded |
+| `dmerural26.zip` | ❌ | Rural ZIP mapping file — excluded |
+
+### Pattern Tracker
+
+After every successful download, the pattern is recorded in user preferences (`cms_successful_patterns`):
+- The URL template is extracted (e.g. `dme{yy}-{q}.zip` or `dme{yy}.zip`)
+- The discovery method is stored (`cache`, `rss`, `scrape`, `pattern`, `template`)
+- Future syncs use stored patterns ranked by recency to generate better candidates
+
+### File Selection from ZIP (CSV-only)
+
+1. **Tier 1** — files whose name starts with `DMEPOS` and ends with `.csv` (e.g. `DMEPOS26_JAN.csv`).
+2. **Tier 2** — files containing `dmepos` that do not match auxiliary-dataset keywords (`rural`, `zip code`, `cba`, `pen`, `back`, `fad`, `former`, `schedule file`).
+3. **Tier 3** — fallback to the largest remaining non-documentation `.csv` file.
+4. Files matching documentation keywords (`readme`, `layout`, `codebook`, etc.) are always excluded.
+5. `.txt` files are never selected — the CSV grid format is self-describing with named column headers.
+
+### Quarterly Replace
+
+For each `(state, year)` the sync deletes existing `cms_download` rows and inserts freshly parsed records. If the parse yields 0 records the delete is skipped and an error is shown, protecting existing data.
+
+**Supported years:** 2024 through the current calendar year. Years not detected on CMS are shown as disabled (greyed out) in the Manage Years dialog.
 
 If all download attempts fail, a clear error message is shown with a link to manually download the file from CMS.
 

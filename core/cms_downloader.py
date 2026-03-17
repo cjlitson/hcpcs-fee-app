@@ -13,6 +13,7 @@ import io
 import json
 import os
 import re as _re
+import xml.etree.ElementTree as _ET
 import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -49,6 +50,8 @@ _AVAILABLE_YEARS_CACHE_KEY = "cms_available_years_cache"
 # URL scheme; including it caused spurious 404 errors when all other patterns
 # fail.
 _CMS_URL_TEMPLATES = [
+    # No-quarter variant — CMS publishes this for the initial/only release of a year
+    "https://www.cms.gov/files/zip/dme{year2d}.zip",
     # Quarterly pattern — current CMS convention (most recent quarter first)
     "https://www.cms.gov/files/zip/dme{year2d}-d.zip",
     "https://www.cms.gov/files/zip/dme{year2d}-c.zip",
@@ -64,9 +67,9 @@ _CMS_URL_TEMPLATES = [
     "https://www.cms.gov/files/zip/dmepos-{year}-fee-schedule.zip",
 ]
 
-# Pattern for quarterly fee schedule ZIPs: dme{YY}[-][a-d].zip (case-insensitive)
-# Hyphen is optional to handle both dme26-a.zip and dme26a.zip forms.
-_QUARTERLY_ZIP_RE = _re.compile(r"dme\d{2}-?[a-d]\.zip$", _re.IGNORECASE)
+# Pattern for DMEPOS fee schedule ZIPs: dme{YY}[-][a-d].zip or dme{YY}.zip
+# Quarter letter is optional to handle dme26.zip (CMS publishes this for initial releases).
+_QUARTERLY_ZIP_RE = _re.compile(r"dme\d{2}(?:-?[a-d])?\.zip$", _re.IGNORECASE)
 
 # Sub-page link pattern: year-specific detail pages on the CMS site
 # e.g. /dme26 or /dmepos-fee-schedule/dme26
@@ -162,6 +165,169 @@ def _scrape_cms_urls(year):
         return []
 
 
+# CMS RSS feed URL for the DMEPOS fee schedule page
+_CMS_RSS_URL = "https://www.cms.gov/rss/30881"
+
+# Preference key for the pattern tracker
+_PATTERN_TRACKER_KEY = "cms_successful_patterns"
+
+
+def _scrape_rss_urls(year):
+    """Fetch the CMS DMEPOS RSS feed and return ZIP URLs for *year*.
+
+    Parses ``<link>`` and ``<guid>`` elements for sub-page URLs matching the
+    ``dme{yy}`` pattern, follows those sub-pages to find ZIP links (reusing
+    ``_collect_zip_urls`` logic), and returns discovered ZIP URLs.
+
+    Returns an empty list on any failure — RSS is a best-effort discovery layer.
+    """
+    year2d = str(year)[-2:]
+    try:
+        resp = requests.get(_CMS_RSS_URL, timeout=15)
+        if resp.status_code != 200:
+            return []
+
+        root = _ET.fromstring(resp.text)
+
+        # Collect candidate sub-page URLs from <link> and <guid> elements
+        subpage_urls = []
+        seen_subpages = set()
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
+        for elem in root.iter():
+            tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+            if tag in ("link", "guid") and elem.text:
+                url = elem.text.strip()
+                # Check if this looks like a year-specific sub-page for the requested year
+                path = url.split("?")[0]
+                m = _re.search(r"/dme(\d{2})(?:[^/\d]|$)", path, _re.IGNORECASE)
+                if m and m.group(1) == year2d and url not in seen_subpages:
+                    seen_subpages.add(url)
+                    subpage_urls.append(url)
+
+        seen_zips = set()
+        zip_urls = []
+        for subpage_url in subpage_urls:
+            try:
+                sub_resp = requests.get(subpage_url, timeout=15)
+                if sub_resp.status_code != 200:
+                    continue
+                extractor = _LinkExtractor()
+                extractor.feed(sub_resp.text)
+                for href in extractor.links:
+                    abs_url = urljoin(subpage_url, href)
+                    filename = abs_url.split("/")[-1]
+                    if not _QUARTERLY_ZIP_RE.match(filename):
+                        continue
+                    filename_nohyphen = filename.replace("-", "").lower()
+                    if not filename_nohyphen.startswith(f"dme{year2d}"):
+                        continue
+                    if abs_url not in seen_zips:
+                        seen_zips.add(abs_url)
+                        zip_urls.append(abs_url)
+            except Exception:
+                pass
+
+        zip_urls.sort(key=lambda u: u.lower(), reverse=True)
+        return zip_urls
+    except Exception:
+        return []
+
+
+def _record_successful_pattern(year, url, discovered_via):
+    """Record a successful download URL pattern for *year* in the pattern tracker.
+
+    Extracts the URL template (replacing 2-digit year with ``{yy}`` and quarter
+    letter with ``{q}``) and saves to user preferences so future syncs can use
+    the same pattern for newer years.
+    """
+    year2d = str(year)[-2:]
+    try:
+        # Extract the pattern template from the URL
+        filename = url.split("/")[-1]
+        # Replace year digits with {yy} and quarter letter with {q}
+        pattern = _re.sub(
+            r"(?i)(dme)" + year2d + r"(-?)([a-d])(\.zip)$",
+            r"\1{yy}\2{q}\4",
+            filename,
+        )
+        if pattern == filename:
+            # No quarter letter — plain dme{yy}.zip pattern
+            pattern = _re.sub(
+                r"(?i)(dme)" + year2d + r"(\.zip)$",
+                r"\1{yy}\2",
+                filename,
+            )
+
+        raw = get_preference(_PATTERN_TRACKER_KEY)
+        data = {}
+        if raw:
+            try:
+                data = json.loads(raw)
+            except Exception:
+                data = {}
+        patterns = data.get("patterns", {})
+        patterns[str(year)] = {
+            "url": url,
+            "pattern": pattern,
+            "discovered_via": discovered_via,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        data["patterns"] = patterns
+        set_preference(_PATTERN_TRACKER_KEY, json.dumps(data))
+    except Exception:
+        pass  # Pattern recording is non-critical
+
+
+def _generate_pattern_candidates(year):
+    """Generate candidate URLs for *year* from previously successful patterns.
+
+    Loads stored patterns from user preferences, generates candidate URLs for
+    the requested year by substituting ``{yy}`` with the 2-digit year, and
+    ranks them by recency (most recent prior year's pattern first).
+
+    Returns a list of candidate URL strings (may be empty).
+    """
+    year2d = str(year)[-2:]
+    try:
+        raw = get_preference(_PATTERN_TRACKER_KEY)
+        if not raw:
+            return []
+        data = json.loads(raw)
+        patterns = data.get("patterns", {})
+
+        # Sort prior years by recency (descending) — exclude the requested year itself
+        prior = [
+            (int(y), info)
+            for y, info in patterns.items()
+            if int(y) != year
+        ]
+        prior.sort(key=lambda x: x[0], reverse=True)
+
+        candidates = []
+        seen_patterns = set()
+        for _yr, info in prior:
+            tmpl = info.get("pattern", "")
+            if not tmpl or tmpl in seen_patterns:
+                continue
+            seen_patterns.add(tmpl)
+            # Generate URL: replace {yy} with 2-digit year; drop {q} variants separately
+            if "{q}" in tmpl:
+                # Generate all quarter variants (d first — most recent)
+                for q in ("d", "c", "b", "a"):
+                    filename = tmpl.replace("{yy}", year2d).replace("{q}", q)
+                    url = f"https://www.cms.gov/files/zip/{filename}"
+                    if url not in candidates:
+                        candidates.append(url)
+            else:
+                filename = tmpl.replace("{yy}", year2d)
+                url = f"https://www.cms.gov/files/zip/{filename}"
+                if url not in candidates:
+                    candidates.append(url)
+        return candidates
+    except Exception:
+        return []
+
+
 def _get_cached_urls(year):
     """Return cached URL list for *year* if cache is still valid, else empty list."""
     key = f"{_URL_CACHE_KEY_PREFIX}{year}"
@@ -193,16 +359,17 @@ def _set_cached_urls(year, urls):
 
 
 def discover_available_cms_years():
-    """Scrape the CMS DMEPOS page and return a set of years currently available.
+    """Scrape the CMS DMEPOS page and RSS feed; return a set of available years.
 
     Results are cached for 24 hours in user_preferences.  On any error (network
     failure, unexpected page format, etc.) returns an empty set so callers can
     fall back gracefully.
 
     Year patterns detected:
-    - ``dme{yy}-a/b/c/d.zip``  → 2000 + yy
+    - ``dme{yy}[-][a-d].zip`` or ``dme{yy}.zip`` → 2000 + yy
     - URLs containing ``dmepos`` and a 4-digit year
     - ``DMEPOSFS{year}Q{n}.zip``
+    - RSS feed ``<link>``/``<guid>`` elements matching ``/dme{yy}``
     """
     # Check cache first
     raw = get_preference(_AVAILABLE_YEARS_CACHE_KEY)
@@ -223,8 +390,8 @@ def discover_available_cms_years():
         for href in links:
             abs_url = urljoin(base_url, href)
             lower = abs_url.lower()
-            # Pattern: dme{yy}-[a-d].zip or dme{yy}[a-d].zip (no hyphen)
-            m = _re.search(r"dme(\d{2})-?[a-d]\.zip", lower)
+            # Pattern: dme{yy}[-][a-d].zip, dme{yy}.zip, or dme{yy}[a-d].zip (no hyphen)
+            m = _re.search(r"dme(\d{2})(?:-?[a-d])?\.zip", lower)
             if m:
                 years.add(2000 + int(m.group(1)))
                 continue
@@ -245,37 +412,59 @@ def discover_available_cms_years():
                 continue
         return years
 
+    years = set()
+
+    # Attempt RSS feed discovery first (lightweight and structured)
+    try:
+        rss_resp = requests.get(_CMS_RSS_URL, timeout=15)
+        if rss_resp.status_code == 200:
+            root = _ET.fromstring(rss_resp.text)
+            rss_links = []
+            for elem in root.iter():
+                tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+                if tag in ("link", "guid") and elem.text:
+                    rss_links.append(elem.text.strip())
+            years |= _extract_years_from_links(rss_links)
+    except Exception:
+        pass
+
     try:
         resp = requests.get(CMS_DMEPOS_PAGE, timeout=15)
         if resp.status_code != 200:
-            return set()
-        extractor = _LinkExtractor()
-        extractor.feed(resp.text)
-        years = _extract_years_from_links(extractor.links)
+            if not years:
+                return set()
+        else:
+            extractor = _LinkExtractor()
+            extractor.feed(resp.text)
+            years |= _extract_years_from_links(extractor.links)
 
-        # Also follow sub-page links to detect years listed only on detail pages
-        for href in extractor.links:
-            abs_url = urljoin("https://www.cms.gov", href)
-            path = abs_url.split("?")[0]
-            if _SUBPAGE_LINK_RE.search(path):
-                try:
-                    sub_resp = requests.get(abs_url, timeout=15)
-                    if sub_resp.status_code == 200:
-                        sub_extractor = _LinkExtractor()
-                        sub_extractor.feed(sub_resp.text)
-                        years |= _extract_years_from_links(sub_extractor.links, abs_url)
-                except Exception:
-                    pass
-
-        # Cache the result
-        cache_data = {
-            "cached_at": datetime.now(timezone.utc).isoformat(),
-            "years": sorted(years),
-        }
-        set_preference(_AVAILABLE_YEARS_CACHE_KEY, json.dumps(cache_data))
-        return years
+            # Also follow sub-page links to detect years listed only on detail pages
+            for href in extractor.links:
+                abs_url = urljoin("https://www.cms.gov", href)
+                path = abs_url.split("?")[0]
+                if _SUBPAGE_LINK_RE.search(path):
+                    try:
+                        sub_resp = requests.get(abs_url, timeout=15)
+                        if sub_resp.status_code == 200:
+                            sub_extractor = _LinkExtractor()
+                            sub_extractor.feed(sub_resp.text)
+                            years |= _extract_years_from_links(sub_extractor.links, abs_url)
+                    except Exception:
+                        pass
     except Exception:
+        if not years:
+            return set()
+
+    if not years:
         return set()
+
+    # Cache the result
+    cache_data = {
+        "cached_at": datetime.now(timezone.utc).isoformat(),
+        "years": sorted(years),
+    }
+    set_preference(_AVAILABLE_YEARS_CACHE_KEY, json.dumps(cache_data))
+    return years
 
 
 # Mapping of US state abbreviations to state names
@@ -312,28 +501,30 @@ def _clear_url_cache(year):
 def _try_download_zip(year, progress_callback=None):
     """Try to download the CMS DMEPOS ZIP for the given year.
 
-    Strategy:
+    Discovery strategy (in order):
     1. Check cache for previously discovered URLs for this year.
-    2. If cache miss or expired, scrape the CMS DMEPOS page to discover URLs.
-    3. Cache any discovered URLs.
-    4. Try discovered URLs first, then fall back to hardcoded templates.
-       Quarterly template URLs (dmeYY-[a-d].zip) are treated as trusted so they
-       skip the HEAD pre-check — these are the definitive CMS quarterly patterns
-       and some CMS servers respond to HEAD differently than GET.
-    5. Raise DownloadError if all attempts fail (and clear the URL cache so stale
-       entries don't block future attempts).
+    2. Check CMS RSS feed for sub-page links → follow to find ZIP URLs.
+    3. Scrape the CMS DMEPOS HTML page + sub-pages.
+    4. Generate candidates from pattern tracker (prior year successes).
+    5. Fall back to hardcoded URL templates.
+
+    On success, records the successful URL pattern to the pattern tracker and
+    caches the URL for future use.  On failure, clears the URL cache so stale
+    entries don't block future sync attempts.
     """
     year2d = str(year)[-2:]
 
-    # Build candidate URL list
-    candidate_urls = []
-    # Track which URLs were obtained via live scrape or cache (trusted sources).
-    # Template-only URLs get a HEAD check first to skip retired patterns quickly,
-    # EXCEPT for the quarterly dmeYY-[a-d].zip patterns which are always trusted.
+    # Build candidate URL list with discovery-method tags for the pattern tracker
+    # Each entry: (url, discovery_method)
+    candidate_entries = []
+
+    # Track which URLs are trusted (no HEAD pre-check needed).
+    # Quarterly templates and scraped/cached URLs skip HEAD for speed.
     trusted_urls = set()
 
-    # Quarterly templates are always trusted — skip HEAD check for these
+    # Quarterly and no-letter templates are always trusted
     quarterly_trusted = {
+        f"https://www.cms.gov/files/zip/dme{year2d}.zip",
         f"https://www.cms.gov/files/zip/dme{year2d}-d.zip",
         f"https://www.cms.gov/files/zip/dme{year2d}-c.zip",
         f"https://www.cms.gov/files/zip/dme{year2d}-b.zip",
@@ -345,37 +536,63 @@ def _try_download_zip(year, progress_callback=None):
     }
     trusted_urls.update(quarterly_trusted)
 
+    seen_urls = set()
+
+    def _add_candidates(urls, method):
+        for url in urls:
+            if url not in seen_urls:
+                seen_urls.add(url)
+                candidate_entries.append((url, method))
+
     # Step 1: Check cache
     cached = _get_cached_urls(year)
     if cached:
         if progress_callback:
             progress_callback(f"Using {len(cached)} cached URL(s) for {year}…")
-        candidate_urls.extend(cached)
+        _add_candidates(cached, "cache")
         trusted_urls.update(cached)
     else:
-        # Step 2: Scrape CMS page
+        # Step 2: RSS feed discovery
+        if progress_callback:
+            progress_callback("Checking CMS RSS feed for download links…")
+        rss_urls = _scrape_rss_urls(year)
+        if rss_urls:
+            if progress_callback:
+                progress_callback(f"Found {len(rss_urls)} link(s) via RSS feed.")
+            _add_candidates(rss_urls, "rss")
+            trusted_urls.update(rss_urls)
+
+        # Step 3: Scrape CMS HTML page
         if progress_callback:
             progress_callback("Checking CMS website for current download links…")
         scraped = _scrape_cms_urls(year)
         if scraped:
             if progress_callback:
                 progress_callback(f"Found {len(scraped)} download link(s) on CMS website.")
-            _set_cached_urls(year, scraped)
-            candidate_urls.extend(scraped)
+            _add_candidates(scraped, "scrape")
             trusted_urls.update(scraped)
 
-    # Step 3: Add hardcoded fallback templates
+        # Cache all discovered URLs (RSS + scrape combined)
+        all_discovered = [url for url, _ in candidate_entries]
+        if all_discovered:
+            _set_cached_urls(year, all_discovered)
+
+    # Step 4: Pattern tracker candidates
+    pattern_candidates = _generate_pattern_candidates(year)
+    _add_candidates(pattern_candidates, "pattern")
+    trusted_urls.update(pattern_candidates)
+
+    # Step 5: Hardcoded template fallback
     for template in _CMS_URL_TEMPLATES:
         url = template.format(year=year, year2d=year2d)
-        if url not in candidate_urls:
-            candidate_urls.append(url)
+        method = "template"
+        if url not in seen_urls:
+            seen_urls.add(url)
+            candidate_entries.append((url, method))
 
-    # Step 4: Try each candidate
-    # For trusted URLs (discovered via live scrape, cache, or quarterly pattern)
-    # go straight to GET.  For legacy template URLs, first do a cheap HEAD request
-    # to skip known-missing URLs quickly and avoid long timeouts.
+    # Try each candidate
     last_error = None
-    for url in candidate_urls:
+    for url, discovery_method in candidate_entries:
         try:
             if progress_callback:
                 progress_callback(f"Trying {url} …")
@@ -390,6 +607,7 @@ def _try_download_zip(year, progress_callback=None):
                     pass  # Proceed to GET anyway if HEAD itself fails
             resp = requests.get(url, timeout=60, stream=True)
             if resp.status_code == 200:
+                _record_successful_pattern(year, url, discovery_method)
                 return resp.content
             last_error = f"HTTP {resp.status_code} from {url}"
         except requests.RequestException as exc:

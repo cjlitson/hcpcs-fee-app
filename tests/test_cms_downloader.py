@@ -13,7 +13,11 @@ import pytest
 
 from core.cms_downloader import (
     DownloadError,
+    _QUARTERLY_ZIP_RE,
     _extract_csv_from_zip,
+    _generate_pattern_candidates,
+    _record_successful_pattern,
+    _scrape_rss_urls,
     _select_main_dmepos_filename,
     discover_available_cms_years,
 )
@@ -351,3 +355,234 @@ class TestDiscoverAvailableCmsYears:
 
         assert 2026 in years
         assert 2025 in years
+
+
+# ---------------------------------------------------------------------------
+# _QUARTERLY_ZIP_RE — broadened regex tests
+# ---------------------------------------------------------------------------
+
+class TestQuarterlyZipRegex:
+    """Tests for the broadened _QUARTERLY_ZIP_RE pattern."""
+
+    def test_matches_no_quarter_letter(self):
+        """dme26.zip (no quarter letter) must match."""
+        assert _QUARTERLY_ZIP_RE.match("dme26.zip")
+
+    def test_matches_with_hyphen_and_letter(self):
+        """dme26-a.zip must match."""
+        assert _QUARTERLY_ZIP_RE.match("dme26-a.zip")
+
+    def test_matches_no_hyphen_with_letter(self):
+        """dme26a.zip must match."""
+        assert _QUARTERLY_ZIP_RE.match("dme26a.zip")
+
+    def test_matches_all_quarters(self):
+        """All quarter letters a-d must match with and without hyphen."""
+        for q in "abcd":
+            assert _QUARTERLY_ZIP_RE.match(f"dme26-{q}.zip"), f"dme26-{q}.zip not matched"
+            assert _QUARTERLY_ZIP_RE.match(f"dme26{q}.zip"), f"dme26{q}.zip not matched"
+
+    def test_case_insensitive(self):
+        """Regex is case-insensitive."""
+        assert _QUARTERLY_ZIP_RE.match("DME26.ZIP")
+        assert _QUARTERLY_ZIP_RE.match("DME26-A.ZIP")
+
+    def test_does_not_match_jurisdiction_zip(self):
+        """jurisdiction.zip must NOT match."""
+        assert not _QUARTERLY_ZIP_RE.match("jurisdiction.zip")
+
+    def test_does_not_match_dmerural(self):
+        """dmerural26.zip must NOT match (rural ZIP code mapping file)."""
+        assert not _QUARTERLY_ZIP_RE.match("dmerural26.zip")
+
+    def test_does_not_match_dmeposfs(self):
+        """DMEPOSFS2026Q1.zip must NOT match (old naming scheme)."""
+        assert not _QUARTERLY_ZIP_RE.match("DMEPOSFS2026Q1.zip")
+
+
+# ---------------------------------------------------------------------------
+# Pattern Tracker — _record_successful_pattern / _generate_pattern_candidates
+# ---------------------------------------------------------------------------
+
+class TestPatternTracker:
+    """Tests for the pattern tracker round-trip."""
+
+    @patch("core.cms_downloader.get_preference", return_value=None)
+    @patch("core.cms_downloader.set_preference")
+    def test_record_no_quarter(self, mock_set, mock_get):
+        """Recording dme26.zip stores pattern 'dme{yy}.zip'."""
+        _record_successful_pattern(2026, "https://www.cms.gov/files/zip/dme26.zip", "template")
+        call_args = mock_set.call_args
+        stored = call_args[0][1]
+        import json
+        data = json.loads(stored)
+        assert data["patterns"]["2026"]["pattern"] == "dme{yy}.zip"
+        assert data["patterns"]["2026"]["discovered_via"] == "template"
+
+    @patch("core.cms_downloader.get_preference", return_value=None)
+    @patch("core.cms_downloader.set_preference")
+    def test_record_with_quarter(self, mock_set, mock_get):
+        """Recording dme25-d.zip stores pattern 'dme{yy}-{q}.zip'."""
+        _record_successful_pattern(2025, "https://www.cms.gov/files/zip/dme25-d.zip", "scrape")
+        call_args = mock_set.call_args
+        stored = call_args[0][1]
+        import json
+        data = json.loads(stored)
+        assert data["patterns"]["2025"]["pattern"] == "dme{yy}-{q}.zip"
+
+    @patch("core.cms_downloader.set_preference")
+    @patch("core.cms_downloader.get_preference")
+    def test_generate_candidates_from_no_quarter_pattern(self, mock_get, mock_set):
+        """Pattern 'dme{yy}.zip' for year 2026 generates 'dme27.zip' for 2027."""
+        import json
+        stored = json.dumps({
+            "patterns": {
+                "2026": {
+                    "url": "https://www.cms.gov/files/zip/dme26.zip",
+                    "pattern": "dme{yy}.zip",
+                    "discovered_via": "template",
+                    "timestamp": "2026-01-15T00:00:00+00:00",
+                }
+            }
+        })
+        mock_get.return_value = stored
+        candidates = _generate_pattern_candidates(2027)
+        assert "https://www.cms.gov/files/zip/dme27.zip" in candidates
+
+    @patch("core.cms_downloader.set_preference")
+    @patch("core.cms_downloader.get_preference")
+    def test_generate_candidates_from_quarterly_pattern(self, mock_get, mock_set):
+        """Pattern 'dme{yy}-{q}.zip' generates all four quarterly variants."""
+        import json
+        stored = json.dumps({
+            "patterns": {
+                "2025": {
+                    "url": "https://www.cms.gov/files/zip/dme25-d.zip",
+                    "pattern": "dme{yy}-{q}.zip",
+                    "discovered_via": "scrape",
+                    "timestamp": "2025-10-01T00:00:00+00:00",
+                }
+            }
+        })
+        mock_get.return_value = stored
+        candidates = _generate_pattern_candidates(2026)
+        assert "https://www.cms.gov/files/zip/dme26-d.zip" in candidates
+        assert "https://www.cms.gov/files/zip/dme26-a.zip" in candidates
+
+    @patch("core.cms_downloader.set_preference")
+    @patch("core.cms_downloader.get_preference")
+    def test_generate_candidates_excludes_requested_year(self, mock_get, mock_set):
+        """Pattern stored for the same year is not used as a candidate source."""
+        import json
+        stored = json.dumps({
+            "patterns": {
+                "2026": {
+                    "url": "https://www.cms.gov/files/zip/dme26.zip",
+                    "pattern": "dme{yy}.zip",
+                    "discovered_via": "template",
+                    "timestamp": "2026-01-15T00:00:00+00:00",
+                }
+            }
+        })
+        mock_get.return_value = stored
+        # Requesting year 2026 — same year as stored pattern — should yield nothing
+        candidates = _generate_pattern_candidates(2026)
+        assert candidates == []
+
+    @patch("core.cms_downloader.get_preference", return_value=None)
+    @patch("core.cms_downloader.set_preference")
+    def test_generate_candidates_empty_when_no_prior_data(self, mock_set, mock_get):
+        """Returns empty list when no pattern data has been stored yet."""
+        candidates = _generate_pattern_candidates(2026)
+        assert candidates == []
+
+
+# ---------------------------------------------------------------------------
+# _scrape_rss_urls — mock RSS XML
+# ---------------------------------------------------------------------------
+
+class TestScrapeRssUrls:
+    """Tests for the RSS feed discovery function."""
+
+    _RSS_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>CMS DMEPOS Fee Schedule</title>
+    <item>
+      <title>DME 2026 Fee Schedule</title>
+      <link>https://www.cms.gov/medicare/payment/fee-schedules/dmepos/dmepos-fee-schedule/dme26</link>
+      <guid>https://www.cms.gov/medicare/payment/fee-schedules/dmepos/dmepos-fee-schedule/dme26</guid>
+    </item>
+    <item>
+      <title>DME 2025 Fee Schedule Q4</title>
+      <link>https://www.cms.gov/medicare/payment/fee-schedules/dmepos/dmepos-fee-schedule/dme25-d</link>
+      <guid>https://www.cms.gov/medicare/payment/fee-schedules/dmepos/dmepos-fee-schedule/dme25-d</guid>
+    </item>
+  </channel>
+</rss>"""
+
+    def _subpage_html(self, zip_filename):
+        return f'<html><body><a href="https://www.cms.gov/files/zip/{zip_filename}">Download</a></body></html>'
+
+    @patch("core.cms_downloader.requests.get")
+    def test_finds_zip_from_rss_subpage(self, mock_get):
+        """RSS feed pointing to dme26 subpage → ZIP URL discovered."""
+        rss_mock = MagicMock(status_code=200, text=self._RSS_TEMPLATE)
+        subpage_mock = MagicMock(status_code=200, text=self._subpage_html("dme26.zip"))
+
+        def side_effect(url, **kwargs):
+            if "rss" in url:
+                return rss_mock
+            return subpage_mock
+
+        mock_get.side_effect = side_effect
+
+        urls = _scrape_rss_urls(2026)
+        assert any("dme26.zip" in u for u in urls)
+
+    @patch("core.cms_downloader.requests.get", side_effect=Exception("network error"))
+    def test_returns_empty_on_exception(self, mock_get):
+        """Returns empty list gracefully on any exception."""
+        urls = _scrape_rss_urls(2026)
+        assert urls == []
+
+    @patch("core.cms_downloader.requests.get")
+    def test_returns_empty_when_no_matching_year(self, mock_get):
+        """Returns empty list when RSS has no links matching the requested year."""
+        mock_get.return_value = MagicMock(status_code=200, text=self._RSS_TEMPLATE)
+        # Year 2030 — no matching links in the RSS template above
+        urls = _scrape_rss_urls(2030)
+        assert urls == []
+
+    @patch("core.cms_downloader.requests.get")
+    def test_returns_empty_on_non_200_rss(self, mock_get):
+        """Returns empty list when RSS feed returns a non-200 status."""
+        mock_get.return_value = MagicMock(status_code=404, text="")
+        urls = _scrape_rss_urls(2026)
+        assert urls == []
+
+
+# ---------------------------------------------------------------------------
+# discover_available_cms_years — detects year from no-quarter ZIP pattern
+# ---------------------------------------------------------------------------
+
+class TestDiscoverYearFromNoQuarterZip:
+    """Tests that dme{yy}.zip (no quarter letter) is recognised as a year."""
+
+    def _make_html_with_links(self, hrefs):
+        links = "".join(f'<a href="{h}">link</a>' for h in hrefs)
+        return f"<html><body>{links}</body></html>"
+
+    @patch("core.cms_downloader.get_preference", return_value=None)
+    @patch("core.cms_downloader.set_preference")
+    @patch("core.cms_downloader.requests.get")
+    def test_detects_year_from_no_quarter_zip(self, mock_get, mock_set, mock_pref):
+        """dme26.zip (no quarter letter) is correctly mapped to year 2026."""
+        html = self._make_html_with_links([
+            "/files/zip/dme26.zip",
+        ])
+        mock_get.return_value = MagicMock(status_code=200, text=html)
+
+        years = discover_available_cms_years()
+
+        assert 2026 in years

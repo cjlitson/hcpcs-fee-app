@@ -206,6 +206,7 @@ class MainWindow(QMainWindow):
         self.table.setStyleSheet(
             "QTableWidget::item:selected { background-color: #003366; color: white; }"
             "QTableWidget::item:selected:!active { background-color: #4a7ab5; color: white; }"
+            "QTableWidget::item:hover { background-color: #e0e8f0; }"
         )
         self.table.cellClicked.connect(self._on_cell_clicked)
         self.table.doubleClicked.connect(self._on_row_double_clicked)
