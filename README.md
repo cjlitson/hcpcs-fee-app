@@ -1,17 +1,31 @@
-# VA HCPCS Fee Schedule Manager
+# VA HCPCS Fee Schedule Manager (HCPCSFeeApp)
 
-A standalone Windows desktop application for VA staff to manage, view, filter, and export CMS DMEPOS HCPCS fee schedule data. No installation required — runs as a single `.exe` file.
+A standalone Windows desktop application for VA staff to **manage, view, filter, and export** CMS DMEPOS HCPCS fee schedule data.
+
+- Runs as a single **Windows `.exe`** (no installer required)
+- Can also be run from source using Python
+
+---
+
+## Quick Start (Windows EXE)
+
+1. Download `HCPCSFeeApp.exe` from **[GitHub Releases](https://github.com/cjlitson/hcpcs-fee-app/releases)**.
+2. Double-click to run.
+
+No installer is required.
+
+> **Note:** Windows SmartScreen / "Unknown publisher" prompts are expected unless the EXE is code-signed. The app embeds publisher/product metadata, but trusted publisher prompts require a code-signing certificate (typically handled by IT). Choose **More info → Run anyway** if permitted by your environment.
 
 ---
 
 ## Features
 
-- **Auto-download** CMS DMEPOS fee schedules for user-selected states (2024 through the current calendar year), with live URL scraping and 24-hour cache
-- **Smart file detection** — selects the main DMEPOS schedule file (`DMEPOS*.csv`) by name pattern, excluding auxiliary datasets (Rural ZIP, Former CBA, PEN schedules)
-- **Quarterly replace** — each CMS sync replaces prior data for the same year/state so quarterly updates stay current without duplicates
-- **Import** existing VISN-format CSV files
+- **Auto-download** CMS DMEPOS fee schedules for user-selected states (supported years: **2024 through the current calendar year**), with live URL discovery and a **24-hour cache**
+- **Smart file detection** — selects the primary DMEPOS schedule CSV (`DMEPOS*.csv`) while excluding auxiliary datasets (Rural ZIP, Former CBA, PEN schedules, etc.)
+- **Quarterly replace** — each CMS sync replaces prior data for the same year/state to keep results current without duplicates
+- **Import** existing VISN-format CSV files (or manually downloaded CMS CSVs)
 - **Filter** by state, year, HCPCS code, and description keyword
-- **Export** to CSV, Excel (.xlsx), or PDF
+- **Export** to **CSV**, **Excel (.xlsx)**, or **PDF**
 - **SQLite database** — all data stored locally, no server needed
 - **State management** — select any of the 50 states + DC to track
 - **Year management** — select which fiscal years to track
@@ -20,10 +34,38 @@ A standalone Windows desktop application for VA staff to manage, view, filter, a
 
 ---
 
-## Requirements
+## Usage
 
-- Python 3.11 or higher
-- Windows 10/11 (for .exe build)
+1. **First Launch** — A welcome dialog will appear. Select your tracked states and years.
+2. **Manage States** — Go to `Settings → Manage States`, check the states you want to track, and save.
+3. **Manage Years** — Go to `Settings → Manage Years` to select which fiscal years to include.
+4. **Sync Data** — Click `Sync from CMS` to auto-download the latest CMS DMEPOS fee schedules for your selected states. The downloader scrapes live URLs from the CMS website and falls back to known URL templates if needed. Only years up to the current calendar year are offered; years not currently detected on CMS are shown as disabled in the Manage Years dialog.
+5. **Import CSV** — Use `File → Import CSV` to load an existing VISN-format CSV or a manually downloaded CMS file (`.csv`).
+6. **Filter** — Use the toolbar to filter by state, year, HCPCS code, or description keyword.
+7. **Export** — Click `Export…` to save filtered results as CSV, Excel, or PDF.
+8. **Developer Tools** — Use `Developer Tools → SQL Publisher` to run direct SQL queries or publish data to a Databricks or ODBC endpoint.
+
+---
+
+## Troubleshooting
+
+### "Windows protected your PC" / SmartScreen
+If you see a SmartScreen warning, this is normal for unsigned internal tools. Choose **More info → Run anyway** (if permitted by your environment). The EXE embeds publisher/product metadata but does not carry a code-signing certificate.
+
+### ODBC / SQL Publisher issues
+- The SQL Publisher feature requires `pyodbc` and an appropriate ODBC driver installed on the machine, plus network access and credentials for the target endpoint.
+- If a connection test fails, confirm your DSN/driver and that the target endpoint is reachable from your network.
+
+### CMS sync fails / manual import fallback
+If CMS download attempts fail (e.g., due to network restrictions or a CMS URL change), the error dialog provides a direct link to the CMS DMEPOS fee schedule page. Download the ZIP or CSV manually, then import it via **File → Import CSV**.
+
+---
+
+## Requirements (for running from source)
+
+- Python **3.11+**
+- Windows 10/11 (for `.exe` build)
+- Dependencies in `requirements.txt`
 
 ---
 
@@ -38,7 +80,7 @@ python main.py
 
 ---
 
-## Build the Windows .exe
+## Build the Windows `.exe`
 
 Double-click `build.bat` or run from command prompt:
 
@@ -49,19 +91,6 @@ build.bat
 Output: `dist\HCPCSFeeApp.exe` — copy this single file anywhere and run it. No installation needed.
 
 > **Note:** The build includes hidden imports for `pyodbc`, `databricks.sql`, and `databricks.sql.client` to ensure the Developer Tools / SQL Publisher feature works correctly in the bundled `.exe`. These are loaded lazily at runtime and would otherwise be missed by PyInstaller's static analysis.
-
----
-
-## Usage
-
-1. **First Launch** — A welcome dialog will appear. Select your tracked states and years.
-2. **Manage States** — Go to `Settings → Manage States`, check the states you want to track, and save.
-3. **Manage Years** — Go to `Settings → Manage Years` to select which fiscal years to include.
-4. **Sync Data** — Click `Sync from CMS` to auto-download the latest CMS DMEPOS fee schedules for your selected states. The downloader scrapes live URLs from the CMS website and falls back to known URL templates if needed. Only years up to the current calendar year are offered; years not currently detected on CMS are shown as disabled in the Manage Years dialog.
-5. **Import CSV** — Use `File → Import CSV` to load an existing VISN 22 CSV or a manually downloaded CMS file (`.csv`).
-6. **Filter** — Use the toolbar to filter by state, year, HCPCS code, or description keyword.
-7. **Export** — Click `Export...` to save filtered results as CSV, Excel, or PDF.
-8. **Developer Tools** — Use `Developer Tools → SQL Publisher` to run direct SQL queries or publish data to a Databricks or ODBC endpoint.
 
 ---
 
@@ -152,3 +181,9 @@ hcpcs-fee-app/
 └── data/
     └── hcpcs_fees.db                # Auto-created SQLite database (gitignored)
 ```
+
+---
+
+## Release Notes
+
+- [v1.1.1 (2026-03-17)](docs/releases/v1.1.1.md)
