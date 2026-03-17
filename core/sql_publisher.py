@@ -285,48 +285,84 @@ def _replace_sqlserver(conn, records, table_name, schema, progress_callback=None
 
 
 def _merge_sqlserver(conn, records, table_name, schema, progress_callback=None):
-    """Upsert via MERGE on (hcpcs_code, state_abbr, year, modifier)."""
-    cursor = conn.cursor()
+    """Upsert via staging temp table + single MERGE on (hcpcs_code, state_abbr, year, modifier).
 
-    merge_sql = f"""
-        MERGE [{schema}].[{table_name}] AS target
-        USING (SELECT ? AS hcpcs_code, ? AS description, ? AS state_abbr,
-                      ? AS year, ? AS allowable, ? AS modifier,
-                      ? AS data_source, ? AS imported_at) AS source
-            ON (target.hcpcs_code = source.hcpcs_code
-            AND target.state_abbr = source.state_abbr
-            AND target.year       = source.year
-            AND ISNULL(target.modifier, '') = ISNULL(source.modifier, ''))
-        WHEN MATCHED THEN UPDATE SET
-            target.allowable    = source.allowable,
-            target.description  = source.description,
-            target.data_source  = source.data_source,
-            target.imported_at  = source.imported_at
-        WHEN NOT MATCHED THEN INSERT
-            (hcpcs_code, description, state_abbr, year,
-             allowable, modifier, data_source, imported_at)
-        VALUES
-            (source.hcpcs_code, source.description, source.state_abbr,
-             source.year, source.allowable, source.modifier,
-             source.data_source, source.imported_at);
+    This is significantly faster than the previous per-row MERGE approach because it
+    eliminates one network round-trip per record.  Instead:
+      1. All rows are bulk-inserted into a session-local temp table via executemany
+         (benefits from fast_executemany on the connection).
+      2. A single T-SQL MERGE statement reconciles the staging table with the target.
     """
+    cursor = conn.cursor()
+    try:
+        # Guard against a leftover staging table from a prior aborted run on this connection
+        cursor.execute(
+            "IF OBJECT_ID('tempdb..#hcpcs_staging') IS NOT NULL "
+            "DROP TABLE #hcpcs_staging"
+        )
+        cursor.execute(
+            "CREATE TABLE #hcpcs_staging ("
+            "    hcpcs_code  NVARCHAR(20),  description NVARCHAR(500),"
+            "    state_abbr  NVARCHAR(2),   year        INT,"
+            "    allowable   FLOAT,         modifier    NVARCHAR(10),"
+            "    data_source NVARCHAR(100), imported_at NVARCHAR(30)"
+            ")"
+        )
 
-    total = len(records)
-    for i in range(0, total, _CHUNK_SIZE):
-        chunk = records[i: i + _CHUNK_SIZE]
-        for r in chunk:
-            cursor.execute(
-                merge_sql,
-                (
-                    r["hcpcs_code"], r["description"], r["state_abbr"],
-                    r["year"], r["allowable"], r["modifier"],
-                    r["data_source"], r["imported_at"],
-                ),
+        # Bulk-insert all records into staging (benefits from fast_executemany)
+        insert_sql = (
+            "INSERT INTO #hcpcs_staging "
+            "(hcpcs_code, description, state_abbr, year, allowable, modifier, data_source, imported_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        total = len(records)
+        for i in range(0, total, _CHUNK_SIZE):
+            chunk = records[i: i + _CHUNK_SIZE]
+            cursor.executemany(
+                insert_sql,
+                [
+                    (
+                        r["hcpcs_code"], r["description"], r["state_abbr"],
+                        r["year"], r["allowable"], r["modifier"],
+                        r["data_source"], r["imported_at"],
+                    )
+                    for r in chunk
+                ],
             )
-        if progress_callback:
-            progress_callback(min(i + _CHUNK_SIZE, total), total)
-    conn.commit()
-    cursor.close()
+            if progress_callback:
+                progress_callback(min(i + _CHUNK_SIZE, total), total)
+
+        # Single MERGE from staging into target — one round-trip regardless of dataset size
+        cursor.execute(f"""
+            MERGE [{schema}].[{table_name}] AS target
+            USING #hcpcs_staging AS source
+                ON (target.hcpcs_code = source.hcpcs_code
+                AND target.state_abbr = source.state_abbr
+                AND target.year       = source.year
+                AND ISNULL(target.modifier, '') = ISNULL(source.modifier, ''))
+            WHEN MATCHED THEN UPDATE SET
+                target.allowable    = source.allowable,
+                target.description  = source.description,
+                target.data_source  = source.data_source,
+                target.imported_at  = source.imported_at
+            WHEN NOT MATCHED THEN INSERT
+                (hcpcs_code, description, state_abbr, year,
+                 allowable, modifier, data_source, imported_at)
+            VALUES
+                (source.hcpcs_code, source.description, source.state_abbr,
+                 source.year, source.allowable, source.modifier,
+                 source.data_source, source.imported_at);
+        """)
+        conn.commit()
+    finally:
+        try:
+            cursor.execute(
+                "IF OBJECT_ID('tempdb..#hcpcs_staging') IS NOT NULL "
+                "DROP TABLE #hcpcs_staging"
+            )
+        except Exception:
+            pass
+        cursor.close()
 
 
 def _bulk_insert_sqlserver(cursor, records, table_name, schema,
@@ -373,55 +409,77 @@ def _replace_databricks(conn, records, table_name, schema, progress_callback=Non
 
 
 def _merge_databricks(conn, records, table_name, schema, progress_callback=None):
-    """Upsert via Delta Lake MERGE INTO."""
-    cursor = conn.cursor()
+    """Upsert via staging Delta table + single MERGE INTO on (hcpcs_code, state_abbr, year, modifier).
 
-    merge_sql = f"""
-        MERGE INTO `{schema}`.`{table_name}` AS target
-        USING (SELECT
-            ? AS hcpcs_code,
-            ? AS description,
-            ? AS state_abbr,
-            ? AS year,
-            ? AS allowable,
-            ? AS modifier,
-            ? AS data_source,
-            ? AS imported_at
-        ) AS source
-        ON (target.hcpcs_code = source.hcpcs_code
-        AND target.state_abbr = source.state_abbr
-        AND target.year       = source.year
-        AND COALESCE(target.modifier, '') = COALESCE(source.modifier, ''))
-        WHEN MATCHED THEN UPDATE SET
-            target.allowable   = source.allowable,
-            target.description = source.description,
-            target.data_source = source.data_source,
-            target.imported_at = source.imported_at
-        WHEN NOT MATCHED THEN INSERT
-            (hcpcs_code, description, state_abbr, year,
-             allowable, modifier, data_source, imported_at)
-        VALUES
-            (source.hcpcs_code, source.description, source.state_abbr,
-             source.year, source.allowable, source.modifier,
-             source.data_source, source.imported_at)
+    A temporary Delta table is created, all rows are bulk-inserted via executemany, and a
+    single MERGE INTO reconciles the staging data with the target table.  The staging table
+    is dropped in a finally block regardless of success or failure.
     """
+    cursor = conn.cursor()
+    staging = f"_staging_{table_name}"
+    try:
+        cursor.execute(f"""
+            CREATE OR REPLACE TABLE `{schema}`.`{staging}` (
+                hcpcs_code STRING,
+                description STRING,
+                state_abbr STRING,
+                year INT,
+                allowable DOUBLE,
+                modifier STRING,
+                data_source STRING,
+                imported_at STRING
+            ) USING DELTA
+        """)
 
-    total = len(records)
-    for i in range(0, total, _CHUNK_SIZE):
-        chunk = records[i: i + _CHUNK_SIZE]
-        for r in chunk:
-            cursor.execute(
-                merge_sql,
-                (
-                    r["hcpcs_code"], r["description"], r["state_abbr"],
-                    r["year"], r["allowable"], r["modifier"],
-                    r["data_source"], r["imported_at"],
-                ),
+        insert_sql = (
+            f"INSERT INTO `{schema}`.`{staging}` "
+            "(hcpcs_code, description, state_abbr, year, allowable, modifier, data_source, imported_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        total = len(records)
+        for i in range(0, total, _CHUNK_SIZE):
+            chunk = records[i: i + _CHUNK_SIZE]
+            cursor.executemany(
+                insert_sql,
+                [
+                    (
+                        r["hcpcs_code"], r["description"], r["state_abbr"],
+                        r["year"], r["allowable"], r["modifier"],
+                        r["data_source"], r["imported_at"],
+                    )
+                    for r in chunk
+                ],
             )
-        if progress_callback:
-            progress_callback(min(i + _CHUNK_SIZE, total), total)
-    conn.commit()
-    cursor.close()
+            if progress_callback:
+                progress_callback(min(i + _CHUNK_SIZE, total), total)
+
+        cursor.execute(f"""
+            MERGE INTO `{schema}`.`{table_name}` AS target
+            USING `{schema}`.`{staging}` AS source
+            ON (target.hcpcs_code = source.hcpcs_code
+            AND target.state_abbr = source.state_abbr
+            AND target.year       = source.year
+            AND COALESCE(target.modifier, '') = COALESCE(source.modifier, ''))
+            WHEN MATCHED THEN UPDATE SET
+                target.allowable   = source.allowable,
+                target.description = source.description,
+                target.data_source = source.data_source,
+                target.imported_at = source.imported_at
+            WHEN NOT MATCHED THEN INSERT
+                (hcpcs_code, description, state_abbr, year,
+                 allowable, modifier, data_source, imported_at)
+            VALUES
+                (source.hcpcs_code, source.description, source.state_abbr,
+                 source.year, source.allowable, source.modifier,
+                 source.data_source, source.imported_at)
+        """)
+        conn.commit()
+    finally:
+        try:
+            cursor.execute(f"DROP TABLE IF EXISTS `{schema}`.`{staging}`")
+        except Exception:
+            pass
+        cursor.close()
 
 
 def _bulk_insert_databricks(cursor, records, table_name, schema,
@@ -466,27 +524,53 @@ def _replace_zip_sqlserver(conn, records, table_name, schema,
 
 def _merge_zip_sqlserver(conn, records, table_name, schema,
                          progress_callback=None):
+    """Upsert via staging temp table + single MERGE on (year, zip5)."""
     cursor = conn.cursor()
-    merge_sql = f"""
-        MERGE [{schema}].[{table_name}] AS target
-        USING (SELECT ? AS year, ? AS zip5, ? AS state_abbr, ? AS imported_at) AS source
-            ON (target.year = source.year AND target.zip5 = source.zip5)
-        WHEN MATCHED THEN UPDATE SET
-            target.state_abbr  = source.state_abbr,
-            target.imported_at = source.imported_at
-        WHEN NOT MATCHED THEN INSERT (year, zip5, state_abbr, imported_at)
-        VALUES (source.year, source.zip5, source.state_abbr, source.imported_at);
-    """
-    total = len(records)
-    for i in range(0, total, _CHUNK_SIZE):
-        chunk = records[i: i + _CHUNK_SIZE]
-        for r in chunk:
-            cursor.execute(merge_sql, (r["year"], r["zip5"],
-                                       r["state_abbr"], r["imported_at"]))
-        if progress_callback:
-            progress_callback(min(i + _CHUNK_SIZE, total), total)
-    conn.commit()
-    cursor.close()
+    try:
+        cursor.execute(
+            "IF OBJECT_ID('tempdb..#zip_staging') IS NOT NULL "
+            "DROP TABLE #zip_staging"
+        )
+        cursor.execute(
+            "CREATE TABLE #zip_staging ("
+            "    year INT, zip5 NVARCHAR(5), state_abbr NVARCHAR(2), imported_at NVARCHAR(30)"
+            ")"
+        )
+
+        insert_sql = (
+            "INSERT INTO #zip_staging (year, zip5, state_abbr, imported_at) "
+            "VALUES (?, ?, ?, ?)"
+        )
+        total = len(records)
+        for i in range(0, total, _CHUNK_SIZE):
+            chunk = records[i: i + _CHUNK_SIZE]
+            cursor.executemany(
+                insert_sql,
+                [(r["year"], r["zip5"], r["state_abbr"], r["imported_at"]) for r in chunk],
+            )
+            if progress_callback:
+                progress_callback(min(i + _CHUNK_SIZE, total), total)
+
+        cursor.execute(f"""
+            MERGE [{schema}].[{table_name}] AS target
+            USING #zip_staging AS source
+                ON (target.year = source.year AND target.zip5 = source.zip5)
+            WHEN MATCHED THEN UPDATE SET
+                target.state_abbr  = source.state_abbr,
+                target.imported_at = source.imported_at
+            WHEN NOT MATCHED THEN INSERT (year, zip5, state_abbr, imported_at)
+            VALUES (source.year, source.zip5, source.state_abbr, source.imported_at);
+        """)
+        conn.commit()
+    finally:
+        try:
+            cursor.execute(
+                "IF OBJECT_ID('tempdb..#zip_staging') IS NOT NULL "
+                "DROP TABLE #zip_staging"
+            )
+        except Exception:
+            pass
+        cursor.close()
 
 
 def _bulk_insert_zip_sqlserver(cursor, records, table_name, schema,
@@ -522,27 +606,50 @@ def _replace_zip_databricks(conn, records, table_name, schema,
 
 def _merge_zip_databricks(conn, records, table_name, schema,
                           progress_callback=None):
+    """Upsert via staging Delta table + single MERGE INTO on (year, zip5)."""
     cursor = conn.cursor()
-    merge_sql = f"""
-        MERGE INTO `{schema}`.`{table_name}` AS target
-        USING (SELECT ? AS year, ? AS zip5, ? AS state_abbr, ? AS imported_at) AS source
-            ON (target.year = source.year AND target.zip5 = source.zip5)
-        WHEN MATCHED THEN UPDATE SET
-            target.state_abbr  = source.state_abbr,
-            target.imported_at = source.imported_at
-        WHEN NOT MATCHED THEN INSERT (year, zip5, state_abbr, imported_at)
-        VALUES (source.year, source.zip5, source.state_abbr, source.imported_at)
-    """
-    total = len(records)
-    for i in range(0, total, _CHUNK_SIZE):
-        chunk = records[i: i + _CHUNK_SIZE]
-        for r in chunk:
-            cursor.execute(merge_sql, (r["year"], r["zip5"],
-                                       r["state_abbr"], r["imported_at"]))
-        if progress_callback:
-            progress_callback(min(i + _CHUNK_SIZE, total), total)
-    conn.commit()
-    cursor.close()
+    staging = f"_staging_{table_name}"
+    try:
+        cursor.execute(f"""
+            CREATE OR REPLACE TABLE `{schema}`.`{staging}` (
+                year INT,
+                zip5 STRING,
+                state_abbr STRING,
+                imported_at STRING
+            ) USING DELTA
+        """)
+
+        insert_sql = (
+            f"INSERT INTO `{schema}`.`{staging}` (year, zip5, state_abbr, imported_at) "
+            "VALUES (?, ?, ?, ?)"
+        )
+        total = len(records)
+        for i in range(0, total, _CHUNK_SIZE):
+            chunk = records[i: i + _CHUNK_SIZE]
+            cursor.executemany(
+                insert_sql,
+                [(r["year"], r["zip5"], r["state_abbr"], r["imported_at"]) for r in chunk],
+            )
+            if progress_callback:
+                progress_callback(min(i + _CHUNK_SIZE, total), total)
+
+        cursor.execute(f"""
+            MERGE INTO `{schema}`.`{table_name}` AS target
+            USING `{schema}`.`{staging}` AS source
+                ON (target.year = source.year AND target.zip5 = source.zip5)
+            WHEN MATCHED THEN UPDATE SET
+                target.state_abbr  = source.state_abbr,
+                target.imported_at = source.imported_at
+            WHEN NOT MATCHED THEN INSERT (year, zip5, state_abbr, imported_at)
+            VALUES (source.year, source.zip5, source.state_abbr, source.imported_at)
+        """)
+        conn.commit()
+    finally:
+        try:
+            cursor.execute(f"DROP TABLE IF EXISTS `{schema}`.`{staging}`")
+        except Exception:
+            pass
+        cursor.close()
 
 
 def _bulk_insert_zip_databricks(cursor, records, table_name, schema,

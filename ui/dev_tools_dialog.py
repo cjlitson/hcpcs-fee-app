@@ -84,7 +84,7 @@ class DevToolsDialog(QDialog):
     def __init__(self, current_records=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Developer Tools — SQL Publisher")
-        self.setMinimumSize(560, 580)
+        self.setMinimumSize(700, 580)
         self._current_records = current_records or []
         self._conn = None
         self._db_type = "sqlserver"
@@ -394,6 +394,7 @@ class DevToolsDialog(QDialog):
         scope_layout.addWidget(scroll)
 
         self._scope_custom.toggled.connect(scroll.setVisible)
+        self._scope_custom.toggled.connect(lambda _: self.adjustSize())
 
         layout.addWidget(scope_group)
 
@@ -436,7 +437,6 @@ class DevToolsDialog(QDialog):
         pub_row.addWidget(self._publish_btn)
         layout.addLayout(pub_row)
 
-        layout.addStretch()
         self._tabs.addTab(tab, "Publish")
 
     # ---------------------------------------------------------------- Publish --

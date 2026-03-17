@@ -19,6 +19,7 @@ from core.cms_downloader import (
     _record_successful_pattern,
     _scrape_rss_urls,
     _select_main_dmepos_filename,
+    _select_rural_zip_filename,
     discover_available_cms_years,
 )
 
@@ -180,6 +181,44 @@ class TestSelectMainDmeposFilename:
             with pytest.raises(DownloadError) as exc_info:
                 _select_main_dmepos_filename(list(files.keys()), zf)
         assert "README.txt" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# _select_rural_zip_filename
+# ---------------------------------------------------------------------------
+
+class TestSelectRuralZipFilename:
+    """Tests for _select_rural_zip_filename — verifies both old and new CMS naming."""
+
+    def test_old_nospace_csv(self):
+        """Legacy format DMERuralZIP26.csv (no space) is matched."""
+        names = ["DMEPOS26_JAN.csv", "DMERuralZIP26.csv"]
+        assert _select_rural_zip_filename(names) == "DMERuralZIP26.csv"
+
+    def test_new_space_txt(self):
+        """Current CMS format 'DME Rural Zip Code Quarter 1, 2026.txt' is matched."""
+        names = ["DMEPOS26_JAN.csv", "DME Rural Zip Code Quarter 1, 2026.txt"]
+        assert _select_rural_zip_filename(names) == "DME Rural Zip Code Quarter 1, 2026.txt"
+
+    def test_new_space_csv(self):
+        """Current CMS format with .csv extension is also matched."""
+        names = ["DMEPOS26_JAN.csv", "DME Rural ZIP Code Quarter 1 2026.csv"]
+        assert _select_rural_zip_filename(names) == "DME Rural ZIP Code Quarter 1 2026.csv"
+
+    def test_returns_none_when_absent(self):
+        """Returns None when no rural ZIP file is present."""
+        names = ["DMEPOS26_JAN.csv", "README.txt"]
+        assert _select_rural_zip_filename(names) is None
+
+    def test_case_insensitive(self):
+        """Matching is case-insensitive."""
+        names = ["dme rural zip code q1 2026.txt"]
+        assert _select_rural_zip_filename(names) == "dme rural zip code q1 2026.txt"
+
+    def test_non_txt_csv_extension_ignored(self):
+        """Files with unexpected extensions (e.g. .xlsx) are not matched."""
+        names = ["DME Rural ZIP Codes 2026.xlsx"]
+        assert _select_rural_zip_filename(names) is None
 
 
 # ---------------------------------------------------------------------------
