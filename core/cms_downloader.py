@@ -231,6 +231,12 @@ class DownloadError(Exception):
     """Raised when the CMS download cannot be completed."""
 
 
+def _clear_url_cache(year):
+    """Remove the cached URL list for *year* so the next attempt re-scrapes."""
+    key = f"{_URL_CACHE_KEY_PREFIX}{year}"
+    set_preference(key, "")
+
+
 def _try_download_zip(year, progress_callback=None):
     """Try to download the CMS DMEPOS ZIP for the given year.
 
@@ -239,15 +245,29 @@ def _try_download_zip(year, progress_callback=None):
     2. If cache miss or expired, scrape the CMS DMEPOS page to discover URLs.
     3. Cache any discovered URLs.
     4. Try discovered URLs first, then fall back to hardcoded templates.
-    5. Raise DownloadError if all attempts fail.
+       Quarterly template URLs (dmeYY-[a-d].zip) are treated as trusted so they
+       skip the HEAD pre-check — these are the definitive CMS quarterly patterns
+       and some CMS servers respond to HEAD differently than GET.
+    5. Raise DownloadError if all attempts fail (and clear the URL cache so stale
+       entries don't block future attempts).
     """
     year2d = str(year)[-2:]
 
     # Build candidate URL list
     candidate_urls = []
     # Track which URLs were obtained via live scrape or cache (trusted sources).
-    # Template-only URLs get a HEAD check first to skip retired patterns quickly.
+    # Template-only URLs get a HEAD check first to skip retired patterns quickly,
+    # EXCEPT for the quarterly dmeYY-[a-d].zip patterns which are always trusted.
     trusted_urls = set()
+
+    # Quarterly templates are always trusted — skip HEAD check for these
+    quarterly_trusted = {
+        f"https://www.cms.gov/files/zip/dme{year2d}-d.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}-c.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}-b.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}-a.zip",
+    }
+    trusted_urls.update(quarterly_trusted)
 
     # Step 1: Check cache
     cached = _get_cached_urls(year)
@@ -275,16 +295,16 @@ def _try_download_zip(year, progress_callback=None):
             candidate_urls.append(url)
 
     # Step 4: Try each candidate
-    # For trusted URLs (discovered via live scrape or cache) go straight to GET.
-    # For fallback template URLs, first do a cheap HEAD request to skip known-missing
-    # URLs quickly and avoid long timeouts on retired URL patterns.
+    # For trusted URLs (discovered via live scrape, cache, or quarterly pattern)
+    # go straight to GET.  For legacy template URLs, first do a cheap HEAD request
+    # to skip known-missing URLs quickly and avoid long timeouts.
     last_error = None
     for url in candidate_urls:
         try:
             if progress_callback:
                 progress_callback(f"Trying {url} …")
             if url not in trusted_urls:
-                # HEAD check to avoid spending time on 404 template URLs
+                # HEAD check to avoid spending time on 404 legacy template URLs
                 try:
                     head = requests.head(url, timeout=10, allow_redirects=True)
                     if head.status_code not in (200, 301, 302):
@@ -298,6 +318,10 @@ def _try_download_zip(year, progress_callback=None):
             last_error = f"HTTP {resp.status_code} from {url}"
         except requests.RequestException as exc:
             last_error = str(exc)
+
+    # All attempts failed — clear the URL cache so stale entries don't block
+    # future sync attempts for this year.
+    _clear_url_cache(year)
 
     raise DownloadError(
         f"Could not download CMS DMEPOS fee schedule for {year}.\n"
