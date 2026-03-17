@@ -514,8 +514,16 @@ class DevToolsDialog(QDialog):
         self._publish_btn.setEnabled(True)
         self._progress_bar.setValue(100)
         server = self._get_server_label()
-        table = self._table_name_edit.text().strip() or "hcpcs_fees"
-        msg = f"{count:,} records pushed to {server}"
+
+        choice_id = self._table_choice_bg.checkedId()
+        table_parts = []
+        if choice_id in (0, 2):
+            table_parts.append(self._table_name_edit.text().strip() or "hcpcs_fees")
+        if choice_id in (1, 2):
+            table_parts.append(self._zip_table_name_edit.text().strip() or "rural_zips")
+        table_label = ", ".join(f"[{t}]" for t in table_parts)
+
+        msg = f"{count:,} records pushed to {table_label} on {server}"
         self._progress_label.setText(f"✔ {msg}")
         self._progress_label.setStyleSheet("color: green;")
         QMessageBox.information(self, "Publish Complete", msg)

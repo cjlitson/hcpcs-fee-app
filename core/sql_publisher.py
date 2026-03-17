@@ -232,9 +232,12 @@ def publish_zip_records(conn, db_type, records, table_name, mode, schema="dbo",
 
     normalised = []
     for r in records:
+        raw_zip = str(r.get("zip5", "")).strip()
+        if not raw_zip:
+            continue  # skip records with empty zip codes
         normalised.append({
             "year": int(r.get("year", 0) or 0),
-            "zip5": str(r.get("zip5", "")).strip().zfill(5),
+            "zip5": raw_zip.zfill(5),
             "state_abbr": r.get("state_abbr") or "",
             "imported_at": now,
         })
