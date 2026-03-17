@@ -7,10 +7,11 @@ from core.exporter import export_to_csv, export_to_excel, export_to_pdf
 
 
 class ExportDialog(QDialog):
-    def __init__(self, records, parent=None, is_rural=False):
+    def __init__(self, records, parent=None, is_rural=False, zip_code=""):
         super().__init__(parent)
         self.records = records
         self.is_rural = is_rural
+        self.zip_code = zip_code
         self.setWindowTitle("Export Data")
         self.setMinimumWidth(380)
         self._init_ui()
@@ -55,11 +56,11 @@ class ExportDialog(QDialog):
             return
         try:
             if self.csv_radio.isChecked():
-                export_to_csv(self.records, path, is_rural=self.is_rural)
+                export_to_csv(self.records, path, is_rural=self.is_rural, zip_code=self.zip_code)
             elif self.excel_radio.isChecked():
-                export_to_excel(self.records, path, is_rural=self.is_rural)
+                export_to_excel(self.records, path, is_rural=self.is_rural, zip_code=self.zip_code)
             else:
-                export_to_pdf(self.records, path, is_rural=self.is_rural)
+                export_to_pdf(self.records, path, is_rural=self.is_rural, zip_code=self.zip_code)
             QMessageBox.information(self, "Export Complete", f"Data exported successfully to:\n{path}")
             self.accept()
         except Exception as e:

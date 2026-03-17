@@ -587,7 +587,8 @@ class MainWindow(QMainWindow):
         if not self._records:
             QMessageBox.information(self, "No Data", "No records to export. Apply filters first.")
             return
-        dlg = ExportDialog(self._records, self, is_rural=self._is_rural())
+        zip_code = self.zip_edit.text().strip()
+        dlg = ExportDialog(self._records, self, is_rural=self._is_rural(), zip_code=zip_code)
         dlg.exec()
 
     def _manage_states(self):
