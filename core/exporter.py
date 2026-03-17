@@ -33,11 +33,11 @@ def export_to_csv(records, filepath, is_rural=False):
         for r in records:
             row = {k: r.get(k, "") for k in fieldnames}
             chosen = _chosen_allowable(r, is_rural=is_rural)
-            row["allowable"] = "#N/A" if chosen is None else chosen
+            row["allowable"] = "" if chosen is None else chosen
             if row["allowable_nr"] is None:
-                row["allowable_nr"] = "#N/A"
+                row["allowable_nr"] = ""
             if row["allowable_r"] is None:
-                row["allowable_r"] = "#N/A"
+                row["allowable_r"] = ""
             writer.writerow(row)
 
 
@@ -78,9 +78,9 @@ def export_to_excel(records, filepath, is_rural=False):
             r.get("description", ""),
             r.get("state_abbr", ""),
             r.get("year", ""),
-            "#N/A" if nr is None else nr,
-            "#N/A" if rv is None else rv,
-            "#N/A" if is_na else chosen,
+            "" if nr is None else nr,
+            "" if rv is None else rv,
+            "" if is_na else chosen,
             r.get("modifier", "") or "",
             r.get("data_source", "") or "",
         ]
@@ -135,7 +135,7 @@ def export_to_pdf(records, filepath, is_rural=False):
             (r.get("description", "") or "")[:80],
             r.get("state_abbr", ""),
             str(r.get("year", "")),
-            "#N/A" if chosen is None else f"${chosen:,.2f}",
+            "" if chosen is None else f"${chosen:,.2f}",
             r.get("modifier", "") or "",
         ])
 
