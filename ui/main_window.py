@@ -1,4 +1,6 @@
+import sys
 from datetime import date
+from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
@@ -7,8 +9,8 @@ from PyQt6.QtWidgets import (
     QDialog, QTextEdit, QSizePolicy, QFrame, QCheckBox,
     QProgressDialog, QMenu, QApplication, QScrollArea, QFileDialog,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt6.QtGui import QAction, QFont, QColor
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize
+from PyQt6.QtGui import QAction, QFont, QColor, QIcon, QPixmap
 
 from core.database import (
     get_fees, get_selected_states, get_available_years, get_import_log,
@@ -20,6 +22,15 @@ from ui.import_dialog import ImportDialog
 from ui.export_dialog import ExportDialog
 from ui.state_selector_dialog import StateSelectorDialog
 from ui.year_selector_dialog import YearSelectorDialog
+
+
+def _asset(name: str) -> Path:
+    """Return the absolute path to *name* inside the ``assets/`` folder.
+
+    Works in both development mode and when frozen by PyInstaller.
+    """
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent.parent))
+    return base / "assets" / name
 
 
 class SyncWorker(QThread):
@@ -53,6 +64,10 @@ class MainWindow(QMainWindow):
         self._splash = splash
         self.setWindowTitle("VA HCPCS Fee Schedule Manager")
         self.setMinimumSize(1200, 700)
+        # Set the window / taskbar icon from the assets folder.
+        icon_path = _asset("app_icon.png")
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
         self._records = []
         self._sync_worker = None
         self._progress_dlg = None
@@ -68,10 +83,12 @@ class MainWindow(QMainWindow):
         self._refresh_filters()
         self._splash_update(70, "Restoring saved preferences…")
         self._restore_filter_preferences()
-        self._splash_update(82, "Querying fee records…")
-        self._apply_filters()
         self._splash_update(100, "Ready!")
+        self._set_status("Loading fee records…")
         self._splash = None  # release; splash lifetime managed by main.py
+        # Defer the initial query so the window appears before the DB load runs.
+        # This prevents users from thinking the app has frozen during startup.
+        QTimer.singleShot(0, self._apply_filters)
 
     # ------------------------------------------------------------------ UI --
 
@@ -411,16 +428,17 @@ class MainWindow(QMainWindow):
         self._save_filter_preferences()
         self._on_zip_changed(self.zip_edit.text())
 
-    def _on_zip_changed(self, text):
-        """Update rural label and refresh display when ZIP input changes."""
-        zip5 = text.strip()
+    def _sync_rural_label(self):
+        """Update the rural/non-rural label to match the current ZIP field.
+
+        Unlike ``_on_zip_changed``, this never triggers filter application,
+        making it safe to call during startup or preference restoration.
+        """
+        zip5 = self.zip_edit.text().strip()
         if not zip5:
             self.rural_label.setText("No ZIP (default NR)")
             self.rural_label.setStyleSheet("color: #666666; font-size: 11px;")
-            self._save_filter_preferences()
-            self._apply_filters()
-            return
-        if len(zip5) == 5 and zip5.isdigit():
+        elif len(zip5) == 5 and zip5.isdigit():
             rural = self._is_rural()
             if rural:
                 self.rural_label.setText(f"ZIP {zip5} → Rural (R)")
@@ -428,11 +446,17 @@ class MainWindow(QMainWindow):
             else:
                 self.rural_label.setText(f"ZIP {zip5} → Non-Rural (NR)")
                 self.rural_label.setStyleSheet("color: #003366; font-weight: bold; font-size: 11px;")
-            self._save_filter_preferences()
-            self._apply_filters()
         else:
             self.rural_label.setText("")
             self.rural_label.setStyleSheet("color: #666666; font-size: 11px;")
+
+    def _on_zip_changed(self, text):
+        """Update rural label and refresh display when ZIP input changes."""
+        self._sync_rural_label()
+        zip5 = text.strip()
+        if not zip5 or (len(zip5) == 5 and zip5.isdigit()):
+            self._save_filter_preferences()
+            self._apply_filters()
 
     def _query_year(self):
         """Return the year to pass to get_fees().
@@ -493,39 +517,56 @@ class MainWindow(QMainWindow):
     def _restore_filter_preferences(self):
         """Restore previously saved filter values from user preferences."""
         try:
-            saved_year = get_preference("filter_year", "")
-            if saved_year:
-                try:
-                    y = int(saved_year)
-                    idx = self.year_combo.findData(y)
+            # Block all filter-widget signals so that restoring saved values does
+            # not trigger _apply_filters (or start the debounce timer) before the
+            # window is visible.  We update the derived labels manually below.
+            _widgets = [
+                self.year_combo, self.state_combo, self.group_combo,
+                self.zip_edit, self.code_edit, self.keyword_edit,
+            ]
+            for w in _widgets:
+                w.blockSignals(True)
+            try:
+                saved_year = get_preference("filter_year", "")
+                if saved_year:
+                    try:
+                        y = int(saved_year)
+                        idx = self.year_combo.findData(y)
+                        if idx >= 0:
+                            self.year_combo.setCurrentIndex(idx)
+                    except ValueError:
+                        pass
+
+                saved_state = get_preference("filter_state", "")
+                if saved_state:
+                    idx = self.state_combo.findData(saved_state)
                     if idx >= 0:
-                        self.year_combo.setCurrentIndex(idx)
-                except ValueError:
-                    pass
+                        self.state_combo.setCurrentIndex(idx)
 
-            saved_state = get_preference("filter_state", "")
-            if saved_state:
-                idx = self.state_combo.findData(saved_state)
-                if idx >= 0:
-                    self.state_combo.setCurrentIndex(idx)
+                saved_group = get_preference("filter_group", "")
+                if saved_group and hasattr(self, "group_combo"):
+                    idx = self.group_combo.findData(saved_group)
+                    if idx >= 0:
+                        self.group_combo.setCurrentIndex(idx)
 
-            saved_group = get_preference("filter_group", "")
-            if saved_group and hasattr(self, "group_combo"):
-                idx = self.group_combo.findData(saved_group)
-                if idx >= 0:
-                    self.group_combo.setCurrentIndex(idx)
+                saved_zip = get_preference("filter_zip", "")
+                if saved_zip:
+                    self.zip_edit.setText(saved_zip)
 
-            saved_zip = get_preference("filter_zip", "")
-            if saved_zip:
-                self.zip_edit.setText(saved_zip)
+                saved_hcpcs = get_preference("filter_hcpcs", "")
+                if saved_hcpcs:
+                    self.code_edit.setText(saved_hcpcs)
 
-            saved_hcpcs = get_preference("filter_hcpcs", "")
-            if saved_hcpcs:
-                self.code_edit.setText(saved_hcpcs)
+                saved_keyword = get_preference("filter_keyword", "")
+                if saved_keyword:
+                    self.keyword_edit.setText(saved_keyword)
+            finally:
+                for w in _widgets:
+                    w.blockSignals(False)
 
-            saved_keyword = get_preference("filter_keyword", "")
-            if saved_keyword:
-                self.keyword_edit.setText(saved_keyword)
+            # Refresh derived labels now that all values are in place.
+            self._update_year_view_label()
+            self._sync_rural_label()
         except Exception:
             pass  # Preference restore is best-effort
 
@@ -783,23 +824,92 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _show_about(self):
-        QMessageBox.about(
-            self,
-            "About VA HCPCS Fee Schedule Manager",
-            "<b>VA HCPCS Fee Schedule Manager</b><br><br>"
-            "A standalone Windows desktop application for VA staff to manage,<br>"
-            "view, filter, and export CMS DMEPOS HCPCS fee schedule data.<br><br>"
-            "Tip: Enter a ZIP code in the toolbar to automatically display rural (R)<br>"
-            "or non-rural (NR) allowable amounts, similar to PDAC fee lookup.<br><br>"
-            "Data source: <a href='https://www.cms.gov/medicare/payment/fee-schedules/dmepos'>"
-            "CMS DMEPOS Fee Schedule</a>",
-        )
+        dlg = _AboutDialog(self)
+        dlg.exec()
 
     def _set_status(self, msg):
         self.status_bar.showMessage(msg)
 
 
 # ----------------------------------------------------------------- Helpers --
+
+class _AboutDialog(QDialog):
+    """Rich About dialog displaying the WSNC map banner and app details."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("About VA HCPCS Fee Schedule Manager")
+        self.setFixedWidth(620)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 16)
+
+        # ---- WSNC map banner ------------------------------------------------
+        map_path = _asset("wsnc_map.png")
+        if map_path.exists():
+            banner_label = QLabel()
+            pix = QPixmap(str(map_path)).scaledToWidth(
+                620, Qt.TransformationMode.SmoothTransformation
+            )
+            banner_label.setPixmap(pix)
+            banner_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(banner_label)
+        else:
+            title_lbl = QLabel("VISN 22 · Impact Team")
+            title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            title_lbl.setStyleSheet(
+                "background:#003366; color:white; font-size:14px;"
+                "font-weight:bold; padding:16px;"
+            )
+            layout.addWidget(title_lbl)
+
+        # ---- App icon + title row -------------------------------------------
+        header = QHBoxLayout()
+        header.setContentsMargins(16, 4, 16, 0)
+        icon_path = _asset("app_icon.png")
+        if icon_path.exists():
+            icon_lbl = QLabel()
+            icon_lbl.setPixmap(
+                QPixmap(str(icon_path)).scaled(
+                    48, 48,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+            header.addWidget(icon_lbl)
+        app_title = QLabel("<b>VA HCPCS Fee Schedule Manager</b>")
+        app_title.setStyleSheet("font-size:14px; color:#003366;")
+        header.addWidget(app_title, 1)
+        layout.addLayout(header)
+
+        # ---- Description text -----------------------------------------------
+        body = QLabel(
+            "A standalone Windows desktop application for VA staff to manage,<br>"
+            "view, filter, and export CMS DMEPOS HCPCS fee schedule data.<br><br>"
+            "<b>Tip:</b> Enter a ZIP code in the toolbar to automatically display<br>"
+            "rural (R) or non-rural (NR) allowable amounts, similar to PDAC fee lookup.<br><br>"
+            "Data source: <a href='https://www.cms.gov/medicare/payment/fee-schedules/dmepos'>"
+            "CMS DMEPOS Fee Schedule</a><br><br>"
+            "Developed by the <b>VISN 22 Impact Team</b>"
+        )
+        body.setContentsMargins(16, 0, 16, 0)
+        body.setWordWrap(True)
+        body.setOpenExternalLinks(True)
+        body.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction
+        )
+        layout.addWidget(body)
+
+        # ---- Close button ---------------------------------------------------
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(16, 0, 16, 0)
+        btn_row.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.setDefault(True)
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
 
 class _SyncYearsDialog(QDialog):
     """Simple dialog to pick which year(s) to sync."""
