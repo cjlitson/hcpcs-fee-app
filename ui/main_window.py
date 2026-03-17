@@ -90,6 +90,10 @@ class MainWindow(QMainWindow):
         # This prevents users from thinking the app has frozen during startup.
         QTimer.singleShot(0, self._apply_filters)
 
+        # Background update check
+        self._update_worker = None
+        self._start_update_check()
+
     # ------------------------------------------------------------------ UI --
 
     def _splash_update(self, pct: int, message: str) -> None:
@@ -106,6 +110,23 @@ class MainWindow(QMainWindow):
         root = QVBoxLayout(central)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(6)
+
+        # ---- Update notification bar (hidden by default) ----
+        self.update_bar = QLabel()
+        self.update_bar.setOpenExternalLinks(True)
+        self.update_bar.setWordWrap(True)
+        self.update_bar.setStyleSheet(
+            "QLabel {"
+            "  background-color: #FFF3CD;"
+            "  border: 1px solid #FFECB5;"
+            "  border-radius: 4px;"
+            "  padding: 8px 12px;"
+            "  color: #664D03;"
+            "  font-size: 12px;"
+            "}"
+        )
+        self.update_bar.hide()
+        root.addWidget(self.update_bar)
 
         # ---- Toolbar (two rows) ----
         toolbar_container = QVBoxLayout()
@@ -827,6 +848,26 @@ class MainWindow(QMainWindow):
         dlg = _AboutDialog(self)
         dlg.exec()
 
+    def _start_update_check(self):
+        """Start a background thread to check for app updates."""
+        from core.update_checker import UpdateCheckWorker
+        self._update_worker = UpdateCheckWorker()
+        self._update_worker.update_available.connect(self._on_update_available)
+        self._update_worker.finished.connect(self._update_worker.deleteLater)
+        self._update_worker.start()
+
+    def _on_update_available(self, version, url):
+        """Show the update notification bar when a new version is found."""
+        # Validate URL is a GitHub URL to prevent injection from unexpected API responses
+        if not url.startswith("https://github.com/"):
+            from core.version import RELEASES_URL
+            url = RELEASES_URL
+        self.update_bar.setText(
+            f'🔔 <b>Update available!</b> Version {version} is ready. '
+            f'<a href="{url}" style="color: #0D6EFD;">Download now</a>'
+        )
+        self.update_bar.show()
+
     def _set_status(self, msg):
         self.status_bar.showMessage(msg)
 
@@ -877,7 +918,8 @@ class _AboutDialog(QDialog):
                 )
             )
             header.addWidget(icon_lbl)
-        app_title = QLabel("<b>VA HCPCS Fee Schedule Manager</b>")
+        from core.version import APP_VERSION
+        app_title = QLabel(f"<b>VA HCPCS Fee Schedule Manager</b> v{APP_VERSION}")
         app_title.setStyleSheet("font-size:14px; color:#003366;")
         header.addWidget(app_title, 1)
         layout.addLayout(header)
