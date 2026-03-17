@@ -48,8 +48,9 @@ class SyncWorker(QThread):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, splash=None):
         super().__init__()
+        self._splash = splash
         self.setWindowTitle("VA HCPCS Fee Schedule Manager")
         self.setMinimumSize(1200, 700)
         self._records = []
@@ -60,11 +61,17 @@ class MainWindow(QMainWindow):
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(250)
         self._search_timer.timeout.connect(self._apply_filters)
+        self._splash_update(30, "Building user interface…")
         self._init_ui()
         self._init_menu()
+        self._splash_update(55, "Loading year and state filters…")
         self._refresh_filters()
+        self._splash_update(70, "Restoring saved preferences…")
         self._restore_filter_preferences()
+        self._splash_update(82, "Querying fee records…")
         self._apply_filters()
+        self._splash_update(100, "Ready!")
+        self._splash = None  # release; splash lifetime managed by main.py
 
     # ------------------------------------------------------------------ UI --
 
