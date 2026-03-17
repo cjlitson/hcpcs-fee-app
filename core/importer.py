@@ -12,21 +12,31 @@ from core.database import insert_fees, add_import_log
 def _detect_delimiter(path):
     """Detect whether a file uses '~', '|', or ',' as delimiter.
 
-    Reads the first non-empty line and counts occurrences of each candidate.
+    Scans up to the first 30 non-empty lines and returns the delimiter found
+    on the first line that contains at least 3 occurrences of a candidate
+    delimiter.  This skips short preamble/metadata lines (which often have
+    zero or one delimiter) and reliably identifies data lines.
+
     Returns '~', '|', or ',' (defaults to ',' if unclear).
     """
     try:
         with open(path, newline="", encoding="utf-8-sig", errors="replace") as f:
-            for line in f:
+            for i, line in enumerate(f):
+                if i >= 30:
+                    break
                 line = line.strip()
-                if line:
-                    tildes = line.count("~")
-                    pipes = line.count("|")
-                    commas = line.count(",")
-                    if tildes >= pipes and tildes >= commas and tildes > 0:
-                        return "~"
-                    if pipes > commas:
-                        return "|"
+                if not line:
+                    continue
+                tildes = line.count("~")
+                pipes = line.count("|")
+                commas = line.count(",")
+                # Require at least 3 occurrences so we don't misidentify a stray
+                # character in a short metadata / title line.
+                if tildes >= 3 and tildes >= pipes and tildes >= commas:
+                    return "~"
+                if pipes >= 3 and pipes > commas:
+                    return "|"
+                if commas >= 3:
                     return ","
     except Exception:
         pass

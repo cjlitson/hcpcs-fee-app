@@ -76,8 +76,13 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(6)
 
-        # ---- Toolbar row ----
-        toolbar = QHBoxLayout()
+        # ---- Toolbar (two rows) ----
+        toolbar_container = QVBoxLayout()
+        toolbar_container.setSpacing(4)
+
+        # ---- Row 1: Sync | Year | State | ZIP ----
+        row1 = QHBoxLayout()
+        row1.setSpacing(6)
 
         sync_btn = QPushButton("⚌  Sync from CMS")
         sync_btn.setStyleSheet(
@@ -85,37 +90,37 @@ class MainWindow(QMainWindow):
         )
         sync_btn.setToolTip("Download latest CMS DMEPOS fee schedules for your tracked states")
         sync_btn.clicked.connect(self._sync_cms)
-        toolbar.addWidget(sync_btn)
+        row1.addWidget(sync_btn)
 
-        toolbar.addSpacing(16)
+        row1.addSpacing(12)
 
         # Year filter
-        toolbar.addWidget(QLabel("Year:"))
+        row1.addWidget(QLabel("Year:"))
         self.year_combo = QComboBox()
         self.year_combo.setMinimumWidth(90)
         self.year_combo.currentIndexChanged.connect(self._on_year_changed)
-        toolbar.addWidget(self.year_combo)
+        row1.addWidget(self.year_combo)
 
         # Label showing effective year (updated whenever year combo changes)
         self.year_view_label = QLabel("")
         self.year_view_label.setStyleSheet("color: #555555; font-style: italic; font-size: 11px;")
-        self.year_view_label.setMinimumWidth(220)
-        toolbar.addWidget(self.year_view_label)
+        self.year_view_label.setMinimumWidth(160)
+        row1.addWidget(self.year_view_label)
 
-        toolbar.addSpacing(8)
+        row1.addSpacing(8)
 
         # State filter
-        toolbar.addWidget(QLabel("State:"))
+        row1.addWidget(QLabel("State:"))
         self.state_combo = QComboBox()
         self.state_combo.setMinimumWidth(130)
         self.state_combo.currentIndexChanged.connect(self._apply_filters)
         self.state_combo.currentIndexChanged.connect(self._save_filter_preferences)
-        toolbar.addWidget(self.state_combo)
+        row1.addWidget(self.state_combo)
 
-        toolbar.addSpacing(8)
+        row1.addSpacing(8)
 
         # ZIP code input for rural/non-rural determination
-        toolbar.addWidget(QLabel("ZIP:"))
+        row1.addWidget(QLabel("ZIP:"))
         self.zip_edit = QLineEdit()
         self.zip_edit.setPlaceholderText("5-digit ZIP")
         self.zip_edit.setMaximumWidth(80)
@@ -124,53 +129,61 @@ class MainWindow(QMainWindow):
             "Leave blank to default to non-rural (NR)."
         )
         self.zip_edit.textChanged.connect(self._on_zip_changed)
-        toolbar.addWidget(self.zip_edit)
+        row1.addWidget(self.zip_edit)
 
         self.rural_label = QLabel("No ZIP (default NR)")
         self.rural_label.setStyleSheet("color: #666666; font-size: 11px;")
-        self.rural_label.setMinimumWidth(160)
-        toolbar.addWidget(self.rural_label)
+        self.rural_label.setMinimumWidth(150)
+        row1.addWidget(self.rural_label)
 
-        toolbar.addSpacing(8)
+        row1.addStretch()
+        toolbar_container.addLayout(row1)
+
+        # ---- Row 2: HCPCS | Keyword | Search | Clear | Export ----
+        row2 = QHBoxLayout()
+        row2.setSpacing(6)
 
         # HCPCS code search (debounced)
-        toolbar.addWidget(QLabel("HCPCS:"))
+        row2.addWidget(QLabel("HCPCS:"))
         self.code_edit = QLineEdit()
         self.code_edit.setPlaceholderText("e.g. E0601")
-        self.code_edit.setMaximumWidth(100)
+        self.code_edit.setMaximumWidth(110)
         self.code_edit.textChanged.connect(self._on_search_text_changed)
         self.code_edit.returnPressed.connect(self._apply_filters)
-        toolbar.addWidget(self.code_edit)
+        row2.addWidget(self.code_edit)
 
-        toolbar.addSpacing(8)
+        row2.addSpacing(8)
 
         # Keyword search (debounced)
-        toolbar.addWidget(QLabel("Keyword:"))
+        row2.addWidget(QLabel("Keyword:"))
         self.keyword_edit = QLineEdit()
         self.keyword_edit.setPlaceholderText("Description keyword…")
-        self.keyword_edit.setMaximumWidth(200)
+        self.keyword_edit.setMinimumWidth(180)
         self.keyword_edit.textChanged.connect(self._on_search_text_changed)
         self.keyword_edit.returnPressed.connect(self._apply_filters)
-        toolbar.addWidget(self.keyword_edit)
+        row2.addWidget(self.keyword_edit)
+
+        row2.addSpacing(4)
 
         search_btn = QPushButton("Search")
         search_btn.clicked.connect(self._apply_filters)
-        toolbar.addWidget(search_btn)
+        row2.addWidget(search_btn)
 
         clear_btn = QPushButton("Clear")
         clear_btn.clicked.connect(self._clear_filters)
-        toolbar.addWidget(clear_btn)
+        row2.addWidget(clear_btn)
 
-        toolbar.addStretch()
+        row2.addStretch()
 
         export_btn = QPushButton("Export…")
         export_btn.setStyleSheet(
             "background-color: #005A9C; color: white; padding: 6px 14px; font-weight: bold;"
         )
         export_btn.clicked.connect(self._export)
-        toolbar.addWidget(export_btn)
+        row2.addWidget(export_btn)
 
-        root.addLayout(toolbar)
+        toolbar_container.addLayout(row2)
+        root.addLayout(toolbar_container)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
@@ -188,6 +201,12 @@ class MainWindow(QMainWindow):
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
+        # Ensure selected-row text (including the blue hyperlink in col 0) is
+        # always visible by forcing white text on the selection highlight.
+        self.table.setStyleSheet(
+            "QTableWidget::item:selected { background-color: #003366; color: white; }"
+            "QTableWidget::item:selected:!active { background-color: #4a7ab5; color: white; }"
+        )
         self.table.cellClicked.connect(self._on_cell_clicked)
         self.table.doubleClicked.connect(self._on_row_double_clicked)
         self.table.setToolTip("Click HCPCS code to view history. Right-click for copy options.")
