@@ -62,7 +62,6 @@ class MainWindow(QMainWindow):
         self._search_timer.timeout.connect(self._apply_filters)
         self._init_ui()
         self._init_menu()
-        self._check_first_run()
         self._refresh_filters()
         self._restore_filter_preferences()
         self._apply_filters()
@@ -273,26 +272,11 @@ class MainWindow(QMainWindow):
 
     def _check_first_run(self):
         if get_preference("first_run_done") != "1":
-            QMessageBox.information(
-                self,
-                "Welcome to VA HCPCS Fee Schedule Manager",
-                "Welcome!\n\n"
-                "To get started:\n"
-                "  1. Go to Settings → Manage States and select the states you track.\n"
-                "  2. Go to Settings → Manage Years and select the years you need.\n"
-                "  3. Click \"Sync from CMS\" to download the latest fee schedules,\n"
-                "     OR use File → Import CSV to load an existing file.\n\n"
-                "Data is stored locally in a SQLite database — no network connection\n"
-                "is required after the initial sync.\n\n"
-                "Tip: Enter a 5-digit ZIP code in the toolbar to automatically see\n"
-                "rural (R) or non-rural (NR) allowables, similar to PDAC lookup.",
-            )
-            set_preference("first_run_done", "1")
-            dlg = StateSelectorDialog(self)
-            dlg.exec()
-            year_dlg = YearSelectorDialog(self)
-            year_dlg.exec()
+            from ui.setup_wizard import SetupWizard
+            wizard = SetupWizard(self)
+            wizard.exec()
             self._refresh_filters()
+            self._apply_filters()
 
     def _refresh_filters(self):
         """Reload year and state combos from the database."""
