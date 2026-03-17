@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
 from core.database import (
-    get_preference, set_preference, get_fees, _get_conn,
+    get_preference, set_preference, get_fees, get_rural_zips, _get_conn,
 )
 
 
@@ -17,10 +17,12 @@ from core.database import (
 
 class _PublishWorker(QThread):
     progress = pyqtSignal(str)
+    progress_pct = pyqtSignal(int, int)   # (rows_done, total_rows)
     finished = pyqtSignal(int)
     error = pyqtSignal(str)
 
-    def __init__(self, conn, db_type, records, table_name, mode, schema):
+    def __init__(self, conn, db_type, records, table_name, mode, schema,
+                 table_choice="fees", zip_records=None, zip_table_name="rural_zips"):
         super().__init__()
         self._conn = conn
         self._db_type = db_type
@@ -28,22 +30,48 @@ class _PublishWorker(QThread):
         self._table_name = table_name
         self._mode = mode
         self._schema = schema
+        self._table_choice = table_choice
+        self._zip_records = zip_records or []
+        self._zip_table_name = zip_table_name
+
+    def _progress_cb(self, done, total):
+        """Callback wired to the publisher's chunk loop."""
+        self.progress_pct.emit(done, total)
 
     def run(self):
         try:
-            from core.sql_publisher import ensure_table_exists, publish_records
-            self.progress.emit("Ensuring table exists…")
-            ensure_table_exists(self._conn, self._db_type, self._table_name, self._schema)
-            self.progress.emit(f"Publishing {len(self._records):,} records…")
-            count = publish_records(
-                self._conn,
-                self._db_type,
-                self._records,
-                self._table_name,
-                self._mode,
-                self._schema,
+            from core.sql_publisher import (
+                ensure_table_exists, publish_records,
+                ensure_zip_table_exists, publish_zip_records,
             )
-            self.finished.emit(count)
+
+            total_count = 0
+
+            # --- Fee table ---
+            if self._table_choice in ("fees", "both"):
+                self.progress.emit("Ensuring fee table exists…")
+                ensure_table_exists(self._conn, self._db_type,
+                                    self._table_name, self._schema)
+                self.progress.emit(f"Publishing {len(self._records):,} fee records…")
+                total_count += publish_records(
+                    self._conn, self._db_type, self._records,
+                    self._table_name, self._mode, self._schema,
+                    progress_callback=self._progress_cb,
+                )
+
+            # --- ZIP table ---
+            if self._table_choice in ("zips", "both"):
+                self.progress.emit("Ensuring ZIP table exists…")
+                ensure_zip_table_exists(self._conn, self._db_type,
+                                        self._zip_table_name, self._schema)
+                self.progress.emit(f"Publishing {len(self._zip_records):,} ZIP records…")
+                total_count += publish_zip_records(
+                    self._conn, self._db_type, self._zip_records,
+                    self._zip_table_name, self._mode, self._schema,
+                    progress_callback=self._progress_cb,
+                )
+
+            self.finished.emit(total_count)
         except Exception as exc:
             self.error.emit(str(exc))
 
@@ -263,14 +291,44 @@ class DevToolsDialog(QDialog):
         layout = QVBoxLayout(tab)
         layout.setSpacing(10)
 
-        # Table name
-        tbl_row = QHBoxLayout()
-        tbl_row.addWidget(QLabel("Table Name:"))
+        # --- Table selection ---
+        tbl_group = QGroupBox("Tables to Publish")
+        tbl_layout = QVBoxLayout(tbl_group)
+
+        self._table_choice_bg = QButtonGroup(self)
+
+        self._table_fees_radio = QRadioButton("Fee table (hcpcs_fees)")
+        self._table_fees_radio.setChecked(True)
+        self._table_choice_bg.addButton(self._table_fees_radio, 0)
+        tbl_layout.addWidget(self._table_fees_radio)
+
+        self._table_zips_radio = QRadioButton("ZIP table (rural_zips)")
+        self._table_choice_bg.addButton(self._table_zips_radio, 1)
+        tbl_layout.addWidget(self._table_zips_radio)
+
+        self._table_both_radio = QRadioButton("Both tables")
+        self._table_choice_bg.addButton(self._table_both_radio, 2)
+        tbl_layout.addWidget(self._table_both_radio)
+
+        # Fee table name
+        fee_row = QHBoxLayout()
+        fee_row.addWidget(QLabel("Fee Table Name:"))
         self._table_name_edit = QLineEdit("hcpcs_fees")
         self._table_name_edit.setMaximumWidth(240)
-        tbl_row.addWidget(self._table_name_edit)
-        tbl_row.addStretch()
-        layout.addLayout(tbl_row)
+        fee_row.addWidget(self._table_name_edit)
+        fee_row.addStretch()
+        tbl_layout.addLayout(fee_row)
+
+        # ZIP table name
+        zip_row = QHBoxLayout()
+        zip_row.addWidget(QLabel("ZIP Table Name:"))
+        self._zip_table_name_edit = QLineEdit("rural_zips")
+        self._zip_table_name_edit.setMaximumWidth(240)
+        zip_row.addWidget(self._zip_table_name_edit)
+        zip_row.addStretch()
+        tbl_layout.addLayout(zip_row)
+
+        layout.addWidget(tbl_group)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
@@ -356,6 +414,13 @@ class DevToolsDialog(QDialog):
         layout.addWidget(mode_group)
 
         # --- Progress + Publish ---
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setRange(0, 100)
+        self._progress_bar.setValue(0)
+        self._progress_bar.setTextVisible(True)
+        self._progress_bar.setVisible(False)
+        layout.addWidget(self._progress_bar)
+
         self._progress_label = QLabel("")
         self._progress_label.setWordWrap(True)
         layout.addWidget(self._progress_label)
@@ -383,6 +448,10 @@ class DevToolsDialog(QDialog):
 
         mode = "merge" if self._mode_merge.isChecked() else "replace"
         table_name = self._table_name_edit.text().strip() or "hcpcs_fees"
+        zip_table_name = self._zip_table_name_edit.text().strip() or "rural_zips"
+
+        choice_id = self._table_choice_bg.checkedId()
+        table_choice = {0: "fees", 1: "zips", 2: "both"}.get(choice_id, "fees")
 
         if mode == "replace":
             ans = QMessageBox.warning(
@@ -395,18 +464,36 @@ class DevToolsDialog(QDialog):
             if ans != QMessageBox.StandardButton.Yes:
                 return
 
-        records = self._get_scope_records()
-        if not records:
-            QMessageBox.information(self, "No Records", "No records match the selected scope.")
-            return
+        records = []
+        zip_records = []
+
+        if table_choice in ("fees", "both"):
+            records = self._get_scope_records()
+            if not records:
+                QMessageBox.information(self, "No Records", "No fee records match the selected scope.")
+                return
+
+        if table_choice in ("zips", "both"):
+            zip_records = get_rural_zips()
+            if not zip_records:
+                QMessageBox.information(self, "No Records", "No rural ZIP records found in the local database.")
+                return
 
         schema = self._get_current_schema()
 
         self._publish_btn.setEnabled(False)
         self._progress_label.setText("Starting publish…")
+        self._progress_label.setStyleSheet("")
+        self._progress_bar.setValue(0)
+        self._progress_bar.setVisible(True)
 
-        self._worker = _PublishWorker(self._conn, self._db_type, records, table_name, mode, schema)
+        self._worker = _PublishWorker(
+            self._conn, self._db_type, records, table_name, mode, schema,
+            table_choice=table_choice, zip_records=zip_records,
+            zip_table_name=zip_table_name,
+        )
         self._worker.progress.connect(self._progress_label.setText)
+        self._worker.progress_pct.connect(self._on_progress_pct)
         self._worker.finished.connect(self._on_publish_done)
         self._worker.error.connect(self._on_publish_error)
         self._worker.start()
@@ -417,17 +504,33 @@ class DevToolsDialog(QDialog):
         else:
             return self._db_schema.text().strip() or "default"
 
+    def _on_progress_pct(self, done, total):
+        if total > 0:
+            pct = int(done * 100 / total)
+            self._progress_bar.setValue(pct)
+            self._progress_label.setText(f"Uploading… {done:,} / {total:,} rows ({pct}%)")
+
     def _on_publish_done(self, count):
         self._publish_btn.setEnabled(True)
+        self._progress_bar.setValue(100)
         server = self._get_server_label()
-        table = self._table_name_edit.text().strip() or "hcpcs_fees"
-        msg = f"{count:,} records pushed to [{table}] on {server}"
+
+        choice_id = self._table_choice_bg.checkedId()
+        table_parts = []
+        if choice_id in (0, 2):
+            table_parts.append(self._table_name_edit.text().strip() or "hcpcs_fees")
+        if choice_id in (1, 2):
+            table_parts.append(self._zip_table_name_edit.text().strip() or "rural_zips")
+        table_label = ", ".join(f"[{t}]" for t in table_parts)
+
+        msg = f"{count:,} records pushed to {table_label} on {server}"
         self._progress_label.setText(f"✔ {msg}")
         self._progress_label.setStyleSheet("color: green;")
         QMessageBox.information(self, "Publish Complete", msg)
 
     def _on_publish_error(self, msg):
         self._publish_btn.setEnabled(True)
+        self._progress_bar.setVisible(False)
         self._progress_label.setText(f"✘ Error: {msg}")
         self._progress_label.setStyleSheet("color: red;")
         QMessageBox.critical(self, "Publish Error", msg)
@@ -504,6 +607,7 @@ class DevToolsDialog(QDialog):
 
         # Table name
         self._table_name_edit.setText(get_preference("sql_table_name", "hcpcs_fees"))
+        self._zip_table_name_edit.setText(get_preference("sql_zip_table_name", "rural_zips"))
 
     def _save_preferences(self):
         set_preference("sql_db_type", self._db_type_combo.currentData())
@@ -517,4 +621,5 @@ class DevToolsDialog(QDialog):
         set_preference("sql_databricks_catalog", self._db_catalog.text().strip())
         set_preference("sql_databricks_schema", self._db_schema.text().strip())
         set_preference("sql_table_name", self._table_name_edit.text().strip())
+        set_preference("sql_zip_table_name", self._zip_table_name_edit.text().strip())
         # NOTE: Passwords/tokens are intentionally NOT saved

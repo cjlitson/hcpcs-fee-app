@@ -322,6 +322,26 @@ def insert_rural_zips(records):
     conn.close()
 
 
+def get_rural_zips(year=None):
+    """Return rural ZIP records as list of dicts.
+
+    Each dict has keys: year, zip5, state_abbr.
+    If *year* is given only records for that year are returned.
+    """
+    conn = _get_conn()
+    if year is not None:
+        rows = conn.execute(
+            "SELECT year, zip5, state_abbr FROM rural_zips WHERE year = ? ORDER BY zip5",
+            (year,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT year, zip5, state_abbr FROM rural_zips ORDER BY year, zip5"
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def delete_rural_zips_by_year(year):
     """Delete all rural ZIP records for the given year."""
     conn = _get_conn()
