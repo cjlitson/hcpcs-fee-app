@@ -39,10 +39,22 @@ def main():
 
     window = MainWindow()
 
-    # Show the main window then close the splash after a short delay so
-    # users can see it transition rather than an abrupt switch.
+    # Center the main window on the same screen the splash used so that
+    # multi-monitor setups don't produce a split-screen startup experience.
+    splash_screen = splash.screen()
+    if splash_screen is not None:
+        screen_geo = splash_screen.availableGeometry()
+        win_geo = window.frameGeometry()
+        win_geo.moveCenter(screen_geo.center())
+        window.move(win_geo.topLeft())
+
+    # Close the splash BEFORE showing the main window so they never overlap.
+    splash.close()
     window.show()
-    QTimer.singleShot(400, splash.close)
+
+    # Defer the first-run check until after the event loop starts so the
+    # main window is fully painted before the wizard appears.
+    QTimer.singleShot(0, window._check_first_run)
 
     sys.exit(app.exec())
 
