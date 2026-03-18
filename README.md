@@ -7,14 +7,16 @@ A standalone Windows desktop application for VA staff to **manage, view, filter,
 
 ---
 
-## Quick Start (Windows EXE)
+## Quick Start (Windows)
 
-1. Download `HCPCSFeeApp.exe` from **[GitHub Releases](https://github.com/cjlitson/hcpcs-fee-app/releases)**.
-2. Double-click to run.
+1. Download `HCPCSFeeApp-Setup.zip` from **[GitHub Releases](https://github.com/cjlitson/hcpcs-fee-app/releases)**.
+2. Extract the ZIP to any temporary location.
+3. Right-click `Install.ps1` and select **"Run with PowerShell"**.
+4. A desktop shortcut will be created — double-click it to launch.
 
-No installer is required.
+The app installs to your Documents folder (`Documents\HCPCSFeeApp\`). No administrator rights are required.
 
-> **Note:** Windows SmartScreen / "Unknown publisher" prompts are expected unless the EXE is code-signed. The app embeds publisher/product metadata, but trusted publisher prompts require a code-signing certificate (typically handled by IT). Choose **More info → Run anyway** if permitted by your environment.
+> **Tip:** When an update is available, the app will show a notification bar with an **"Update Now"** button — click it to update in place without re-downloading.
 
 ---
 
@@ -48,9 +50,6 @@ No installer is required.
 ---
 
 ## Troubleshooting
-
-### "Windows protected your PC" / SmartScreen
-If you see a SmartScreen warning, this is normal for unsigned internal tools. Choose **More info → Run anyway** (if permitted by your environment). The EXE embeds publisher/product metadata but does not carry a code-signing certificate.
 
 ### ODBC / SQL Publisher issues
 - The SQL Publisher feature requires `pyodbc` and an appropriate ODBC driver installed on the machine, plus network access and credentials for the target endpoint.
@@ -88,7 +87,7 @@ Double-click `build.bat` or run from command prompt:
 build.bat
 ```
 
-Output: `dist\HCPCSFeeApp.exe` — copy this single file anywhere and run it. No installation needed.
+Output: `dist\HCPCSFeeApp.exe` and `dist\HCPCSFeeApp-Setup.zip` (the ZIP is the recommended distribution artifact).
 
 > **Note:** The build includes hidden imports for `pyodbc`, `databricks.sql`, and `databricks.sql.client` to ensure the Developer Tools / SQL Publisher feature works correctly in the bundled `.exe`. These are loaded lazily at runtime and would otherwise be missed by PyInstaller's static analysis.
 
@@ -160,6 +159,8 @@ hcpcs-fee-app/
 ├── main.py                          # App entry point
 ├── requirements.txt                 # Python dependencies
 ├── build.bat                        # Windows .exe build script
+├── Install.ps1                      # Per-user PowerShell installer (no admin required)
+├── INSTALL_README.txt               # Installation instructions (bundled in ZIP)
 ├── .github/
 │   └── workflows/
 │       └── build.yml                # GitHub Actions CI/CD build
@@ -175,7 +176,10 @@ hcpcs-fee-app/
 │   ├── database.py                  # SQLite operations + preferences
 │   ├── importer.py                  # CSV parser (VISN + CMS grid formats, auto-delimiter)
 │   ├── cms_downloader.py            # CMS auto-download (scrape + cache + fallback)
-│   └── exporter.py                  # CSV / Excel / PDF export
+│   ├── exporter.py                  # CSV / Excel / PDF export
+│   ├── self_updater.py              # In-app self-update (download + swap + restart)
+│   ├── shortcut.py                  # Desktop shortcut creation helper
+│   └── version.py                   # App version + GitHub release update checker
 ├── models/
 │   └── schema.sql                   # Database schema reference
 └── data/
