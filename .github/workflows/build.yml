@@ -53,11 +53,12 @@ jobs:
 
       - name: Package ZIP
         run: |
-          copy assets\wsnc_map.ico dist\wsnc_map.ico
+          mkdir dist\AppFiles
+          copy assets\wsnc_map.ico dist\AppFiles\wsnc_map.ico
+          copy dist\HCPCSFeeApp.exe dist\AppFiles\HCPCSFeeApp.exe
           copy Install.bat dist\Install.bat
           copy INSTALL_README.txt dist\INSTALL_README.txt
-          cd dist
-          Compress-Archive -Force -Path HCPCSFeeApp.exe,Install.bat,wsnc_map.ico,INSTALL_README.txt -DestinationPath HCPCSFeeApp-Setup.zip
+          Compress-Archive -Force -Path dist\AppFiles,dist\Install.bat,dist\INSTALL_README.txt -DestinationPath dist\HCPCSFeeApp-Setup.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
