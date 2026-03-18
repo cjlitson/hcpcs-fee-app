@@ -26,10 +26,15 @@ pyinstaller ^
   main.py
 
 echo Packaging ZIP...
-copy assets\wsnc_map.ico dist\wsnc_map.ico
-copy Install.bat dist\Install.bat
-copy INSTALL_README.txt dist\INSTALL_README.txt
-powershell -NoProfile -Command "Compress-Archive -Force -Path dist\HCPCSFeeApp.exe,dist\Install.bat,dist\wsnc_map.ico,dist\INSTALL_README.txt -DestinationPath dist\HCPCSFeeApp-Setup.zip"
+:: Create AppFiles subfolder and copy app files into it
+if not exist dist\AppFiles mkdir dist\AppFiles
+copy /y assets\wsnc_map.ico dist\AppFiles\wsnc_map.ico
+copy /y dist\HCPCSFeeApp.exe dist\AppFiles\HCPCSFeeApp.exe
+:: Keep Install.bat and INSTALL_README.txt at dist root
+copy /y Install.bat dist\Install.bat
+copy /y INSTALL_README.txt dist\INSTALL_README.txt
+:: Build ZIP with Install.bat + INSTALL_README.txt at root and AppFiles/ subfolder
+powershell -NoProfile -Command "Compress-Archive -Force -Path dist\Install.bat,dist\INSTALL_README.txt,dist\AppFiles -DestinationPath dist\HCPCSFeeApp-Setup.zip"
 
 echo.
 echo Build complete!

@@ -58,6 +58,16 @@ def download_update(asset_url: str, progress_callback=None) -> Path:
                 if progress_callback:
                     progress_callback(downloaded, total)
 
+    # Verify the downloaded file is at least 1 MB (sanity-check for partial downloads)
+    min_size = 1 * 1024 * 1024  # 1 MB
+    actual_size = dest.stat().st_size
+    if actual_size < min_size:
+        dest.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Downloaded file is only {actual_size:,} bytes — expected at least "
+            f"{min_size:,} bytes. The download may have been incomplete."
+        )
+
     return dest
 
 
@@ -84,17 +94,27 @@ def apply_update(new_exe: Path) -> None:
 
     bat_content = (
         "@echo off\r\n"
+        "setlocal enabledelayedexpansion\r\n"
         f":: Waiting for process {pid} to exit...\r\n"
+        f"set /a _tries=0\r\n"
         f":wait\r\n"
-        f"tasklist /FI \"PID eq {pid}\" 2>NUL | find /I \"HCPCSFeeApp.exe\" >NUL\r\n"
+        f"set /a _tries=_tries+1\r\n"
+        f"if !_tries! gtr 30 goto timeout\r\n"
+        f"tasklist /FI \"PID eq {pid}\" /NH 2>NUL | find /I \"{pid}\" >NUL\r\n"
         f"if not errorlevel 1 (\r\n"
         f"    timeout /t 1 /nobreak >NUL\r\n"
         f"    goto wait\r\n"
         f")\r\n"
+        f":do_swap\r\n"
         f":: Replace old exe with new exe\r\n"
         f"move /Y \"{new_exe}\" \"{exe}\"\r\n"
         f":: Restart the app\r\n"
         f"start \"\" \"{exe}\"\r\n"
+        f"goto end\r\n"
+        f":timeout\r\n"
+        f":: Process did not exit within 30 seconds — attempt swap anyway (may fail if still running)\r\n"
+        f"goto do_swap\r\n"
+        f":end\r\n"
         f":: Delete this script\r\n"
         f"del \"%~f0\"\r\n"
     )

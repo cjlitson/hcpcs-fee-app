@@ -21,8 +21,20 @@ def can_create_shortcut() -> bool:
     return sys.platform == "win32" and _exe_path() is not None
 
 
-def create_desktop_shortcut(name: str = "VA HCPCS Fee Schedule Manager") -> bool:
+def create_desktop_shortcut(
+    name: str = "VA HCPCS Fee Schedule Manager",
+    icon_path: "Path | str | None" = None,
+) -> bool:
     """Create a shortcut on the current user's Desktop pointing to the .exe.
+
+    Parameters
+    ----------
+    name:
+        Display name for the shortcut (also used as the .lnk file name).
+    icon_path:
+        Optional path to a .ico file to use as the shortcut icon.  If not
+        provided, the function looks for ``wsnc_map.ico`` next to the .exe;
+        if that is also absent it falls back to the .exe itself.
 
     Returns True on success, False on failure (errors are swallowed so callers
     need not handle exceptions).  Always returns False when not on Windows or
@@ -46,6 +58,13 @@ def create_desktop_shortcut(name: str = "VA HCPCS Fee Schedule Manager") -> bool
 
         shortcut_path = str(desktop / f"{name}.lnk")
 
+        # Resolve icon: caller-supplied → wsnc_map.ico next to exe → exe itself
+        if icon_path is not None:
+            resolved_icon = str(icon_path)
+        else:
+            ico_candidate = exe.parent / "wsnc_map.ico"
+            resolved_icon = str(ico_candidate) if ico_candidate.exists() else str(exe)
+
         # Use VBScript instead of PowerShell (VA blocks PowerShell)
         vbs_content = (
             f'Set ws = CreateObject("WScript.Shell")\n'
@@ -53,7 +72,7 @@ def create_desktop_shortcut(name: str = "VA HCPCS Fee Schedule Manager") -> bool
             f'sc.TargetPath = "{str(exe)}"\n'
             f'sc.WorkingDirectory = "{str(exe.parent)}"\n'
             f'sc.Description = "{name}"\n'
-            f'sc.IconLocation = "{str(exe)},0"\n'
+            f'sc.IconLocation = "{resolved_icon},0"\n'
             f'sc.Save\n'
         )
 
