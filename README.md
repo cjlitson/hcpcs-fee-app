@@ -11,7 +11,7 @@ A standalone Windows desktop application for VA staff to **manage, view, filter,
 
 1. Download `HCPCSFeeApp-Setup.zip` from **[GitHub Releases](https://github.com/cjlitson/hcpcs-fee-app/releases)**.
 2. Extract the ZIP to any temporary location.
-3. Right-click `Install.ps1` and select **"Run with PowerShell"**.
+3. Double-click `Install.bat` to run the installer.
 4. A desktop shortcut will be created — double-click it to launch.
 
 The app installs to your Documents folder (`Documents\HCPCSFeeApp\`). No administrator rights are required.
@@ -159,7 +159,7 @@ hcpcs-fee-app/
 ├── main.py                          # App entry point
 ├── requirements.txt                 # Python dependencies
 ├── build.bat                        # Windows .exe build script
-├── Install.ps1                      # Per-user PowerShell installer (no admin required)
+├── Install.bat                      # Per-user batch installer (no admin required)
 ├── INSTALL_README.txt               # Installation instructions (bundled in ZIP)
 ├── .github/
 │   └── workflows/
@@ -190,4 +190,4 @@ hcpcs-fee-app/
 
 ## Release Notes
 
-- [v1.1.1 (2026-03-17)](docs/releases/v1.1.1.md)
+- [v1.0.0 — Initial Release](docs/releases/v1.0.0.md)
