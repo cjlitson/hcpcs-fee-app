@@ -19,7 +19,10 @@ import pytest
 # Tilde-delimited TXT parser
 # ─────────────────────────────────────────────────────────────────────────────
 
-from core.importer import parse_dmepos_tilde_txt, parse_dmepos_grid_csv, _find_csv_header_line
+from core.importer import (
+    parse_dmepos_tilde_txt, parse_dmepos_grid_csv, _find_csv_header_line,
+    _find_zip_column, parse_rural_zip_file,
+)
 
 
 class TestTildeTxtParser:
@@ -325,6 +328,121 @@ class TestRuralZipLookup:
         insert_rural_zips([{"year": 2025, "zip5": "85001", "state_abbr": "AZ"}])
         insert_rural_zips([{"year": 2025, "zip5": "85001", "state_abbr": "AZ"}])  # no error
         assert is_rural_zip(2025, "85001") is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _find_zip_column helper
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestFindZipColumn:
+    """Tests for _find_zip_column()."""
+
+    def test_known_key_zip_code(self):
+        assert _find_zip_column({"zip_code": "85001"}) == "85001"
+
+    def test_known_key_zip5(self):
+        assert _find_zip_column({"zip5": "85001"}) == "85001"
+
+    def test_known_key_zip(self):
+        assert _find_zip_column({"zip": "85001"}) == "85001"
+
+    def test_known_key_zipcode(self):
+        assert _find_zip_column({"zipcode": "85001"}) == "85001"
+
+    def test_known_key_postal_code(self):
+        assert _find_zip_column({"postal_code": "85001"}) == "85001"
+
+    def test_cms_q1_2026_column(self):
+        """dmepos_rural_zip_code is the normalized header from CMS Q1 2026 CSV."""
+        assert _find_zip_column({"dmepos_rural_zip_code": "85001"}) == "85001"
+
+    def test_fallback_any_key_containing_zip(self):
+        """Any column whose normalized name contains 'zip' should be found."""
+        assert _find_zip_column({"rural_zip_identifier": "90210"}) == "90210"
+
+    def test_returns_empty_when_no_zip_column(self):
+        assert _find_zip_column({"state": "AZ", "year": "2026"}) == ""
+
+    def test_returns_empty_for_empty_dict(self):
+        assert _find_zip_column({}) == ""
+
+    def test_skips_empty_values_in_fallback(self):
+        """Fallback scan should skip columns with empty string values."""
+        assert _find_zip_column({"zip_extra": "", "state": "AZ"}) == ""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# parse_rural_zip_file — CMS Q1 2026 CSV format
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestParseRuralZipFile:
+    """Tests for parse_rural_zip_file() with CMS CSV formats."""
+
+    def _write_tmp(self, content, suffix=".csv"):
+        tmp = _tempfile.NamedTemporaryFile(
+            mode="w", suffix=suffix, delete=False, encoding="utf-8"
+        )
+        tmp.write(content)
+        tmp.close()
+        return tmp.name
+
+    def test_cms_q1_2026_format(self):
+        """CMS Q1 2026 header 'STATE,DMEPOS RURAL ZIP CODE,YEAR/QTR' must be parsed."""
+        content = "STATE,DMEPOS RURAL ZIP CODE,YEAR/QTR\r\nAZ,85001,2026/1\r\nCA,90210,2026/1\r\n"
+        path = self._write_tmp(content)
+        try:
+            records = parse_rural_zip_file(path, 2026)
+            zips = {r["zip5"] for r in records}
+            assert "85001" in zips
+            assert "90210" in zips
+        finally:
+            os.unlink(path)
+
+    def test_cms_q1_2026_state_extracted(self):
+        """State abbreviation must be correctly extracted from CMS Q1 2026 CSV."""
+        content = "STATE,DMEPOS RURAL ZIP CODE,YEAR/QTR\r\nAZ,85001,2026/1\r\n"
+        path = self._write_tmp(content)
+        try:
+            records = parse_rural_zip_file(path, 2026)
+            assert len(records) == 1
+            assert records[0]["state_abbr"] == "AZ"
+            assert records[0]["year"] == 2026
+        finally:
+            os.unlink(path)
+
+    def test_classic_zip_code_column(self):
+        """Traditional 'zip_code' column header still works."""
+        content = "zip_code,state\r\n85001,AZ\r\n"
+        path = self._write_tmp(content)
+        try:
+            records = parse_rural_zip_file(path, 2025)
+            assert any(r["zip5"] == "85001" for r in records)
+        finally:
+            os.unlink(path)
+
+    def test_zero_padded_zip_in_csv(self):
+        """4-digit ZIP codes in the CSV should be zero-padded to 5 digits."""
+        content = "STATE,DMEPOS RURAL ZIP CODE,YEAR/QTR\r\nMA,01234,2026/1\r\n"
+        path = self._write_tmp(content)
+        try:
+            records = parse_rural_zip_file(path, 2026)
+            assert len(records) == 1
+            assert records[0]["zip5"] == "01234"
+        finally:
+            os.unlink(path)
+
+    def test_non_zip_rows_skipped(self):
+        """Rows with no valid 5-digit ZIP should be skipped."""
+        content = "STATE,DMEPOS RURAL ZIP CODE,YEAR/QTR\r\nAZ,NOTZIP,2026/1\r\nCA,90210,2026/1\r\n"
+        path = self._write_tmp(content)
+        try:
+            records = parse_rural_zip_file(path, 2026)
+            assert len(records) == 1
+            assert records[0]["zip5"] == "90210"
+        finally:
+            os.unlink(path)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
