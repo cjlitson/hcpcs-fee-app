@@ -15,14 +15,14 @@ echo   Per-User Installer
 echo ========================================
 echo.
 
-:: -- Locate files relative to this script ------------------------------------
+:: -- Locate files in AppFiles subfolder relative to this script ---------------
 set SCRIPT_DIR=%~dp0
-set SRC_EXE=%SCRIPT_DIR%%EXE_NAME%
-set SRC_ICO=%SCRIPT_DIR%%ICO_NAME%
+set SRC_EXE=%SCRIPT_DIR%AppFiles\%EXE_NAME%
+set SRC_ICO=%SCRIPT_DIR%AppFiles\%ICO_NAME%
 
 if not exist "%SRC_EXE%" (
-    echo ERROR: %EXE_NAME% not found next to Install.bat.
-    echo        Make sure you extracted the full ZIP before running this installer.
+    echo ERROR: %EXE_NAME% not found in the AppFiles folder.
+    echo        Make sure you extracted the full ZIP and the AppFiles folder is present.
     echo.
     pause
     exit /b 1
@@ -83,6 +83,9 @@ echo.
 echo   Installed to : %INSTALL_DIR%
 echo   Shortcut     : %SHORTCUT_PATH%
 echo.
-echo Double-click the desktop shortcut to launch the app.
+echo The app will launch automatically. You can also use the desktop shortcut.
 echo.
 pause
+
+:: -- Launch the app from the installed location ------------------------------
+start "" "%INSTALL_DIR%\%EXE_NAME%"

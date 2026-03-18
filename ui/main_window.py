@@ -980,6 +980,12 @@ class MainWindow(QMainWindow):
             )
             if reply == QMessageBox.StandardButton.Yes:
                 apply_update(new_exe)  # does not return — calls sys.exit(0)
+            else:
+                # User declined — clean up the downloaded file
+                try:
+                    new_exe.unlink()
+                except Exception:
+                    pass
 
         except Exception as exc:
             dlg.close()
