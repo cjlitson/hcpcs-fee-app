@@ -2,7 +2,7 @@ VA HCPCS Fee Schedule Manager — Installation
 =============================================
 
 1. Extract this ZIP file to any temporary location
-2. Right-click "Install.ps1" and select "Run with PowerShell"
+2. Double-click "Install.bat" to run the installer
 3. The app will be installed to your Documents folder
 4. A desktop shortcut will be created automatically
 

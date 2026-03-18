@@ -27,12 +27,12 @@ jobs:
           pip install -r requirements.txt --no-warn-script-location
           pip install pyinstaller --no-warn-script-location
 
-      - name: Convert app_icon.png to app_icon.ico
+      - name: Convert wsnc_map.png to wsnc_map.ico
         run: |
           python -c "
           from PIL import Image
-          img = Image.open('assets/app_icon.png').convert('RGBA')
-          img.save('assets/app_icon.ico', format='ICO', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          img = Image.open('assets/wsnc_map.png').convert('RGBA')
+          img.save('assets/wsnc_map.ico', format='ICO', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
           print('Icon converted successfully')
           "
 
@@ -41,7 +41,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           pyinstaller --onefile --windowed --name HCPCSFeeApp `
-            --icon=assets/app_icon.ico `
+            --icon=assets/wsnc_map.ico `
             --add-data "assets;assets" `
             --version-file version_info.txt `
             --hidden-import PyQt6.QtPrintSupport `
@@ -53,11 +53,11 @@ jobs:
 
       - name: Package ZIP
         run: |
-          copy assets\app_icon.ico dist\app_icon.ico
-          copy Install.ps1 dist\Install.ps1
+          copy assets\wsnc_map.ico dist\wsnc_map.ico
+          copy Install.bat dist\Install.bat
           copy INSTALL_README.txt dist\INSTALL_README.txt
           cd dist
-          Compress-Archive -Force -Path HCPCSFeeApp.exe,Install.ps1,app_icon.ico,INSTALL_README.txt -DestinationPath HCPCSFeeApp-Setup.zip
+          Compress-Archive -Force -Path HCPCSFeeApp.exe,Install.bat,wsnc_map.ico,INSTALL_README.txt -DestinationPath HCPCSFeeApp-Setup.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
