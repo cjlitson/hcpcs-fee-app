@@ -502,7 +502,7 @@ def parse_rural_zip_file(path, year):
         reader = csv.DictReader(f, delimiter=delimiter)
         for row in reader:
             norm = {
-                k.strip().lower().replace(" ", "_"): (v or ").strip()
+                k.strip().lower().replace(" ", "_"): (v or "").strip()
                 for k, v in row.items()
                 if k is not None
             }
