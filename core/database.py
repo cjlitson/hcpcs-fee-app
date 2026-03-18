@@ -395,3 +395,16 @@ def get_default_selected_years(supported_years=None):
     supported_set = set(supported_years)
     candidates = [current - i for i in range(4)]  # current, -1, -2, -3
     return sorted([y for y in candidates if y in supported_set], reverse=True)
+
+
+
+def get_available_hcpcs_prefixes():
+    """Return the set of HCPCS code prefix letters that have data in the database."""
+    conn = _get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT UPPER(SUBSTR(hcpcs_code, 1, 1)) AS prefix FROM hcpcs_fees"
+        ).fetchall()
+        return {r["prefix"] for r in rows}
+    finally:
+        conn.close()

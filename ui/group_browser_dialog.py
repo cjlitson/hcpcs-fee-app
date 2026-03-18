@@ -51,7 +51,11 @@ class GroupBrowserDialog(QDialog):
         self.group_list.setMinimumWidth(240)
 
         from core.hcpcs_groups import HCPCS_GROUPS
+        from core.database import get_available_hcpcs_prefixes
+        available_prefixes = get_available_hcpcs_prefixes()
         for prefix, (short, desc) in HCPCS_GROUPS.items():
+            if available_prefixes and prefix not in available_prefixes:
+                continue
             item = QListWidgetItem(f"{prefix} — {short}")
             item.setData(Qt.ItemDataRole.UserRole, prefix)
             item.setToolTip(desc)
