@@ -436,6 +436,28 @@ def parse_visn_csv(path):
 # Rural ZIP file parser
 # ---------------------------------------------------------------------------
 
+def _find_zip_column(norm):
+    """Find the ZIP code value from a normalized row dict.
+
+    Checks well-known column names first, then falls back to any column
+    whose normalized name contains 'zip' (e.g. 'dmepos_rural_zip_code').
+    Returns the raw string value or ''.
+    """
+    # Try well-known column names first
+    val = (
+        norm.get("zip_code") or norm.get("zip5") or norm.get("zip")
+        or norm.get("zipcode") or norm.get("postal_code")
+        or norm.get("dmepos_rural_zip_code") or ""
+    )
+    if val:
+        return val
+    # Fallback: scan all columns for any key containing 'zip'
+    for key, v in norm.items():
+        if "zip" in key and v:
+            return v
+    return ""
+
+
 def parse_rural_zip_file(path, year):
     """Parse a CMS DMERuralZIP file and return records for insert_rural_zips().
 
@@ -480,15 +502,12 @@ def parse_rural_zip_file(path, year):
         reader = csv.DictReader(f, delimiter=delimiter)
         for row in reader:
             norm = {
-                k.strip().lower().replace(" ", "_"): (v or "").strip()
+                k.strip().lower().replace(" ", "_"): (v or ").strip()
                 for k, v in row.items()
                 if k is not None
             }
-            # Find zip5 value
-            zip5_raw = (
-                norm.get("zip_code") or norm.get("zip5") or norm.get("zip")
-                or norm.get("zipcode") or norm.get("postal_code") or ""
-            )
+            # Find zip5 value using helper that handles CMS naming variants
+            zip5_raw = _find_zip_column(norm)
             z = str(zip5_raw).strip()
             if not z:
                 continue
