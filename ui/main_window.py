@@ -112,21 +112,40 @@ class MainWindow(QMainWindow):
         root.setSpacing(6)
 
         # ---- Update notification bar (hidden by default) ----
+        bar_style = (
+            "background-color: #FFF3CD;"
+            "border: 1px solid #FFECB5;"
+            "border-radius: 4px;"
+            "color: #664D03;"
+            "font-size: 12px;"
+        )
+        self._update_bar_widget = QWidget()
+        self._update_bar_widget.setStyleSheet(f"QWidget {{ {bar_style} }}")
+        update_bar_layout = QHBoxLayout(self._update_bar_widget)
+        update_bar_layout.setContentsMargins(12, 6, 12, 6)
+        update_bar_layout.setSpacing(10)
+
         self.update_bar = QLabel()
         self.update_bar.setOpenExternalLinks(True)
         self.update_bar.setWordWrap(True)
-        self.update_bar.setStyleSheet(
-            "QLabel {"
-            "  background-color: #FFF3CD;"
-            "  border: 1px solid #FFECB5;"
-            "  border-radius: 4px;"
-            "  padding: 8px 12px;"
-            "  color: #664D03;"
-            "  font-size: 12px;"
+        self.update_bar.setStyleSheet("background: transparent; border: none;")
+        update_bar_layout.addWidget(self.update_bar, 1)
+
+        self._update_now_btn = QPushButton("⬇  Update Now")
+        self._update_now_btn.setStyleSheet(
+            "QPushButton {"
+            "  background-color: #0D6EFD; color: white;"
+            "  padding: 4px 12px; border-radius: 4px; font-size: 12px;"
+            "  border: none;"
             "}"
+            "QPushButton:hover { background-color: #0B5ED7; }"
         )
-        self.update_bar.hide()
-        root.addWidget(self.update_bar)
+        self._update_now_btn.setVisible(False)
+        self._update_now_btn.clicked.connect(self._on_update_now)
+        update_bar_layout.addWidget(self._update_now_btn)
+
+        self._update_bar_widget.hide()
+        root.addWidget(self._update_bar_widget)
 
         # ---- Toolbar (two rows) ----
         toolbar_container = QVBoxLayout()
@@ -862,11 +881,94 @@ class MainWindow(QMainWindow):
         if not url.startswith("https://github.com/"):
             from core.version import RELEASES_URL
             url = RELEASES_URL
+        self._update_pending_version = version
+        self._update_pending_url = url
         self.update_bar.setText(
             f'🔔 <b>Update available!</b> Version {version} is ready. '
             f'<a href="{url}" style="color: #0D6EFD;">Download now</a>'
         )
-        self.update_bar.show()
+        # Show the "Update Now" button only when running as a frozen exe
+        self._update_now_btn.setVisible(getattr(sys, "frozen", False))
+        self._update_bar_widget.show()
+
+    def _on_update_now(self):
+        """Download and apply the update in-place, or fall back to browser."""
+        import webbrowser
+        url = getattr(self, "_update_pending_url", None)
+        version = getattr(self, "_update_pending_version", "?")
+
+        # Only attempt self-update when running as a frozen exe
+        if not getattr(sys, "frozen", False):
+            if url:
+                webbrowser.open(url)
+            return
+
+        from core.version import get_latest_release_asset_url
+
+        asset_url = get_latest_release_asset_url("HCPCSFeeApp.exe")
+        if not asset_url:
+            # No direct asset URL — open the releases page instead
+            if url:
+                webbrowser.open(url)
+            return
+
+        # Show an indeterminate progress dialog while downloading
+        dlg = QProgressDialog(
+            f"Downloading version {version}…", "Cancel", 0, 0, self
+        )
+        dlg.setWindowTitle("Updating…")
+        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+        dlg.setMinimumDuration(0)
+        dlg.setValue(0)
+
+        cancelled = False
+
+        def _on_cancel():
+            nonlocal cancelled
+            cancelled = True
+
+        dlg.canceled.connect(_on_cancel)
+
+        def _progress(downloaded, total):
+            if cancelled:
+                return
+            if total and total > 0:
+                dlg.setMaximum(total)
+                dlg.setValue(downloaded)
+            QApplication.processEvents()
+
+        try:
+            from core.self_updater import download_update, apply_update
+            new_exe = download_update(asset_url, progress_callback=_progress)
+            dlg.close()
+
+            if cancelled:
+                try:
+                    new_exe.unlink()
+                except Exception:
+                    pass
+                return
+
+            reply = QMessageBox.question(
+                self,
+                "Apply Update",
+                f"Version {version} has been downloaded.\n\n"
+                "The app will restart to complete the update.\n\nContinue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                apply_update(new_exe)  # does not return — calls sys.exit(0)
+
+        except Exception as exc:
+            dlg.close()
+            QMessageBox.warning(
+                self,
+                "Update Failed",
+                f"Automatic update failed:\n{exc}\n\n"
+                "Please download the update manually.",
+            )
+            if url:
+                webbrowser.open(url)
 
     def _set_status(self, msg):
         self.status_bar.showMessage(msg)

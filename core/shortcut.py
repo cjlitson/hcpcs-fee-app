@@ -51,6 +51,7 @@ def create_desktop_shortcut(name: str = "VA HCPCS Fee Schedule Manager") -> bool
             f'$sc.TargetPath = "{str(exe)}"; '
             f'$sc.WorkingDirectory = "{str(exe.parent)}"; '
             f'$sc.Description = "{name}"; '
+            f'$sc.IconLocation = "{str(exe)},0"; '
             f'$sc.Save()'
         )
 

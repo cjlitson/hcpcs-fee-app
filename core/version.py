@@ -53,3 +53,27 @@ def check_for_update():
         return None
     except Exception:
         return None
+
+
+def get_latest_release_asset_url(asset_name: str = "HCPCSFeeApp.exe") -> str | None:
+    """Return the direct download URL for *asset_name* in the latest GitHub release.
+
+    Returns the browser_download_url string, or None if the asset is not found
+    or the request fails.  Safe to call from a background thread.
+    """
+    try:
+        resp = requests.get(
+            API_URL,
+            timeout=5,
+            verify=True,
+            headers={"Accept": "application/vnd.github+json"},
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        for asset in data.get("assets", []):
+            if asset.get("name") == asset_name:
+                return asset.get("browser_download_url")
+        return None
+    except Exception:
+        return None
