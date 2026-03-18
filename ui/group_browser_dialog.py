@@ -22,7 +22,7 @@ class GroupBrowserDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Browse HCPCS Groups")
-        self.setMinimumSize(1000, 600)
+        self.setMinimumSize(1100, 600)
 
         # Pull current filters from parent MainWindow when available
         self._year = None
@@ -35,6 +35,7 @@ class GroupBrowserDialog(QDialog):
         if hasattr(parent, "_is_rural"):
             self._is_rural = parent._is_rural()
 
+        self._records = []
         self._init_ui()
 
     # ------------------------------------------------------------------ UI --
@@ -88,6 +89,7 @@ class GroupBrowserDialog(QDialog):
             "Allowable ($)", "Modifier", "Source",
         ])
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setDefaultSectionSize(100)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
@@ -97,6 +99,9 @@ class GroupBrowserDialog(QDialog):
             "QTableWidget::item:selected:!active { background-color: #4a7ab5; color: white; }"
             "QTableWidget::item:hover { background-color: #e0e8f0; }"
         )
+        self.table.setToolTip("Click HCPCS code to view history.")
+        self.table.cellClicked.connect(self._on_cell_clicked)
+        self.table.doubleClicked.connect(self._on_row_double_clicked)
         right.addWidget(self.table, 1)
 
         self.status_label = QLabel("Select a group to browse.")
@@ -142,6 +147,7 @@ class GroupBrowserDialog(QDialog):
 
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(records))
+        self._records = records
 
         link_color = QColor("#0066CC")
         link_font = QFont()
@@ -167,6 +173,8 @@ class GroupBrowserDialog(QDialog):
                 if col_i == 0:
                     item.setForeground(link_color)
                     item.setFont(link_font)
+                    item.setData(Qt.ItemDataRole.UserRole, row_i)
+                    item.setToolTip("Click to view history for this HCPCS code")
                 self.table.setItem(row_i, col_i, item)
 
         self.table.setSortingEnabled(True)
@@ -175,3 +183,25 @@ class GroupBrowserDialog(QDialog):
         self.status_label.setText(
             f"Showing {len(records):,} codes in group {prefix} — {short}"
         )
+
+    # --------------------------------------------------------- Click handlers --
+
+    def _on_cell_clicked(self, row, col):
+        if col == 0:
+            self._open_history_for_row(row)
+
+    def _on_row_double_clicked(self, index):
+        if index.column() != 0:
+            self._open_history_for_row(index.row())
+
+    def _open_history_for_row(self, row):
+        first_item = self.table.item(row, 0)
+        if first_item is None:
+            return
+        rec_idx = first_item.data(Qt.ItemDataRole.UserRole)
+        if rec_idx is None or rec_idx < 0 or rec_idx >= len(self._records):
+            return
+        record = self._records[rec_idx]
+        from ui.main_window import _HcpcsHistoryDialog
+        dlg = _HcpcsHistoryDialog(record, self.parent())
+        dlg.exec()
