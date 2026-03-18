@@ -65,7 +65,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("VA HCPCS Fee Schedule Manager")
         self.setMinimumSize(1200, 700)
         # Set the window / taskbar icon from the assets folder.
-        icon_path = _asset("app_icon.png")
+        icon_path = _asset("wsnc_map.png")
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
         self._records = []
@@ -220,7 +220,9 @@ class MainWindow(QMainWindow):
         self.group_combo.setMinimumWidth(220)
         self.group_combo.addItem("All Groups", None)
         from core.hcpcs_groups import get_group_choices
-        for prefix, label in get_group_choices():
+        from core.database import get_available_hcpcs_prefixes
+        available_prefixes = get_available_hcpcs_prefixes()
+        for prefix, label in get_group_choices(only_prefixes=available_prefixes or None):
             self.group_combo.addItem(label, prefix)
         self.group_combo.currentIndexChanged.connect(self._apply_filters)
         self.group_combo.currentIndexChanged.connect(self._save_filter_preferences)
@@ -418,6 +420,26 @@ class MainWindow(QMainWindow):
         self.state_combo.blockSignals(False)
 
         self._update_year_view_label()
+        self._refresh_group_combo()
+
+    def _refresh_group_combo(self):
+        """Reload the group combo to only show groups that have data in the database."""
+        if not hasattr(self, "group_combo"):
+            return
+        from core.hcpcs_groups import get_group_choices
+        from core.database import get_available_hcpcs_prefixes
+        prev_group = self.group_combo.currentData()
+        self.group_combo.blockSignals(True)
+        self.group_combo.clear()
+        self.group_combo.addItem("All Groups", None)
+        available_prefixes = get_available_hcpcs_prefixes()
+        for prefix, label in get_group_choices(only_prefixes=available_prefixes or None):
+            self.group_combo.addItem(label, prefix)
+        if prev_group is not None:
+            idx = self.group_combo.findData(prev_group)
+            if idx >= 0:
+                self.group_combo.setCurrentIndex(idx)
+        self.group_combo.blockSignals(False)
 
     def _update_year_view_label(self):
         """Update the year view label to show the effective year being displayed."""
@@ -1009,7 +1031,7 @@ class _AboutDialog(QDialog):
         # ---- App icon + title row -------------------------------------------
         header = QHBoxLayout()
         header.setContentsMargins(16, 4, 16, 0)
-        icon_path = _asset("app_icon.png")
+        icon_path = _asset("wsnc_map.png")
         if icon_path.exists():
             icon_lbl = QLabel()
             icon_lbl.setPixmap(

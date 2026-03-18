@@ -36,58 +36,64 @@ def create_desktop_shortcut(name: str = "VA HCPCS Fee Schedule Manager") -> bool
         return False
 
     try:
-        import winreg  # noqa: F401 — confirms we are on Windows
+        import subprocess
+        import os
+        import tempfile
 
-        # Use PowerShell's WScript.Shell COM object — available on all
-        # Windows Vista+ without any extra installs.
         desktop = _get_desktop_path()
         if desktop is None:
             return False
 
         shortcut_path = str(desktop / f"{name}.lnk")
-        ps_script = (
-            f'$ws = New-Object -ComObject WScript.Shell; '
-            f'$sc = $ws.CreateShortcut("{shortcut_path}"); '
-            f'$sc.TargetPath = "{str(exe)}"; '
-            f'$sc.WorkingDirectory = "{str(exe.parent)}"; '
-            f'$sc.Description = "{name}"; '
-            f'$sc.IconLocation = "{str(exe)},0"; '
-            f'$sc.Save()'
+
+        # Use VBScript instead of PowerShell (VA blocks PowerShell)
+        vbs_content = (
+            f'Set ws = CreateObject("WScript.Shell")\n'
+            f'Set sc = ws.CreateShortcut("{shortcut_path}")\n'
+            f'sc.TargetPath = "{str(exe)}"\n'
+            f'sc.WorkingDirectory = "{str(exe.parent)}"\n'
+            f'sc.Description = "{name}"\n'
+            f'sc.IconLocation = "{str(exe)},0"\n'
+            f'sc.Save\n'
         )
 
-        import subprocess
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive",
-             "-ExecutionPolicy", "Bypass", "-Command", ps_script],
-            capture_output=True,
-            timeout=10,
-        )
-        return result.returncode == 0
+        vbs_path = os.path.join(tempfile.gettempdir(), f"create_shortcut_{os.getpid()}_{os.urandom(4).hex()}.vbs")
+        with open(vbs_path, "w") as f:
+            f.write(vbs_content)
+
+        try:
+            result = subprocess.run(
+                ["cscript", "//nologo", vbs_path],
+                capture_output=True,
+                timeout=10,
+            )
+            return result.returncode == 0
+        finally:
+            try:
+                os.unlink(vbs_path)
+            except Exception:
+                pass
     except Exception:
         return False
 
 
 def _get_desktop_path() -> Path | None:
-    """Return the current user's Desktop folder path on Windows."""
+    """Return the current user's Desktop folder path on Windows.
+
+    Uses the Windows Shell API (SHGetFolderPathW) which correctly resolves
+    OneDrive Known Folder Move redirections. No PowerShell or VBScript needed.
+    """
     try:
-        import subprocess
-        result = subprocess.run(
-            [
-                "powershell", "-NoProfile", "-NonInteractive",
-                "-Command",
-                "[Environment]::GetFolderPath('Desktop')",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        desktop = result.stdout.strip()
-        if desktop:
-            return Path(desktop)
+        import ctypes
+        buf = ctypes.create_unicode_buffer(260)
+        # CSIDL_DESKTOPDIRECTORY = 0x0010
+        ctypes.windll.shell32.SHGetFolderPathW(None, 0x0010, None, 0, buf)
+        if buf.value:
+            return Path(buf.value)
     except Exception:
         pass
 
-    # Fallback: USERPROFILE\Desktop
+    # Fallback: USERPROFILE\Desktop (least reliable but better than nothing)
     try:
         import os
         user_profile = os.environ.get("USERPROFILE", "")

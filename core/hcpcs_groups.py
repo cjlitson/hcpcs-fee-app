@@ -39,9 +39,17 @@ def get_group_for_code(hcpcs_code):
     return None
 
 
-def get_group_choices():
+def get_group_choices(only_prefixes=None):
     """Return a list of (prefix, display_label) tuples for use in combo boxes.
+
+    If only_prefixes is provided (a set of prefix letters), only groups
+    with data in the database are included.
 
     Example: [("A", "A — Medical & Surgical Supplies"), ("B", "B — Enteral/Parenteral Therapy"), ...]
     """
-    return [(prefix, f"{prefix} — {short}") for prefix, (short, _) in HCPCS_GROUPS.items()]
+    choices = []
+    for prefix, (short, _) in HCPCS_GROUPS.items():
+        if only_prefixes is not None and prefix not in only_prefixes:
+            continue
+        choices.append((prefix, f"{prefix} — {short}"))
+    return choices

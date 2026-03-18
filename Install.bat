@@ -45,7 +45,12 @@ if exist "%SRC_ICO%" (
 :: -- Create desktop shortcut via temporary VBScript --------------------------
 echo Creating desktop shortcut...
 
-set DESKTOP=%USERPROFILE%\Desktop
+:: Get the REAL desktop path (handles OneDrive Known Folder Move)
+set VBS_DESKTOP=%TEMP%\get_desktop_%RANDOM%.vbs
+echo Set ws = CreateObject("WScript.Shell"^) > "%VBS_DESKTOP%"
+echo WScript.Echo ws.SpecialFolders("Desktop"^) >> "%VBS_DESKTOP%"
+for /f "delims=" %%D in ('cscript //nologo "%VBS_DESKTOP%"') do set "DESKTOP=%%D"
+del "%VBS_DESKTOP%" >nul 2>&1
 set SHORTCUT_PATH=%DESKTOP%\%SHORTCUT_NAME%
 set TARGET_EXE=%INSTALL_DIR%\%EXE_NAME%
 

@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QScrollArea, QWidget, QCheckBox,
-    QMessageBox, QFrame, QStackedWidget, QLineEdit, QFileDialog,
+    QMessageBox, QFrame, QStackedWidget,
 )
 from PyQt6.QtCore import Qt
 
@@ -101,35 +101,7 @@ class SetupWizard(QDialog):
             )
         layout.addWidget(self._shortcut_check)
 
-        # ---- Custom database path option --------------------------------
-        db_path_label = QLabel("Database folder (where hcpcs_fees.db is stored):")
-        layout.addWidget(db_path_label)
-
-        db_path_row = QHBoxLayout()
-        self._db_path_edit = QLineEdit()
-        self._db_path_edit.setPlaceholderText("Default: next to the application")
-        self._db_path_edit.setReadOnly(True)
-
-        from core.config import get_data_dir
-        self._db_path_edit.setText(str(get_data_dir()))
-
-        browse_btn = QPushButton("Browse…")
-        browse_btn.clicked.connect(self._browse_db_path)
-        db_path_row.addWidget(self._db_path_edit, 1)
-        db_path_row.addWidget(browse_btn)
-        layout.addLayout(db_path_row)
-
         return page
-
-    def _browse_db_path(self):
-        """Open a folder picker and update the DB path field."""
-        from core.config import get_data_dir
-        current = self._db_path_edit.text() or str(get_data_dir())
-        folder = QFileDialog.getExistingDirectory(
-            self, "Select Database Folder", current
-        )
-        if folder:
-            self._db_path_edit.setText(folder)
 
     def _build_states_page(self) -> QWidget:
         page = QWidget()
@@ -291,13 +263,6 @@ class SetupWizard(QDialog):
                 "Please select at least one year to track.",
             )
             return
-
-        # Save custom DB path if changed
-        from core.config import get_data_dir, set_data_dir
-        from pathlib import Path
-        chosen_path = self._db_path_edit.text().strip()
-        if chosen_path and Path(chosen_path) != get_data_dir():
-            set_data_dir(Path(chosen_path))
 
         # Save states
         selected_states = [
