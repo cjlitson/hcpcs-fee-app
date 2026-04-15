@@ -14,6 +14,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+UPDATE_LOG_FILENAME = "HCPCSFeeApp_update.log"
+
 
 def _current_exe() -> Path:
     """Return the path to the running .exe.
@@ -87,6 +89,7 @@ def apply_update(new_exe: Path) -> None:
 
     exe = _current_exe()
     pid = os.getpid()
+    log_path = Path(tempfile.gettempdir()) / UPDATE_LOG_FILENAME
 
     # Write the batch script to a temp file
     fd, bat_path = tempfile.mkstemp(suffix=".bat", prefix="hcpcs_update_")
@@ -95,27 +98,40 @@ def apply_update(new_exe: Path) -> None:
     bat_content = (
         "@echo off\r\n"
         "setlocal enabledelayedexpansion\r\n"
-        f":: Waiting for process {pid} to exit...\r\n"
+        f"set \"LOG_PATH={log_path}\"\r\n"
+        "echo [%date% %time%] Starting update swap script. > \"%LOG_PATH%\"\r\n"
+        f"echo [%date% %time%] Waiting for process {pid} to exit... >> \"%LOG_PATH%\"\r\n"
         f"set /a _tries=0\r\n"
         f":wait\r\n"
         f"set /a _tries=_tries+1\r\n"
-        f"if !_tries! gtr 30 goto timeout\r\n"
-        f"tasklist /FI \"PID eq {pid}\" /NH 2>NUL | find /I \"{pid}\" >NUL\r\n"
+        f"if !_tries! gtr 30 goto do_swap\r\n"
+        f"tasklist /FI \"PID eq {pid}\" /FO CSV /NH 2>NUL | findstr /B \"\\\"{pid}\\\"\" >NUL 2>&1\r\n"
         f"if not errorlevel 1 (\r\n"
         f"    timeout /t 1 /nobreak >NUL\r\n"
         f"    goto wait\r\n"
         f")\r\n"
         f":do_swap\r\n"
-        f":: Replace old exe with new exe\r\n"
-        f"move /Y \"{new_exe}\" \"{exe}\"\r\n"
-        f":: Restart the app\r\n"
+        f"echo [%date% %time%] Starting file swap... >> \"%LOG_PATH%\"\r\n"
+        f"set /a _swap_tries=0\r\n"
+        f":swap_retry\r\n"
+        f"set /a _swap_tries=_swap_tries+1\r\n"
+        f"move /Y \"{new_exe}\" \"{exe}\" >NUL 2>&1\r\n"
+        f"if not errorlevel 1 goto swap_ok\r\n"
+        f"echo [%date% %time%] Swap attempt !_swap_tries! failed. >> \"%LOG_PATH%\"\r\n"
+        f"if !_swap_tries! gtr 5 goto swap_failed\r\n"
+        f"timeout /t 2 /nobreak >NUL\r\n"
+        f"goto swap_retry\r\n"
+        f":swap_ok\r\n"
+        f"if not exist \"{exe}\" goto swap_failed\r\n"
+        f"echo [%date% %time%] Swap succeeded. Restarting app... >> \"%LOG_PATH%\"\r\n"
         f"start \"\" \"{exe}\"\r\n"
         f"goto end\r\n"
-        f":timeout\r\n"
-        f":: Process did not exit within 30 seconds — attempt swap anyway (may fail if still running)\r\n"
-        f"goto do_swap\r\n"
+        f":swap_failed\r\n"
+        f"echo [%date% %time%] Update failed: could not replace the application file. >> \"%LOG_PATH%\"\r\n"
+        f"echo Please close the app and manually rename HCPCSFeeApp_new.exe to HCPCSFeeApp.exe >> \"%LOG_PATH%\"\r\n"
+        f"echo Update log saved to: %LOG_PATH% >> \"%LOG_PATH%\"\r\n"
         f":end\r\n"
-        f":: Delete this script\r\n"
+        f"echo [%date% %time%] Update swap script finished. >> \"%LOG_PATH%\"\r\n"
         f"del \"%~f0\"\r\n"
     )
 
