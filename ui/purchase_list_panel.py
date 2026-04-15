@@ -2,7 +2,6 @@ from datetime import datetime
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QAbstractItemView,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -28,59 +27,22 @@ from core.database import (
 )
 from core.exporter import (
     export_purchase_list_to_csv,
+    export_purchase_list_to_docx,
     export_purchase_list_to_excel,
     export_purchase_list_to_pdf,
 )
 from ui.purchase_list_dialog import BundlePickerDialog
 
 
-class _DropTableWidget(QTableWidget):
-    code_dropped = pyqtSignal(str)
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.setAcceptDrops(True)
-        self.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
-        self.setDropIndicatorShown(True)
-
-    @staticmethod
-    def _extract_code(mime_data):
-        text = (mime_data.text() or "").strip()
-        if not text:
-            return ""
-        first_line = text.splitlines()[0]
-        first_token = first_line.split("\t")[0].strip().upper()
-        return "".join(ch for ch in first_token if ch.isalnum())
-
-    def dragEnterEvent(self, event):
-        if self._extract_code(event.mimeData()):
-            event.acceptProposedAction()
-            return
-        super().dragEnterEvent(event)
-
-    def dragMoveEvent(self, event):
-        if self._extract_code(event.mimeData()):
-            event.acceptProposedAction()
-            return
-        super().dragMoveEvent(event)
-
-    def dropEvent(self, event):
-        code = self._extract_code(event.mimeData())
-        if code:
-            self.code_dropped.emit(code)
-            event.acceptProposedAction()
-            return
-        super().dropEvent(event)
-
-
 class PurchaseListPanel(QWidget):
+    count_changed = pyqtSignal(int)
+
     def __init__(self, parent=None, year_combo=None, state_combo=None, zip_edit=None):
         super().__init__(parent)
         self._year_combo = year_combo
         self._state_combo = state_combo
         self._zip_edit = zip_edit
         self._bundle_name = None
-        self.setAcceptDrops(True)
         self._init_ui()
 
     def _init_ui(self):
@@ -97,16 +59,26 @@ class PurchaseListPanel(QWidget):
         header.addWidget(self.bundle_label)
         root.addLayout(header)
 
-        self.table = _DropTableWidget(0, 5)
+        controls = QHBoxLayout()
+        controls.addStretch()
+        select_all_btn = QPushButton("Select All")
+        deselect_all_btn = QPushButton("Deselect All")
+        select_all_btn.clicked.connect(self.select_all_items)
+        deselect_all_btn.clicked.connect(self.deselect_all_items)
+        controls.addWidget(select_all_btn)
+        controls.addWidget(deselect_all_btn)
+        root.addLayout(controls)
+
+        self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ["HCPCS Code", "Description", "Qty", "Unit Price", "Line Total"]
+            ["", "HCPCS Code", "Description", "Qty", "Unit Price", "Line Total"]
         )
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.code_dropped.connect(self.add_code)
         root.addWidget(self.table, 1)
 
         totals = QHBoxLayout()
@@ -132,14 +104,14 @@ class PurchaseListPanel(QWidget):
         btns.addWidget(clear_btn)
         root.addLayout(btns)
 
-    def dragEnterEvent(self, event):
-        self.table.dragEnterEvent(event)
-
-    def dragMoveEvent(self, event):
-        self.table.dragMoveEvent(event)
-
-    def dropEvent(self, event):
-        self.table.dropEvent(event)
+    @staticmethod
+    def _checkbox_item(checked=False):
+        item = QTableWidgetItem("")
+        item.setFlags(
+            Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        )
+        item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+        return item
 
     def _effective_year(self):
         return self._year_combo.currentData() if self._year_combo else None
@@ -162,27 +134,28 @@ class PurchaseListPanel(QWidget):
         if not code:
             return
         for row in range(self.table.rowCount()):
-            existing = self.table.item(row, 0)
+            existing = self.table.item(row, 1)
             if existing and existing.text().upper() == code:
-                spin = self.table.cellWidget(row, 2)
+                spin = self.table.cellWidget(row, 3)
                 if isinstance(spin, QSpinBox):
                     spin.setValue(spin.value() + 1)
                 return
         row = self.table.rowCount()
         self.table.insertRow(row)
-        self.table.setItem(row, 0, QTableWidgetItem(code))
+        self.table.setItem(row, 0, self._checkbox_item(False))
+        self.table.setItem(row, 1, QTableWidgetItem(code))
         description_text = (description_hint or "").strip()
         if not description_text:
             description_text = self._lookup_description(code)
-        self.table.setItem(row, 1, QTableWidgetItem(description_text))
+        self.table.setItem(row, 2, QTableWidgetItem(description_text))
         qty_spin = QSpinBox()
         qty_spin.setMinimum(1)
         qty_spin.setMaximum(9999)
         qty_spin.setValue(1)
         qty_spin.valueChanged.connect(self.refresh_prices)
-        self.table.setCellWidget(row, 2, qty_spin)
-        self.table.setItem(row, 3, QTableWidgetItem("—"))
+        self.table.setCellWidget(row, 3, qty_spin)
         self.table.setItem(row, 4, QTableWidgetItem("—"))
+        self.table.setItem(row, 5, QTableWidgetItem("—"))
         self.refresh_prices()
 
     def _lookup_description(self, code):
@@ -217,12 +190,12 @@ class PurchaseListPanel(QWidget):
     def refresh_prices(self):
         total = 0.0
         for row in range(self.table.rowCount()):
-            code_item = self.table.item(row, 0)
+            code_item = self.table.item(row, 1)
             if not code_item:
                 continue
             code = code_item.text().strip().upper()
             price = self._lookup_price(code)
-            qty_widget = self.table.cellWidget(row, 2)
+            qty_widget = self.table.cellWidget(row, 3)
             qty = qty_widget.value() if isinstance(qty_widget, QSpinBox) else 1
             line_total = None if price is None else float(price) * qty
             unit_txt = "—" if price is None else f"${float(price):,.2f}"
@@ -233,20 +206,22 @@ class PurchaseListPanel(QWidget):
             line_item = QTableWidgetItem(line_txt)
             unit_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             line_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.table.setItem(row, 3, unit_item)
-            self.table.setItem(row, 4, line_item)
+            self.table.setItem(row, 4, unit_item)
+            self.table.setItem(row, 5, line_item)
         self.grand_total_label.setText(f"${total:,.2f}")
         self._update_header()
 
     def _update_header(self):
-        self.title_label.setText(f"Purchase List ({self.table.rowCount()})")
+        count = self.table.rowCount()
+        self.title_label.setText(f"Purchase List ({count})")
+        self.count_changed.emit(count)
 
     def _collect_items(self):
         items = []
         for row in range(self.table.rowCount()):
-            code_item = self.table.item(row, 0)
-            desc_item = self.table.item(row, 1)
-            qty_widget = self.table.cellWidget(row, 2)
+            code_item = self.table.item(row, 1)
+            desc_item = self.table.item(row, 2)
+            qty_widget = self.table.cellWidget(row, 3)
             if not code_item:
                 continue
             code = code_item.text().strip().upper()
@@ -316,16 +291,17 @@ class PurchaseListPanel(QWidget):
                 description_text = desc_cache[code]
             row = self.table.rowCount()
             self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(code))
-            self.table.setItem(row, 1, QTableWidgetItem(description_text))
+            self.table.setItem(row, 0, self._checkbox_item(False))
+            self.table.setItem(row, 1, QTableWidgetItem(code))
+            self.table.setItem(row, 2, QTableWidgetItem(description_text))
             qty_spin = QSpinBox()
             qty_spin.setMinimum(1)
             qty_spin.setMaximum(9999)
             qty_spin.setValue(max(1, int(item.get("quantity", 1) or 1)))
             qty_spin.valueChanged.connect(self.refresh_prices)
-            self.table.setCellWidget(row, 2, qty_spin)
-            self.table.setItem(row, 3, QTableWidgetItem("—"))
+            self.table.setCellWidget(row, 3, qty_spin)
             self.table.setItem(row, 4, QTableWidgetItem("—"))
+            self.table.setItem(row, 5, QTableWidgetItem("—"))
         self.refresh_prices()
 
     def _export(self):
@@ -334,7 +310,7 @@ class PurchaseListPanel(QWidget):
             QMessageBox.information(self, "No Items", "No purchase list items to export.")
             return
         default_name = "purchase_list"
-        filters = "Excel Files (*.xlsx);;CSV Files (*.csv);;PDF Files (*.pdf)"
+        filters = "Word Documents (*.docx);;PDF Files (*.pdf);;Excel Files (*.xlsx);;CSV Files (*.csv)"
         path, _ = QFileDialog.getSaveFileName(self, "Export Purchase List", default_name, filters)
         if not path:
             return
@@ -348,10 +324,12 @@ class PurchaseListPanel(QWidget):
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         }
         try:
-            if suffix == "xlsx":
-                export_purchase_list_to_excel(items, path, meta=meta)
+            if suffix == "docx":
+                export_purchase_list_to_docx(items, path, meta=meta)
             elif suffix == "pdf":
                 export_purchase_list_to_pdf(items, path, meta=meta)
+            elif suffix == "xlsx":
+                export_purchase_list_to_excel(items, path, meta=meta)
             else:
                 if suffix != "csv":
                     path = f"{path}.csv"
@@ -359,6 +337,29 @@ class PurchaseListPanel(QWidget):
             QMessageBox.information(self, "Export Complete", f"Purchase list exported to:\n{path}")
         except Exception as exc:
             QMessageBox.critical(self, "Export Error", f"Export failed:\n{exc}")
+
+    def remove_checked_items(self):
+        removed = 0
+        for row in reversed(range(self.table.rowCount())):
+            check_item = self.table.item(row, 0)
+            if check_item and check_item.checkState() == Qt.CheckState.Checked:
+                self.table.removeRow(row)
+                removed += 1
+        if removed:
+            self.refresh_prices()
+        return removed
+
+    def select_all_items(self):
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item:
+                item.setCheckState(Qt.CheckState.Checked)
+
+    def deselect_all_items(self):
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item:
+                item.setCheckState(Qt.CheckState.Unchecked)
 
     def _clear_list(self, confirm=True):
         if confirm and self.table.rowCount() > 0:

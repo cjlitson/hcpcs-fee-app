@@ -18,7 +18,7 @@ def _asset(name: str) -> Path:
 
 
 class _ProgressSplash(QSplashScreen):
-    """Splash screen with the VISN 22 Impact Team logo, step label, and
+    """Splash screen with the WSNC Impact Team logo, step label, and
     animated progress bar.
 
     Call ``set_progress(pct, message)`` (0–100) to update the display.
@@ -59,7 +59,7 @@ class _ProgressSplash(QSplashScreen):
         grad.setColorAt(1.0, QColor("#001f4d"))
         painter.fillRect(0, 0, w, h, grad)
 
-        # ---- VISN 22 Impact Team logo (top section) ----------------------
+        # ---- WSNC Impact Team logo (top section) ----------------------
         logo_area_h = 180
         if not self._logo.isNull():
             scaled = self._logo.scaled(
@@ -85,7 +85,7 @@ class _ProgressSplash(QSplashScreen):
             painter.drawText(
                 QRect(20, 70, w - 40, 24),
                 Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
-                "VISN 22 Impact Team",
+                "WSNC Impact Team",
             )
 
         # ---- app sub-title ----------------------------------------------
@@ -141,7 +141,7 @@ class _ProgressSplash(QSplashScreen):
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("VA HCPCS Fee Schedule Manager")
-    app.setOrganizationName("VISN 22 Impact Team")
+    app.setOrganizationName("WSNC Impact Team")
     app.setOrganizationDomain("va.gov")
     app.setFont(QFont("Segoe UI", 10))
 
