@@ -173,3 +173,150 @@ def export_to_pdf(records, filepath, is_rural=False, zip_code=""):
     ]))
     story.append(table)
     doc.build(story)
+
+
+def _purchase_meta_lines(meta):
+    generated = meta.get("generated_at") or datetime.now().strftime("%Y-%m-%d %H:%M")
+    return [
+        ("Bundle", meta.get("bundle_name") or "—"),
+        ("Year", str(meta.get("year") or "—")),
+        ("State", meta.get("state") or "—"),
+        ("ZIP", meta.get("zip_code") or "—"),
+        ("Rural Status", meta.get("rural_status") or "Non-Rural (NR)"),
+        ("Date Generated", generated),
+    ]
+
+
+def export_purchase_list_to_csv(items, filepath, meta=None):
+    meta = meta or {}
+    with open(filepath, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["VA HCPCS Purchase List"])
+        for key, value in _purchase_meta_lines(meta):
+            w.writerow([key, value])
+        w.writerow([])
+        w.writerow(["HCPCS Code", "Description", "Quantity", "Unit Price", "Line Total"])
+        total = 0.0
+        for item in items:
+            unit = item.get("unit_price")
+            line = item.get("line_total")
+            if isinstance(line, (int, float)):
+                total += line
+            w.writerow([
+                item.get("hcpcs_code", ""),
+                item.get("description", ""),
+                item.get("quantity", 1),
+                "" if unit is None else f"{unit:.2f}",
+                "" if line is None else f"{line:.2f}",
+            ])
+        w.writerow([])
+        w.writerow(["", "", "", "Grand Total", f"{total:.2f}"])
+
+
+def export_purchase_list_to_excel(items, filepath, meta=None):
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        raise ImportError("openpyxl is required for Excel export. Run: pip install openpyxl")
+
+    meta = meta or {}
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Purchase List"
+    row = 1
+    ws.cell(row=row, column=1, value="VA HCPCS Purchase List").font = Font(bold=True, size=14)
+    row += 2
+    for key, value in _purchase_meta_lines(meta):
+        ws.cell(row=row, column=1, value=key).font = Font(bold=True)
+        ws.cell(row=row, column=2, value=value)
+        row += 1
+    row += 1
+
+    headers = ["HCPCS Code", "Description", "Quantity", "Unit Price", "Line Total"]
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="003366")
+    for col, h in enumerate(headers, 1):
+        c = ws.cell(row=row, column=col, value=h)
+        c.font = header_font
+        c.fill = header_fill
+        c.alignment = Alignment(horizontal="center")
+    row += 1
+
+    total = 0.0
+    alt_fill = PatternFill("solid", fgColor="EEF2F7")
+    for idx, item in enumerate(items):
+        unit = item.get("unit_price")
+        line = item.get("line_total")
+        if isinstance(line, (int, float)):
+            total += line
+        vals = [
+            item.get("hcpcs_code", ""),
+            item.get("description", ""),
+            item.get("quantity", 1),
+            None if unit is None else float(unit),
+            None if line is None else float(line),
+        ]
+        for col, val in enumerate(vals, 1):
+            c = ws.cell(row=row, column=col, value=val)
+            if idx % 2 == 1:
+                c.fill = alt_fill
+        row += 1
+
+    ws.cell(row=row + 1, column=4, value="Grand Total").font = Font(bold=True)
+    ws.cell(row=row + 1, column=5, value=total).font = Font(bold=True)
+    ws.column_dimensions["A"].width = 14
+    ws.column_dimensions["B"].width = 60
+    ws.column_dimensions["C"].width = 10
+    ws.column_dimensions["D"].width = 14
+    ws.column_dimensions["E"].width = 14
+
+    for i in range(1, row + 2):
+        ws.cell(row=i, column=4).number_format = '"$"#,##0.00'
+        ws.cell(row=i, column=5).number_format = '"$"#,##0.00'
+
+    wb.save(filepath)
+
+
+def export_purchase_list_to_pdf(items, filepath, meta=None):
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib import colors
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+    except ImportError:
+        raise ImportError("reportlab is required for PDF export. Run: pip install reportlab")
+
+    meta = meta or {}
+    doc = SimpleDocTemplate(filepath, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = [Paragraph("<b>VA HCPCS Purchase List</b>", styles["Title"]), Spacer(1, 8)]
+    for key, value in _purchase_meta_lines(meta):
+        story.append(Paragraph(f"<b>{key}:</b> {value}", styles["Normal"]))
+    story.append(Spacer(1, 10))
+    data = [["HCPCS Code", "Description", "Quantity", "Unit Price", "Line Total"]]
+    total = 0.0
+    for item in items:
+        line = item.get("line_total")
+        if isinstance(line, (int, float)):
+            total += line
+        data.append([
+            item.get("hcpcs_code", ""),
+            (item.get("description", "") or "")[:70],
+            str(item.get("quantity", 1)),
+            "—" if item.get("unit_price") is None else f"${item['unit_price']:,.2f}",
+            "—" if line is None else f"${line:,.2f}",
+        ])
+    data.append(["", "", "", "Grand Total", f"${total:,.2f}"])
+    table = Table(data, colWidths=[80, 250, 60, 80, 80], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#003366")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#EEF2F7")]),
+        ("FONTNAME", (3, -1), (4, -1), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(table)
+    doc.build(story)

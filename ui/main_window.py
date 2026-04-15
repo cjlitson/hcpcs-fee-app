@@ -71,6 +71,7 @@ class MainWindow(QMainWindow):
         self._records = []
         self._sync_worker = None
         self._progress_dlg = None
+        self._purchase_list_dlg = None
         # Debounce timer for live search (HCPCS + Keyword fields)
         self._search_timer = QTimer()
         self._search_timer.setSingleShot(True)
@@ -268,6 +269,13 @@ class MainWindow(QMainWindow):
         export_btn.clicked.connect(self._export)
         row2.addWidget(export_btn)
 
+        purchase_btn = QPushButton("Purchase List…")
+        purchase_btn.setStyleSheet(
+            "background-color: #005A9C; color: white; padding: 6px 14px; font-weight: bold;"
+        )
+        purchase_btn.clicked.connect(self._open_purchase_list_builder)
+        row2.addWidget(purchase_btn)
+
         toolbar_container.addLayout(row2)
         root.addLayout(toolbar_container)
 
@@ -326,6 +334,16 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
+        backup_action = QAction("Create &Backup…", self)
+        backup_action.triggered.connect(self._create_backup)
+        file_menu.addAction(backup_action)
+
+        restore_action = QAction("&Restore from Backup…", self)
+        restore_action.triggered.connect(self._restore_backup)
+        file_menu.addAction(restore_action)
+
+        file_menu.addSeparator()
+
         exit_action = QAction("E&xit", self)
         exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
@@ -358,6 +376,10 @@ class MainWindow(QMainWindow):
         browse_groups_action = QAction("Browse HCPCS &Groups…", self)
         browse_groups_action.triggered.connect(self._browse_groups)
         view_menu.addAction(browse_groups_action)
+
+        purchase_list_action = QAction("&Purchase List Builder…", self)
+        purchase_list_action.triggered.connect(self._open_purchase_list_builder)
+        view_menu.addAction(purchase_list_action)
 
         # Developer Tools
         dev_menu = menubar.addMenu("&Developer Tools")
@@ -721,6 +743,8 @@ class MainWindow(QMainWindow):
         menu.addAction("Copy Description", lambda: copy_text(1))
         menu.addAction("Copy Effective Allowable", lambda: copy_text(4))
         menu.addSeparator()
+        menu.addAction("Add to Purchase List", lambda: self._open_purchase_list_builder(self.table.item(row, 0).text()))
+        menu.addSeparator()
         menu.addAction("Copy Row as CSV", copy_row_csv)
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
@@ -809,6 +833,93 @@ class MainWindow(QMainWindow):
         from ui.dev_tools_dialog import DevToolsDialog
         dlg = DevToolsDialog(current_records=self._records, parent=self)
         dlg.exec()
+
+    def _open_purchase_list_builder(self, initial_code=None):
+        from ui.purchase_list_dialog import PurchaseListDialog
+        default_year = self.year_combo.currentData() or get_current_year_or_fallback()
+        default_state = self.state_combo.currentData()
+        default_zip = self.zip_edit.text().strip()
+        if self._purchase_list_dlg is None:
+            self._purchase_list_dlg = PurchaseListDialog(
+                self,
+                default_year=default_year,
+                default_state=default_state,
+                default_zip=default_zip,
+                initial_code=initial_code,
+            )
+            self._purchase_list_dlg.finished.connect(self._on_purchase_list_closed)
+            self._purchase_list_dlg.show()
+        else:
+            self._purchase_list_dlg.raise_()
+            self._purchase_list_dlg.activateWindow()
+            if initial_code:
+                self._purchase_list_dlg._add_code(initial_code)
+
+    def _on_purchase_list_closed(self, _result):
+        self._purchase_list_dlg = None
+
+    def _create_backup(self):
+        from core.backup import create_backup
+        default_name = f"hcpcs_backup_{date.today().isoformat()}.zip"
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Create Backup",
+            default_name,
+            "Backup ZIP Files (*.zip)",
+        )
+        if not path:
+            return
+        try:
+            backup_path = create_backup(path)
+            p = Path(backup_path)
+            size_kb = p.stat().st_size / 1024
+            QMessageBox.information(
+                self,
+                "Backup Created",
+                f"Backup created successfully.\n\nLocation:\n{backup_path}\nSize: {size_kb:,.1f} KB",
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Backup Error", f"Failed to create backup:\n{exc}")
+
+    def _restore_backup(self):
+        from core.backup import inspect_backup, restore_backup
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Restore from Backup",
+            "",
+            "Backup ZIP Files (*.zip)",
+        )
+        if not path:
+            return
+        try:
+            manifest = inspect_backup(path)
+            counts = manifest.get("record_counts", {})
+            preview = (
+                f"Backup date: {manifest.get('backup_date', 'Unknown')}\n"
+                f"App version: {manifest.get('app_version', 'Unknown')}\n"
+                f"Fee records: {counts.get('hcpcs_fees', 0):,}\n"
+                f"Bundles: {counts.get('purchase_list_bundles', 0):,}\n"
+                f"Selected states: {counts.get('selected_states', 0):,}\n"
+                f"Import log entries: {counts.get('import_log', 0):,}\n\n"
+                "Warning: restoring will overwrite your current app data."
+            )
+            ans = QMessageBox.question(
+                self,
+                "Confirm Restore",
+                preview,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if ans != QMessageBox.StandardButton.Yes:
+                return
+            restore_backup(path)
+            QMessageBox.information(
+                self,
+                "Restore Complete",
+                "Backup restored successfully.\nPlease restart the app for changes to take effect.",
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Restore Error", f"Failed to restore backup:\n{exc}")
 
     def _sync_cms(self):
         selected = get_selected_states()

@@ -103,9 +103,29 @@ def init_db():
                 PRIMARY KEY (year, zip5)
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS purchase_list_bundles (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL UNIQUE,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS purchase_list_bundle_items (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                bundle_id   INTEGER NOT NULL,
+                hcpcs_code  TEXT NOT NULL,
+                quantity    INTEGER NOT NULL DEFAULT 1,
+                sort_order  INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (bundle_id) REFERENCES purchase_list_bundles(id) ON DELETE CASCADE
+            )
+        """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hcpcs_code ON hcpcs_fees(hcpcs_code)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_year_state ON hcpcs_fees(year, state_abbr)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_rural_zips ON rural_zips(year, zip5)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_bundle_items_bundle ON purchase_list_bundle_items(bundle_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_bundle_items_code ON purchase_list_bundle_items(hcpcs_code)")
 
         # Lightweight migration: add new columns to hcpcs_fees if they don't exist
         _migrate_hcpcs_fees(conn)
@@ -408,3 +428,146 @@ def get_available_hcpcs_prefixes():
         return {r["prefix"] for r in rows}
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Purchase list bundle helpers
+# ---------------------------------------------------------------------------
+
+def save_bundle(name, items):
+    """Create or replace a named purchase-list bundle.
+
+    *name* is a unique bundle name.
+    *items* is a list of dicts with keys: hcpcs_code, quantity, sort_order.
+    Returns the bundle ID.
+    """
+    bundle_name = (name or "").strip()
+    if not bundle_name:
+        raise ValueError("Bundle name is required.")
+
+    normalized_items = []
+    for idx, item in enumerate(items or []):
+        code = (item.get("hcpcs_code") or "").strip().upper()
+        if not code:
+            continue
+        qty = int(item.get("quantity", 1) or 1)
+        if qty < 1:
+            qty = 1
+        normalized_items.append(
+            {
+                "hcpcs_code": code,
+                "quantity": qty,
+                "sort_order": int(item.get("sort_order", idx) or idx),
+            }
+        )
+
+    conn = _get_conn()
+    with conn:
+        existing = conn.execute(
+            "SELECT id FROM purchase_list_bundles WHERE name = ?",
+            (bundle_name,),
+        ).fetchone()
+        if existing:
+            bundle_id = existing["id"]
+            conn.execute(
+                "UPDATE purchase_list_bundles SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (bundle_id,),
+            )
+            conn.execute("DELETE FROM purchase_list_bundle_items WHERE bundle_id = ?", (bundle_id,))
+        else:
+            cur = conn.execute(
+                "INSERT INTO purchase_list_bundles (name) VALUES (?)",
+                (bundle_name,),
+            )
+            bundle_id = cur.lastrowid
+        if normalized_items:
+            conn.executemany(
+                """
+                INSERT INTO purchase_list_bundle_items (bundle_id, hcpcs_code, quantity, sort_order)
+                VALUES (:bundle_id, :hcpcs_code, :quantity, :sort_order)
+                """,
+                [{"bundle_id": bundle_id, **item} for item in normalized_items],
+            )
+    conn.close()
+    return bundle_id
+
+
+def load_bundle(bundle_id):
+    """Load a bundle and its items by ID. Returns dict or None."""
+    conn = _get_conn()
+    bundle = conn.execute(
+        """
+        SELECT id, name, created_at, updated_at
+        FROM purchase_list_bundles
+        WHERE id = ?
+        """,
+        (bundle_id,),
+    ).fetchone()
+    if not bundle:
+        conn.close()
+        return None
+    items = conn.execute(
+        """
+        SELECT hcpcs_code, quantity, sort_order
+        FROM purchase_list_bundle_items
+        WHERE bundle_id = ?
+        ORDER BY sort_order, id
+        """,
+        (bundle_id,),
+    ).fetchall()
+    conn.close()
+    return {
+        "id": bundle["id"],
+        "name": bundle["name"],
+        "created_at": bundle["created_at"],
+        "updated_at": bundle["updated_at"],
+        "items": [dict(r) for r in items],
+    }
+
+
+def list_bundles():
+    """Return all bundles with metadata and item counts."""
+    conn = _get_conn()
+    rows = conn.execute(
+        """
+        SELECT
+            b.id,
+            b.name,
+            b.created_at,
+            b.updated_at,
+            COUNT(i.id) AS item_count
+        FROM purchase_list_bundles b
+        LEFT JOIN purchase_list_bundle_items i ON i.bundle_id = b.id
+        GROUP BY b.id, b.name, b.created_at, b.updated_at
+        ORDER BY LOWER(b.name), b.id
+        """
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def delete_bundle(bundle_id):
+    """Delete a bundle and all of its items."""
+    conn = _get_conn()
+    with conn:
+        conn.execute("DELETE FROM purchase_list_bundle_items WHERE bundle_id = ?", (bundle_id,))
+        conn.execute("DELETE FROM purchase_list_bundles WHERE id = ?", (bundle_id,))
+    conn.close()
+
+
+def rename_bundle(bundle_id, new_name):
+    """Rename a bundle by ID."""
+    name = (new_name or "").strip()
+    if not name:
+        raise ValueError("Bundle name is required.")
+    conn = _get_conn()
+    with conn:
+        conn.execute(
+            """
+            UPDATE purchase_list_bundles
+            SET name = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (name, bundle_id),
+        )
+    conn.close()
