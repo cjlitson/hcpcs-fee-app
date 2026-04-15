@@ -124,3 +124,48 @@ def test_purchase_list_csv_export(tmp_path):
     assert "VA HCPCS Purchase List" in txt
     assert "Grand Total" in txt
     assert "200.00" in txt
+
+
+def test_purchase_list_docx_export(tmp_path):
+    from core.exporter import export_purchase_list_to_docx
+
+    out = tmp_path / "purchase.docx"
+    export_purchase_list_to_docx(
+        [
+            {
+                "hcpcs_code": "L5301",
+                "description": "BK prosthesis",
+                "quantity": 2,
+                "unit_price": 100.0,
+                "line_total": 200.0,
+            }
+        ],
+        out,
+        meta={"year": 2026, "state": "CA", "zip_code": "90210", "rural_status": "Non-Rural (NR)"},
+    )
+    assert out.exists()
+    with zipfile.ZipFile(out, "r") as zf:
+        xml = zf.read("word/document.xml").decode("utf-8")
+    assert "VA HCPCS Purchase List" in xml
+    assert "Grand Total" in xml
+
+
+def test_purchase_list_pdf_export(tmp_path):
+    from core.exporter import export_purchase_list_to_pdf
+
+    out = tmp_path / "purchase.pdf"
+    export_purchase_list_to_pdf(
+        [
+            {
+                "hcpcs_code": "L5301",
+                "description": "BK prosthesis",
+                "quantity": 2,
+                "unit_price": 100.0,
+                "line_total": 200.0,
+            }
+        ],
+        out,
+        meta={"year": 2026, "state": "CA", "zip_code": "90210", "rural_status": "Non-Rural (NR)"},
+    )
+    assert out.exists()
+    assert out.read_bytes().startswith(b"%PDF")

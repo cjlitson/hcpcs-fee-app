@@ -35,6 +35,7 @@ from core.database import (
 )
 from core.exporter import (
     export_purchase_list_to_csv,
+    export_purchase_list_to_docx,
     export_purchase_list_to_excel,
     export_purchase_list_to_pdf,
 )
@@ -56,8 +57,20 @@ class BundlePickerDialog(QDialog):
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setMouseTracking(True)
         self.table.doubleClicked.connect(self._load_selected)
+        self.table.itemSelectionChanged.connect(self._preview_selected_bundle)
+        self.table.cellEntered.connect(self._preview_hover_row)
         root.addWidget(self.table, 1)
+
+        root.addWidget(QLabel("Bundle Preview"))
+        self.preview_table = QTableWidget(0, 3)
+        self.preview_table.setHorizontalHeaderLabels(["HCPCS Code", "Description", "Quantity"])
+        self.preview_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.preview_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.preview_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.preview_table.setAlternatingRowColors(True)
+        root.addWidget(self.preview_table, 1)
 
         btns = QHBoxLayout()
         rename_btn = QPushButton("Rename")
@@ -87,6 +100,8 @@ class BundlePickerDialog(QDialog):
             self.table.setItem(row, 3, QTableWidgetItem(bundle.get("updated_at", "") or ""))
         if bundles:
             self.table.selectRow(0)
+        else:
+            self.preview_table.setRowCount(0)
 
     def _current_bundle_id(self):
         row = self.table.currentRow()
@@ -137,6 +152,33 @@ class BundlePickerDialog(QDialog):
             return
         self.selected_bundle_id = bundle_id
         self.accept()
+
+    def _preview_hover_row(self, row, _col):
+        item = self.table.item(row, 0)
+        if not item:
+            return
+        bundle_id = item.data(Qt.ItemDataRole.UserRole)
+        if bundle_id is not None:
+            self._populate_preview(bundle_id)
+
+    def _preview_selected_bundle(self):
+        bundle_id = self._current_bundle_id()
+        if bundle_id is None:
+            self.preview_table.setRowCount(0)
+            return
+        self._populate_preview(bundle_id)
+
+    def _populate_preview(self, bundle_id):
+        payload = load_bundle(bundle_id)
+        items = payload.get("items", []) if payload else []
+        self.preview_table.setRowCount(len(items))
+        for row, entry in enumerate(items):
+            code = (entry.get("hcpcs_code") or "").upper()
+            description = entry.get("description") or ""
+            qty = max(1, int(entry.get("quantity", 1) or 1))
+            self.preview_table.setItem(row, 0, QTableWidgetItem(code))
+            self.preview_table.setItem(row, 1, QTableWidgetItem(description))
+            self.preview_table.setItem(row, 2, QTableWidgetItem(str(qty)))
 
 
 class PurchaseListDialog(QDialog):
@@ -492,7 +534,7 @@ class PurchaseListDialog(QDialog):
             QMessageBox.information(self, "No Items", "No purchase list items to export.")
             return
         default_name = "purchase_list"
-        filters = "Excel Files (*.xlsx);;CSV Files (*.csv);;PDF Files (*.pdf)"
+        filters = "Word Documents (*.docx);;PDF Files (*.pdf);;Excel Files (*.xlsx);;CSV Files (*.csv)"
         path, _ = QFileDialog.getSaveFileName(self, "Export Purchase List", default_name, filters)
         if not path:
             return
@@ -506,10 +548,12 @@ class PurchaseListDialog(QDialog):
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         }
         try:
-            if suffix == "xlsx":
-                export_purchase_list_to_excel(items, path, meta=meta)
+            if suffix == "docx":
+                export_purchase_list_to_docx(items, path, meta=meta)
             elif suffix == "pdf":
                 export_purchase_list_to_pdf(items, path, meta=meta)
+            elif suffix == "xlsx":
+                export_purchase_list_to_excel(items, path, meta=meta)
             else:
                 if suffix != "csv":
                     path = f"{path}.csv"

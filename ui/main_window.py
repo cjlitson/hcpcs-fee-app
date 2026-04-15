@@ -9,10 +9,10 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QStatusBar, QMessageBox,
     QDialog, QTextEdit, QSizePolicy, QFrame, QCheckBox,
     QProgressDialog, QMenu, QApplication, QScrollArea, QFileDialog,
-    QSplitter, QAbstractItemView,
+    QSplitter,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize
-from PyQt6.QtGui import QAction, QFont, QColor, QIcon, QPixmap
+from PyQt6.QtGui import QAction, QFont, QColor, QIcon, QPixmap, QShortcut, QKeySequence
 
 from core.database import (
     get_fees, get_selected_states, get_available_years, get_import_log,
@@ -27,6 +27,14 @@ from ui.year_selector_dialog import YearSelectorDialog
 from ui.purchase_list_panel import PurchaseListPanel
 
 PURCHASE_PANEL_LEFT_RATIO = 2 / 3
+MAIN_COL_SELECT = 0
+MAIN_COL_HCPCS = 1
+MAIN_COL_DESC = 2
+MAIN_COL_STATE = 3
+MAIN_COL_YEAR = 4
+MAIN_COL_ALLOWABLE = 5
+MAIN_COL_MODIFIER = 6
+MAIN_COL_SOURCE = 7
 
 
 def _asset(name: str) -> Path:
@@ -117,6 +125,11 @@ class MainWindow(QMainWindow):
         root = QVBoxLayout(central)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(6)
+        self.setStyleSheet(
+            "QLineEdit, QComboBox { border: 1px solid #C9CED6; border-radius: 4px; padding: 4px 6px; min-height: 28px; }"
+            "QPushButton { min-height: 30px; border-radius: 4px; padding: 5px 10px; }"
+            "QPushButton:hover { background-color: #EAF0F8; }"
+        )
 
         # ---- Update notification bar (hidden by default) ----
         bar_style = (
@@ -155,7 +168,12 @@ class MainWindow(QMainWindow):
         root.addWidget(self._update_bar_widget)
 
         # ---- Toolbar (two rows) ----
-        toolbar_container = QVBoxLayout()
+        toolbar_card = QWidget()
+        toolbar_card.setStyleSheet(
+            "QWidget { background-color: #F5F6F8; border: 1px solid #D8DDE6; border-radius: 6px; }"
+        )
+        toolbar_container = QVBoxLayout(toolbar_card)
+        toolbar_container.setContentsMargins(10, 8, 10, 8)
         toolbar_container.setSpacing(4)
 
         # ---- Row 1: Sync | Year | State | ZIP ----
@@ -275,7 +293,7 @@ class MainWindow(QMainWindow):
         export_btn.clicked.connect(self._export)
         row2.addWidget(export_btn)
 
-        purchase_btn = QPushButton("Purchase List")
+        purchase_btn = QPushButton("Purchase List (0)")
         purchase_btn.setStyleSheet(
             "background-color: #005A9C; color: white; padding: 6px 14px; font-weight: bold;"
         )
@@ -285,26 +303,25 @@ class MainWindow(QMainWindow):
         row2.addWidget(purchase_btn)
 
         toolbar_container.addLayout(row2)
-        root.addLayout(toolbar_container)
+        root.addWidget(toolbar_card)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
         root.addWidget(sep)
 
         # ---- Results table ----
-        self.table = QTableWidget(0, 7)
+        self.table = QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels([
-            "HCPCS Code", "Description", "State", "Year",
+            "", "HCPCS Code", "Description", "State", "Year",
             "Allowable ($)", "Modifier", "Source",
         ])
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(MAIN_COL_SELECT, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(MAIN_COL_DESC, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setDefaultSectionSize(100)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
-        self.table.setDragEnabled(True)
-        self.table.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
         # Ensure selected-row text (including the blue hyperlink in col 0) is
         # always visible by forcing white text on the selection highlight.
         self.table.setStyleSheet(
@@ -320,22 +337,58 @@ class MainWindow(QMainWindow):
         self.table.customContextMenuRequested.connect(self._on_table_context_menu)
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.addWidget(self.table)
+        middle_controls = QWidget()
+        middle_layout = QVBoxLayout(middle_controls)
+        middle_layout.setContentsMargins(4, 4, 4, 4)
+        middle_layout.setSpacing(6)
+        middle_layout.addStretch()
+        main_all_btn = QPushButton("Main All")
+        main_all_btn.clicked.connect(self._select_all_main_rows)
+        middle_layout.addWidget(main_all_btn)
+        main_none_btn = QPushButton("Main None")
+        main_none_btn.clicked.connect(self._deselect_all_main_rows)
+        middle_layout.addWidget(main_none_btn)
+        add_btn = QPushButton("► Add")
+        add_btn.setStyleSheet("font-weight: bold; font-size: 13px; background-color: #003366; color: white;")
+        add_btn.clicked.connect(self._add_checked_from_main)
+        middle_layout.addWidget(add_btn)
+        remove_btn = QPushButton("◄ Remove")
+        remove_btn.setStyleSheet("font-weight: bold; font-size: 13px; background-color: #003366; color: white;")
+        remove_btn.clicked.connect(self._remove_checked_from_purchase)
+        middle_layout.addWidget(remove_btn)
+        list_all_btn = QPushButton("List All")
+        list_all_btn.clicked.connect(lambda: self._purchase_list_panel.select_all_items())
+        middle_layout.addWidget(list_all_btn)
+        list_none_btn = QPushButton("List None")
+        list_none_btn.clicked.connect(lambda: self._purchase_list_panel.deselect_all_items())
+        middle_layout.addWidget(list_none_btn)
+        middle_layout.addStretch()
+        self.splitter.addWidget(middle_controls)
         self._purchase_list_panel = PurchaseListPanel(
             self,
             year_combo=self.year_combo,
             state_combo=self.state_combo,
             zip_edit=self.zip_edit,
         )
+        self._purchase_list_panel.count_changed.connect(self._update_purchase_button_label)
         self._purchase_list_panel.hide()
         self.splitter.addWidget(self._purchase_list_panel)
         self.splitter.setStretchFactor(0, 4)
-        self.splitter.setStretchFactor(1, 2)
-        self.splitter.setSizes([1000, 0])
+        self.splitter.setStretchFactor(1, 0)
+        self.splitter.setStretchFactor(2, 2)
+        self.splitter.setSizes([1000, 120, 0])
         root.addWidget(self.splitter, 1)
 
         self.year_combo.currentIndexChanged.connect(self._refresh_purchase_list_prices_if_visible)
         self.state_combo.currentIndexChanged.connect(self._refresh_purchase_list_prices_if_visible)
         self.zip_edit.textChanged.connect(self._refresh_purchase_list_prices_if_visible)
+        QShortcut(QKeySequence("Ctrl+Right"), self, activated=self._add_checked_from_main)
+        QShortcut(QKeySequence("Ctrl+Left"), self, activated=self._remove_checked_from_purchase)
+        QShortcut(
+            QKeySequence("Ctrl+P"),
+            self,
+            activated=lambda: self._set_purchase_list_panel_visible(not self._purchase_list_panel_visible),
+        )
 
         # ---- Status bar ----
         self.status_bar = QStatusBar()
@@ -422,6 +475,9 @@ class MainWindow(QMainWindow):
         about_action = QAction("&About", self)
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
+        features_action = QAction("&Feature Guide", self)
+        features_action.triggered.connect(self._show_feature_guide)
+        help_menu.addAction(features_action)
 
     # --------------------------------------------------------------- Slots --
 
@@ -706,6 +762,7 @@ class MainWindow(QMainWindow):
                 r.get("modifier", "") or "",
                 r.get("data_source", "") or "",
             ]
+            self.table.setItem(row_i, MAIN_COL_SELECT, self._checkbox_item(False))
             for col_i, v in enumerate(values):
                 item = QTableWidgetItem(str(v))
                 if col_i == 0:
@@ -716,23 +773,23 @@ class MainWindow(QMainWindow):
                     item.setData(Qt.ItemDataRole.UserRole, row_i)
                 if col_i == 4 and chosen is None:
                     item.setForeground(Qt.GlobalColor.darkGray)
-                self.table.setItem(row_i, col_i, item)
+                self.table.setItem(row_i, col_i + 1, item)
         self.table.setSortingEnabled(True)
 
     def _on_cell_clicked(self, row, col):
         """Open history dialog when the HCPCS code cell (column 0) is clicked."""
-        if col == 0:
+        if col == MAIN_COL_HCPCS:
             self._open_history_for_row(row)
 
     def _on_row_double_clicked(self, index):
         """Open historical detail dialog for the double-clicked HCPCS row."""
         row = index.row()
-        if index.column() != 0:
+        if index.column() != MAIN_COL_HCPCS:
             self._open_history_for_row(row)
 
     def _open_history_for_row(self, row):
         """Open the history dialog for the given table row."""
-        first_item = self.table.item(row, 0)
+        first_item = self.table.item(row, MAIN_COL_HCPCS)
         if first_item is None:
             return
         rec_idx = first_item.data(Qt.ItemDataRole.UserRole)
@@ -749,7 +806,7 @@ class MainWindow(QMainWindow):
         row = self.table.rowAt(pos.y())
         if row < 0:
             return
-        first_item = self.table.item(row, 0)
+        first_item = self.table.item(row, MAIN_COL_HCPCS)
         if first_item is None:
             return
 
@@ -762,17 +819,17 @@ class MainWindow(QMainWindow):
 
         def copy_row_csv():
             vals = []
-            for c in range(self.table.columnCount()):
+            for c in range(1, self.table.columnCount()):
                 item = self.table.item(row, c)
                 v = item.text() if item else ""
                 vals.append(f'"{v}"')
             QApplication.clipboard().setText(",".join(vals))
 
-        menu.addAction("Copy HCPCS", lambda: copy_text(0))
-        menu.addAction("Copy Description", lambda: copy_text(1))
-        menu.addAction("Copy Effective Allowable", lambda: copy_text(4))
+        menu.addAction("Copy HCPCS", lambda: copy_text(MAIN_COL_HCPCS))
+        menu.addAction("Copy Description", lambda: copy_text(MAIN_COL_DESC))
+        menu.addAction("Copy Effective Allowable", lambda: copy_text(MAIN_COL_ALLOWABLE))
         menu.addSeparator()
-        selected_code = self.table.item(row, 0).text()
+        selected_code = self.table.item(row, MAIN_COL_HCPCS).text()
         menu.addAction("Add to Purchase List", lambda code=selected_code: self._open_purchase_list_builder(code))
         menu.addSeparator()
         menu.addAction("Copy Row as CSV", copy_row_csv)
@@ -869,6 +926,47 @@ class MainWindow(QMainWindow):
         if initial_code:
             self._purchase_list_panel.add_code(initial_code)
 
+    @staticmethod
+    def _checkbox_item(checked=False):
+        item = QTableWidgetItem("")
+        item.setFlags(
+            Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        )
+        item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+        return item
+
+    def _select_all_main_rows(self):
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, MAIN_COL_SELECT)
+            if item:
+                item.setCheckState(Qt.CheckState.Checked)
+
+    def _deselect_all_main_rows(self):
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, MAIN_COL_SELECT)
+            if item:
+                item.setCheckState(Qt.CheckState.Unchecked)
+
+    def _add_checked_from_main(self):
+        added = 0
+        for row in range(self.table.rowCount()):
+            check_item = self.table.item(row, MAIN_COL_SELECT)
+            code_item = self.table.item(row, MAIN_COL_HCPCS)
+            desc_item = self.table.item(row, MAIN_COL_DESC)
+            if not check_item or check_item.checkState() != Qt.CheckState.Checked or not code_item:
+                continue
+            self._purchase_list_panel.add_code(code_item.text(), desc_item.text() if desc_item else "")
+            check_item.setCheckState(Qt.CheckState.Unchecked)
+            added += 1
+        if added:
+            self._set_purchase_list_panel_visible(True)
+            self._set_status(f"Added {added} item(s) to purchase list.")
+
+    def _remove_checked_from_purchase(self):
+        removed = self._purchase_list_panel.remove_checked_items()
+        if removed:
+            self._set_status(f"Removed {removed} item(s) from purchase list.")
+
     def _toggle_purchase_list_panel(self, checked):
         self._set_purchase_list_panel_visible(bool(checked))
 
@@ -876,16 +974,21 @@ class MainWindow(QMainWindow):
         if visible:
             self._purchase_list_panel.show()
             left = max(1, int(self.splitter.width() * PURCHASE_PANEL_LEFT_RATIO))
-            right = max(320, self.splitter.width() - left)
-            self.splitter.setSizes([left, right])
+            right = max(320, self.splitter.width() - left - 120)
+            self.splitter.setSizes([left, 120, right])
             self._purchase_list_panel.refresh_prices()
         else:
-            self.splitter.setSizes([1, 0])
+            self.splitter.setSizes([1, 120, 0])
             self._purchase_list_panel.hide()
         self._purchase_list_panel_visible = visible
         if getattr(self, "_purchase_btn", None):
             self._purchase_btn.blockSignals(True)
             self._purchase_btn.setChecked(visible)
+            self._purchase_btn.setStyleSheet(
+                "background-color: #005A9C; color: white; padding: 6px 14px; font-weight: bold;"
+                if not visible
+                else "background-color: #003366; color: white; padding: 6px 14px; font-weight: bold; border: 1px solid #002244;"
+            )
             self._purchase_btn.blockSignals(False)
         if getattr(self, "_purchase_list_action", None):
             self._purchase_list_action.blockSignals(True)
@@ -895,6 +998,10 @@ class MainWindow(QMainWindow):
     def _refresh_purchase_list_prices_if_visible(self, *_args):
         if self._purchase_list_panel_visible:
             self._purchase_list_panel.refresh_prices()
+
+    def _update_purchase_button_label(self, count):
+        if getattr(self, "_purchase_btn", None):
+            self._purchase_btn.setText(f"Purchase List ({count})")
 
     def _create_backup(self):
         from core.backup import create_backup
@@ -1036,6 +1143,32 @@ class MainWindow(QMainWindow):
 
     def _show_about(self):
         dlg = _AboutDialog(self)
+        dlg.exec()
+
+    def _show_feature_guide(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Feature Guide")
+        dlg.resize(760, 560)
+        layout = QVBoxLayout(dlg)
+        body = QTextEdit()
+        body.setReadOnly(True)
+        body.setHtml(
+            "<h2>Feature Guide</h2>"
+            "<p><b>Purchase List Panel</b>: Check rows in the main table, then use <b>► Add</b>. "
+            "Use <b>◄ Remove</b> to remove checked rows from the purchase list.</p>"
+            "<p><b>Select All/Deselect All</b>: Use the Main/List All/None controls between tables for bulk actions.</p>"
+            "<p><b>Bundle Preview</b>: In Load Bundle, selecting or hovering a bundle shows HCPCS, description, and quantity preview.</p>"
+            "<p><b>Export</b>: Purchase lists can be exported as Word (.docx), PDF, Excel, or CSV with invoice-style formatting.</p>"
+            "<p><b>Keyboard Shortcuts</b>: Ctrl+Right add checked rows, Ctrl+Left remove checked rows, Ctrl+P toggle purchase panel.</p>"
+            "<p>Developed by the <b>WSNC Impact Team</b>.</p>"
+        )
+        layout.addWidget(body)
+        row = QHBoxLayout()
+        row.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dlg.accept)
+        row.addWidget(close_btn)
+        layout.addLayout(row)
         dlg.exec()
 
     def _start_update_check(self):
@@ -1193,7 +1326,7 @@ class _AboutDialog(QDialog):
             banner_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(banner_label)
         else:
-            title_lbl = QLabel("VISN 22 · Impact Team")
+            title_lbl = QLabel("WSNC Impact Team")
             title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             title_lbl.setStyleSheet(
                 "background:#003366; color:white; font-size:14px;"
@@ -1229,7 +1362,7 @@ class _AboutDialog(QDialog):
             "rural (R) or non-rural (NR) allowable amounts, similar to PDAC fee lookup.<br><br>"
             "Data source: <a href='https://www.cms.gov/medicare/payment/fee-schedules/dmepos'>"
             "CMS DMEPOS Fee Schedule</a><br><br>"
-            "Developed by the <b>VISN 22 Impact Team</b>"
+            "Developed by the <b>WSNC Impact Team</b>"
         )
         body.setContentsMargins(16, 0, 16, 0)
         body.setWordWrap(True)
