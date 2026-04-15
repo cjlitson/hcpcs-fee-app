@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QStatusBar, QMessageBox,
     QDialog, QTextEdit, QSizePolicy, QFrame, QCheckBox,
     QProgressDialog, QMenu, QApplication, QScrollArea, QFileDialog,
+    QSplitter, QAbstractItemView,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize
 from PyQt6.QtGui import QAction, QFont, QColor, QIcon, QPixmap
@@ -71,7 +72,7 @@ class MainWindow(QMainWindow):
         self._records = []
         self._sync_worker = None
         self._progress_dlg = None
-        self._purchase_list_dlg = None
+        self._purchase_list_panel_visible = False
         # Debounce timer for live search (HCPCS + Keyword fields)
         self._search_timer = QTimer()
         self._search_timer.setSingleShot(True)
@@ -94,6 +95,7 @@ class MainWindow(QMainWindow):
         # Background update check
         self._update_worker = None
         self._start_update_check()
+        QTimer.singleShot(0, self._warn_if_pending_update_file)
 
     # ------------------------------------------------------------------ UI --
 
@@ -269,11 +271,13 @@ class MainWindow(QMainWindow):
         export_btn.clicked.connect(self._export)
         row2.addWidget(export_btn)
 
-        purchase_btn = QPushButton("Purchase List…")
+        purchase_btn = QPushButton("Purchase List")
         purchase_btn.setStyleSheet(
             "background-color: #005A9C; color: white; padding: 6px 14px; font-weight: bold;"
         )
-        purchase_btn.clicked.connect(self._open_purchase_list_builder)
+        purchase_btn.setCheckable(True)
+        purchase_btn.toggled.connect(self._toggle_purchase_list_panel)
+        self._purchase_btn = purchase_btn
         row2.addWidget(purchase_btn)
 
         toolbar_container.addLayout(row2)
@@ -295,6 +299,8 @@ class MainWindow(QMainWindow):
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
+        self.table.setDragEnabled(True)
+        self.table.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
         # Ensure selected-row text (including the blue hyperlink in col 0) is
         # always visible by forcing white text on the selection highlight.
         self.table.setStyleSheet(
@@ -308,7 +314,25 @@ class MainWindow(QMainWindow):
         # Context menu
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_table_context_menu)
-        root.addWidget(self.table, 1)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.addWidget(self.table)
+        from ui.purchase_list_panel import PurchaseListPanel
+        self._purchase_list_panel = PurchaseListPanel(
+            self,
+            year_combo=self.year_combo,
+            state_combo=self.state_combo,
+            zip_edit=self.zip_edit,
+        )
+        self._purchase_list_panel.hide()
+        self.splitter.addWidget(self._purchase_list_panel)
+        self.splitter.setStretchFactor(0, 4)
+        self.splitter.setStretchFactor(1, 2)
+        self.splitter.setSizes([1000, 0])
+        root.addWidget(self.splitter, 1)
+
+        self.year_combo.currentIndexChanged.connect(self._purchase_list_panel.refresh_prices)
+        self.state_combo.currentIndexChanged.connect(self._purchase_list_panel.refresh_prices)
+        self.zip_edit.textChanged.connect(self._purchase_list_panel.refresh_prices)
 
         # ---- Status bar ----
         self.status_bar = QStatusBar()
@@ -377,8 +401,10 @@ class MainWindow(QMainWindow):
         browse_groups_action.triggered.connect(self._browse_groups)
         view_menu.addAction(browse_groups_action)
 
-        purchase_list_action = QAction("&Purchase List Builder…", self)
-        purchase_list_action.triggered.connect(self._open_purchase_list_builder)
+        purchase_list_action = QAction("&Purchase List", self)
+        purchase_list_action.setCheckable(True)
+        purchase_list_action.toggled.connect(self._toggle_purchase_list_panel)
+        self._purchase_list_action = purchase_list_action
         view_menu.addAction(purchase_list_action)
 
         # Developer Tools
@@ -836,28 +862,31 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _open_purchase_list_builder(self, initial_code=None):
-        from ui.purchase_list_dialog import PurchaseListDialog
-        default_year = self.year_combo.currentData() or get_current_year_or_fallback()
-        default_state = self.state_combo.currentData()
-        default_zip = self.zip_edit.text().strip()
-        if self._purchase_list_dlg is None:
-            self._purchase_list_dlg = PurchaseListDialog(
-                self,
-                default_year=default_year,
-                default_state=default_state,
-                default_zip=default_zip,
-                initial_code=initial_code,
-            )
-            self._purchase_list_dlg.finished.connect(self._on_purchase_list_closed)
-            self._purchase_list_dlg.show()
-        else:
-            self._purchase_list_dlg.raise_()
-            self._purchase_list_dlg.activateWindow()
-            if initial_code:
-                self._purchase_list_dlg._add_code(initial_code)
+        self._set_purchase_list_panel_visible(True)
+        if initial_code:
+            self._purchase_list_panel.add_code(initial_code)
 
-    def _on_purchase_list_closed(self, _result):
-        self._purchase_list_dlg = None
+    def _toggle_purchase_list_panel(self, checked):
+        self._set_purchase_list_panel_visible(bool(checked))
+
+    def _set_purchase_list_panel_visible(self, visible):
+        if visible:
+            self._purchase_list_panel.show()
+            left = max(1, self.splitter.width() * 2 // 3)
+            right = max(320, self.splitter.width() - left)
+            self.splitter.setSizes([left, right])
+        else:
+            self.splitter.setSizes([1, 0])
+            self._purchase_list_panel.hide()
+        self._purchase_list_panel_visible = visible
+        if getattr(self, "_purchase_btn", None):
+            self._purchase_btn.blockSignals(True)
+            self._purchase_btn.setChecked(visible)
+            self._purchase_btn.blockSignals(False)
+        if getattr(self, "_purchase_list_action", None):
+            self._purchase_list_action.blockSignals(True)
+            self._purchase_list_action.setChecked(visible)
+            self._purchase_list_action.blockSignals(False)
 
     def _create_backup(self):
         from core.backup import create_backup
@@ -1109,6 +1138,21 @@ class MainWindow(QMainWindow):
             )
             if url:
                 webbrowser.open(url)
+
+    def _warn_if_pending_update_file(self):
+        if not getattr(sys, "frozen", False):
+            return
+        pending = Path(sys.executable).parent / "HCPCSFeeApp_new.exe"
+        if not pending.exists():
+            return
+        QMessageBox.warning(
+            self,
+            "Incomplete Update Detected",
+            "A previous update did not fully apply.\n\n"
+            "Please close the app and rename:\n"
+            "HCPCSFeeApp_new.exe -> HCPCSFeeApp.exe\n"
+            "in the application folder.",
+        )
 
     def _set_status(self, msg):
         self.status_bar.showMessage(msg)
