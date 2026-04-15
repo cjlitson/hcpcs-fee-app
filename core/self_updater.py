@@ -14,6 +14,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+UPDATE_LOG_FILENAME = "HCPCSFeeApp_update.log"
+
 
 def _current_exe() -> Path:
     """Return the path to the running .exe.
@@ -87,7 +89,7 @@ def apply_update(new_exe: Path) -> None:
 
     exe = _current_exe()
     pid = os.getpid()
-    log_path = Path(tempfile.gettempdir()) / f"HCPCSFeeApp_update_{pid}.log"
+    log_path = Path(tempfile.gettempdir()) / UPDATE_LOG_FILENAME
 
     # Write the batch script to a temp file
     fd, bat_path = tempfile.mkstemp(suffix=".bat", prefix="hcpcs_update_")
@@ -127,6 +129,7 @@ def apply_update(new_exe: Path) -> None:
         f":swap_failed\r\n"
         f"echo [%date% %time%] Update failed: could not replace the application file. >> \"%LOG_PATH%\"\r\n"
         f"echo Please close the app and manually rename HCPCSFeeApp_new.exe to HCPCSFeeApp.exe >> \"%LOG_PATH%\"\r\n"
+        f"echo Update log saved to: %LOG_PATH% >> \"%LOG_PATH%\"\r\n"
         f":end\r\n"
         f"echo [%date% %time%] Update swap script finished. >> \"%LOG_PATH%\"\r\n"
         f"del \"%~f0\"\r\n"

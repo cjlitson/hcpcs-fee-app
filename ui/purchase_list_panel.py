@@ -171,7 +171,10 @@ class PurchaseListPanel(QWidget):
         row = self.table.rowCount()
         self.table.insertRow(row)
         self.table.setItem(row, 0, QTableWidgetItem(code))
-        self.table.setItem(row, 1, QTableWidgetItem(description_hint or self._lookup_description(code)))
+        description_text = (description_hint or "").strip()
+        if not description_text:
+            description_text = self._lookup_description(code)
+        self.table.setItem(row, 1, QTableWidgetItem(description_text))
         qty_spin = QSpinBox()
         qty_spin.setMinimum(1)
         qty_spin.setMaximum(9999)
@@ -301,14 +304,20 @@ class PurchaseListPanel(QWidget):
         self._clear_list(confirm=False)
         self._bundle_name = payload.get("name")
         self.bundle_label.setText(f"Bundle: {self._bundle_name}")
+        desc_cache = {}
         for item in payload.get("items", []):
             code = (item.get("hcpcs_code") or "").upper()
             if not code:
                 continue
+            description_text = (item.get("description") or "").strip()
+            if not description_text:
+                if code not in desc_cache:
+                    desc_cache[code] = self._lookup_description(code)
+                description_text = desc_cache[code]
             row = self.table.rowCount()
             self.table.insertRow(row)
             self.table.setItem(row, 0, QTableWidgetItem(code))
-            self.table.setItem(row, 1, QTableWidgetItem(self._lookup_description(code)))
+            self.table.setItem(row, 1, QTableWidgetItem(description_text))
             qty_spin = QSpinBox()
             qty_spin.setMinimum(1)
             qty_spin.setMaximum(9999)

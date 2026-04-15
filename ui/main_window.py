@@ -1,4 +1,5 @@
 import sys
+import tempfile
 from datetime import date
 from pathlib import Path
 
@@ -23,6 +24,9 @@ from ui.import_dialog import ImportDialog
 from ui.export_dialog import ExportDialog
 from ui.state_selector_dialog import StateSelectorDialog
 from ui.year_selector_dialog import YearSelectorDialog
+from ui.purchase_list_panel import PurchaseListPanel
+
+PURCHASE_PANEL_LEFT_RATIO = 2 / 3
 
 
 def _asset(name: str) -> Path:
@@ -316,7 +320,6 @@ class MainWindow(QMainWindow):
         self.table.customContextMenuRequested.connect(self._on_table_context_menu)
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.addWidget(self.table)
-        from ui.purchase_list_panel import PurchaseListPanel
         self._purchase_list_panel = PurchaseListPanel(
             self,
             year_combo=self.year_combo,
@@ -330,9 +333,9 @@ class MainWindow(QMainWindow):
         self.splitter.setSizes([1000, 0])
         root.addWidget(self.splitter, 1)
 
-        self.year_combo.currentIndexChanged.connect(self._purchase_list_panel.refresh_prices)
-        self.state_combo.currentIndexChanged.connect(self._purchase_list_panel.refresh_prices)
-        self.zip_edit.textChanged.connect(self._purchase_list_panel.refresh_prices)
+        self.year_combo.currentIndexChanged.connect(self._refresh_purchase_list_prices_if_visible)
+        self.state_combo.currentIndexChanged.connect(self._refresh_purchase_list_prices_if_visible)
+        self.zip_edit.textChanged.connect(self._refresh_purchase_list_prices_if_visible)
 
         # ---- Status bar ----
         self.status_bar = QStatusBar()
@@ -872,9 +875,10 @@ class MainWindow(QMainWindow):
     def _set_purchase_list_panel_visible(self, visible):
         if visible:
             self._purchase_list_panel.show()
-            left = max(1, self.splitter.width() * 2 // 3)
+            left = max(1, int(self.splitter.width() * PURCHASE_PANEL_LEFT_RATIO))
             right = max(320, self.splitter.width() - left)
             self.splitter.setSizes([left, right])
+            self._purchase_list_panel.refresh_prices()
         else:
             self.splitter.setSizes([1, 0])
             self._purchase_list_panel.hide()
@@ -887,6 +891,10 @@ class MainWindow(QMainWindow):
             self._purchase_list_action.blockSignals(True)
             self._purchase_list_action.setChecked(visible)
             self._purchase_list_action.blockSignals(False)
+
+    def _refresh_purchase_list_prices_if_visible(self, *_args):
+        if self._purchase_list_panel_visible:
+            self._purchase_list_panel.refresh_prices()
 
     def _create_backup(self):
         from core.backup import create_backup
@@ -1145,13 +1153,16 @@ class MainWindow(QMainWindow):
         pending = Path(sys.executable).parent / "HCPCSFeeApp_new.exe"
         if not pending.exists():
             return
+        from core.self_updater import UPDATE_LOG_FILENAME
+        log_path = Path(tempfile.gettempdir()) / UPDATE_LOG_FILENAME
         QMessageBox.warning(
             self,
             "Incomplete Update Detected",
             "A previous update did not fully apply.\n\n"
             "Please close the app and rename:\n"
             "HCPCSFeeApp_new.exe -> HCPCSFeeApp.exe\n"
-            "in the application folder.",
+            "in the application folder.\n\n"
+            f"Update log: {log_path}",
         )
 
     def _set_status(self, msg):

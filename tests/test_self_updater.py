@@ -1,3 +1,7 @@
+def _raise_system_exit(code):
+    raise SystemExit(code)
+
+
 def test_apply_update_generates_robust_swap_script(tmp_path, monkeypatch):
     from core import self_updater
 
@@ -21,7 +25,7 @@ def test_apply_update_generates_robust_swap_script(tmp_path, monkeypatch):
             popen_calls["close_fds"] = close_fds
 
     monkeypatch.setattr("subprocess.Popen", _DummyPopen)
-    monkeypatch.setattr(self_updater.sys, "exit", lambda code: (_ for _ in ()).throw(SystemExit(code)))
+    monkeypatch.setattr(self_updater.sys, "exit", _raise_system_exit)
 
     try:
         self_updater.apply_update(new_exe)
@@ -38,7 +42,7 @@ def test_apply_update_generates_robust_swap_script(tmp_path, monkeypatch):
     assert "if !_swap_tries! gtr 5 goto swap_failed" in content
     assert "if not errorlevel 1 goto swap_ok" in content
     assert f'if not exist "{exe_path}" goto swap_failed' in content
-    assert "HCPCSFeeApp_update_" in content
+    assert "HCPCSFeeApp_update.log" in content
     assert popen_calls["args"] == ["cmd.exe", "/c", str(bat_path)]
 
 
@@ -55,7 +59,7 @@ def test_apply_update_uses_detached_creation_flags(tmp_path, monkeypatch):
     monkeypatch.setattr(self_updater.sys, "executable", str(exe_path), raising=False)
     monkeypatch.setattr(self_updater.tempfile, "mkstemp", lambda **_kwargs: (1, str(bat_path)))
     monkeypatch.setattr(self_updater.os, "close", lambda _fd: None)
-    monkeypatch.setattr(self_updater.sys, "exit", lambda code: (_ for _ in ()).throw(SystemExit(code)))
+    monkeypatch.setattr(self_updater.sys, "exit", _raise_system_exit)
 
     calls = {}
 
