@@ -105,11 +105,7 @@ class MainWindow(QMainWindow):
             self._restore_filter_preferences()
             self._splash_update(85, "Loading fee records…")
             self._set_status("Loading fee records…")
-            # Defer the initial query until the window is visible.
-            # This avoids a startup race where startup tasks can run before
-            # first paint, causing the splash to close while no main window
-            # is actually visible yet.
-            QTimer.singleShot(0, self._start_initial_load_when_visible)
+            # Initial data load is started from showEvent, after first paint.
 
             # Background update check
             self._update_worker = None
@@ -559,9 +555,6 @@ class MainWindow(QMainWindow):
     def _start_initial_load_when_visible(self):
         """Start initial data load only after the main window is visible."""
         if self._initial_load_started:
-            return
-        if not self.isVisible():
-            QTimer.singleShot(50, self._start_initial_load_when_visible)
             return
         QTimer.singleShot(0, self._load_initial_data)
 
