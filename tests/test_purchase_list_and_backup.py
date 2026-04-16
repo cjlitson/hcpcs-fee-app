@@ -5,6 +5,14 @@ from pathlib import Path
 
 import pytest
 
+_has_docx = True
+try:
+    import docx  # noqa: F401
+except ImportError:
+    _has_docx = False
+
+_skip_no_docx = pytest.mark.skipif(not _has_docx, reason="python-docx not installed")
+
 
 @pytest.fixture()
 def tmp_db(tmp_path, monkeypatch):
@@ -127,6 +135,7 @@ def test_purchase_list_csv_export(tmp_path):
     assert "200.00" in txt
 
 
+@_skip_no_docx
 def test_purchase_list_docx_export(tmp_path):
     from core.exporter import export_purchase_list_to_docx
 
@@ -152,6 +161,7 @@ def test_purchase_list_docx_export(tmp_path):
     assert "Grand Total" in xml
 
 
+@_skip_no_docx
 def test_purchase_list_docx_export_includes_po(tmp_path):
     from core.exporter import export_purchase_list_to_docx
 
