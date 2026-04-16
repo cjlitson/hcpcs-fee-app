@@ -304,3 +304,75 @@ class TestPurchaseListPanelStartup:
                     MainWindow()
 
         assert any("PurchaseListPanel creation failed: panel boom" in msg for msg in breadcrumbs)
+
+
+class TestPurchaseListContextRules:
+    def test_purchase_list_requires_single_year_and_state(self, qapp, tmp_db):
+        from core.database import insert_fees, save_selected_states
+        from ui.main_window import MainWindow
+
+        save_selected_states([("CA", "California")])
+        insert_fees(
+            [{
+                "hcpcs_code": "L5301",
+                "description": "BK prosthesis",
+                "state_abbr": "CA",
+                "year": 2026,
+                "allowable": 100.0,
+                "allowable_nr": 95.0,
+                "allowable_r": 105.0,
+                "modifier": None,
+            }],
+            data_source="import",
+        )
+
+        with patch("core.database.get_fees", return_value=[]):
+            window = MainWindow()
+        window.show()
+        qapp.processEvents()
+
+        panel = window._purchase_list_panel
+        if window.year_combo.findData(2026) < 0:
+            window.year_combo.addItem("2026", 2026)
+        window.year_combo.setCurrentIndex(window.year_combo.findData(2026))
+        panel.refresh_context_state()
+        qapp.processEvents()
+        assert "CMS 2026" in panel.pricing_context_label.text()
+        assert not panel.is_context_ready()
+        assert not panel.quick_add_edit.isEnabled()
+        assert panel.selection_requirement_label.text()
+
+        state_idx = window.state_combo.findData("CA")
+        window.state_combo.setCurrentIndex(state_idx)
+        qapp.processEvents()
+        assert panel.is_context_ready()
+        assert panel.quick_add_edit.isEnabled()
+        assert not panel.selection_requirement_label.text()
+
+        window.year_combo.setCurrentIndex(0)  # All Years
+        qapp.processEvents()
+        assert not panel.is_context_ready()
+        assert "specific cms year" in panel.pricing_context_label.text().lower()
+        assert not panel.quick_add_edit.isEnabled()
+        window.close()
+
+    def test_export_gracefully_handles_dialog_import_failure(self, qapp, tmp_db):
+        from ui.main_window import MainWindow
+
+        with patch("core.database.get_fees", return_value=[]):
+            window = MainWindow()
+
+        window._records = [{"hcpcs_code": "L5301"}]
+        real_import = __import__
+
+        def _fake_import(name, *args, **kwargs):
+            if name == "ui.export_dialog":
+                raise ImportError("print backend missing")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=_fake_import):
+            with patch("ui.main_window.QMessageBox.critical") as mock_critical:
+                window._export()
+
+        assert mock_critical.called
+        window.close()

@@ -1,7 +1,6 @@
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QComboBox,
     QDialog,
     QHBoxLayout,
     QHeaderView,
@@ -20,8 +19,6 @@ from PyQt6.QtWidgets import (
 from core.config import get_config_value, set_config_value
 from core.database import (
     delete_bundle,
-    get_auto_selected_years,
-    get_available_years,
     get_fees,
     is_rural_zip,
     list_bundles,
@@ -40,8 +37,13 @@ class PurchaseListPanel(QWidget):
         self._state_combo = state_combo
         self._zip_edit = zip_edit
         self._bundle_name = None
-        self._purchase_year_combo = None  # Own year combo for purchase list
+        self._quick_add_btn = None
+        self._save_bundle_btn = None
+        self._load_bundle_btn = None
+        self._generate_btn = None
+        self._clear_btn = None
         self._init_ui()
+        self.refresh_context_state()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
@@ -54,18 +56,19 @@ class PurchaseListPanel(QWidget):
         header.addWidget(self.title_label)
         header.addStretch()
 
-        # Add year selector for purchase list pricing
-        header.addWidget(QLabel("Pricing Year:"))
-        self._purchase_year_combo = QComboBox()
-        self._purchase_year_combo.setFixedWidth(80)
-        header.addWidget(self._purchase_year_combo)
-
         self.bundle_label = QLabel("Bundle: —")
         header.addWidget(self.bundle_label)
         root.addLayout(header)
 
-        # Populate year dropdown with available years
-        self._populate_year_dropdown()
+        self.pricing_context_label = QLabel("")
+        self.pricing_context_label.setStyleSheet("font-style: italic;")
+        root.addWidget(self.pricing_context_label)
+
+        self.selection_requirement_label = QLabel("")
+        self.selection_requirement_label.setWordWrap(True)
+        self.selection_requirement_label.setStyleSheet("font-size: 11px; font-weight: 600;")
+        root.addWidget(self.selection_requirement_label)
+
         instructions = QLabel(
             "Type an HCPCS code in Quick Add and press Enter. "
             "Use checkboxes with ◄ / ► in the center to add or remove items."
@@ -79,9 +82,9 @@ class PurchaseListPanel(QWidget):
         self.quick_add_edit.setPlaceholderText("e.g. L5301")
         self.quick_add_edit.returnPressed.connect(self._quick_add_from_input)
         controls.addWidget(self.quick_add_edit, 1)
-        quick_add_btn = QPushButton("Add")
-        quick_add_btn.clicked.connect(self._quick_add_from_input)
-        controls.addWidget(quick_add_btn)
+        self._quick_add_btn = QPushButton("Add")
+        self._quick_add_btn.clicked.connect(self._quick_add_from_input)
+        controls.addWidget(self._quick_add_btn)
         controls.addStretch()
         select_all_btn = QPushButton("Select All")
         deselect_all_btn = QPushButton("Deselect All")
@@ -111,59 +114,39 @@ class PurchaseListPanel(QWidget):
         totals.addStretch()
         totals.addWidget(QLabel("Grand Total:"))
         self.grand_total_label = QLabel("$0.00")
-        self.grand_total_label.setStyleSheet("font-weight: bold; color: #003366;")
+        self.grand_total_label.setStyleSheet("font-weight: bold;")
         totals.addWidget(self.grand_total_label)
         root.addLayout(totals)
 
         btns = QHBoxLayout()
-        save_bundle_btn = QPushButton("Save Bundle")
-        load_bundle_btn = QPushButton("Load Bundle")
-        generate_btn = QPushButton("Generate Document")
-        clear_btn = QPushButton("Clear")
-        for btn in (save_bundle_btn, load_bundle_btn, generate_btn, clear_btn):
+        self._save_bundle_btn = QPushButton("Save Bundle")
+        self._load_bundle_btn = QPushButton("Load Bundle")
+        self._generate_btn = QPushButton("Generate Document")
+        self._clear_btn = QPushButton("Clear")
+        for btn in (self._save_bundle_btn, self._load_bundle_btn, self._generate_btn, self._clear_btn):
             btn.setStyleSheet(
                 "QPushButton { background-color: #F1F3F6; border: 1px solid #AEB6C2; "
                 "padding: 6px 10px; border-radius: 4px; font-weight: 600; }"
                 "QPushButton:hover { background-color: #E5EBF4; }"
             )
-        save_bundle_btn.clicked.connect(self._save_bundle)
-        load_bundle_btn.clicked.connect(self._load_bundle)
-        generate_btn.clicked.connect(self._generate_document)
-        clear_btn.clicked.connect(self._clear_list)
-        btns.addWidget(save_bundle_btn)
-        btns.addWidget(load_bundle_btn)
-        btns.addWidget(generate_btn)
-        btns.addWidget(clear_btn)
+        self._save_bundle_btn.clicked.connect(self._save_bundle)
+        self._load_bundle_btn.clicked.connect(self._load_bundle)
+        self._generate_btn.clicked.connect(self._generate_document)
+        self._clear_btn.clicked.connect(self._clear_list)
+        btns.addWidget(self._save_bundle_btn)
+        btns.addWidget(self._load_bundle_btn)
+        btns.addWidget(self._generate_btn)
+        btns.addWidget(self._clear_btn)
         root.addLayout(btns)
 
         QShortcut(QKeySequence("Ctrl+Shift+C"), self, activated=self._copy_to_clipboard)
-        self._purchase_year_combo.currentIndexChanged.connect(self.refresh_prices)
+        if self._main_year_combo:
+            self._main_year_combo.currentIndexChanged.connect(self.refresh_context_state)
+        if self._state_combo:
+            self._state_combo.currentIndexChanged.connect(self.refresh_context_state)
+        if self._zip_edit:
+            self._zip_edit.textChanged.connect(self.refresh_prices)
         self._restore_table_layout_preferences()
-
-    def _populate_year_dropdown(self):
-        """Populate the year dropdown with available years, defaulting to current year."""
-        from datetime import datetime
-        current_year = datetime.now().year
-
-        # Get available years from database
-        available_years = get_available_years()
-        if not available_years:
-            # Fallback to auto-selected years if DB is empty
-            available_years = get_auto_selected_years()
-
-        # Populate combo box
-        self._purchase_year_combo.blockSignals(True)
-        try:
-            self._purchase_year_combo.clear()
-            for year in sorted(available_years, reverse=True):
-                self._purchase_year_combo.addItem(str(year), year)
-
-            # Default to current year
-            current_idx = self._purchase_year_combo.findData(current_year)
-            if current_idx >= 0:
-                self._purchase_year_combo.setCurrentIndex(current_idx)
-        finally:
-            self._purchase_year_combo.blockSignals(False)
 
     @staticmethod
     def _checkbox_item(checked=False):
@@ -175,11 +158,43 @@ class PurchaseListPanel(QWidget):
         return item
 
     def _effective_year(self):
-        """Return the year selected in the purchase list's own year dropdown."""
-        return self._purchase_year_combo.currentData() if self._purchase_year_combo else None
+        """Return the main toolbar's explicitly selected year for purchase-list pricing."""
+        return self._main_year_combo.currentData() if self._main_year_combo else None
 
     def _state_abbr(self):
         return self._state_combo.currentData() if self._state_combo else None
+
+    def _is_ready_for_pricing(self):
+        return self._effective_year() is not None and self._state_abbr() is not None
+
+    def context_requirement_message(self):
+        return "Select one specific Year and one specific State to use Purchase List pricing."
+
+    def is_context_ready(self):
+        return self._is_ready_for_pricing()
+
+    def refresh_context_state(self, *_args):
+        year = self._effective_year()
+        if year is None:
+            self.pricing_context_label.setText("Pricing requires a specific CMS year selection.")
+        else:
+            self.pricing_context_label.setText(f"Pricing is based on CMS {year} Fee Schedule")
+
+        ready = self._is_ready_for_pricing()
+        message = "" if ready else self.context_requirement_message()
+        self.selection_requirement_label.setText(message)
+        self.selection_requirement_label.setVisible(bool(message))
+
+        for widget in (
+            self.quick_add_edit,
+            self._quick_add_btn,
+            self._save_bundle_btn,
+            self._load_bundle_btn,
+            self._generate_btn,
+        ):
+            if widget is not None:
+                widget.setEnabled(ready)
+        self.refresh_prices()
 
     def _zip_code(self):
         return self._zip_edit.text().strip() if self._zip_edit else ""
@@ -192,6 +207,9 @@ class PurchaseListPanel(QWidget):
         return is_rural_zip(year, zip5)
 
     def add_code(self, hcpcs_code, description_hint=""):
+        if not self._is_ready_for_pricing():
+            QMessageBox.information(self, "Purchase List Filter Required", self.context_requirement_message())
+            return
         code = (hcpcs_code or "").strip().upper()
         if not code:
             return
@@ -221,6 +239,9 @@ class PurchaseListPanel(QWidget):
         self.refresh_prices()
 
     def _quick_add_from_input(self):
+        if not self._is_ready_for_pricing():
+            QMessageBox.information(self, "Purchase List Filter Required", self.context_requirement_message())
+            return
         code = (self.quick_add_edit.text() or "").strip().upper()
         if not code:
             return
@@ -264,6 +285,17 @@ class PurchaseListPanel(QWidget):
 
     def refresh_prices(self):
         if not hasattr(self, "table") or not hasattr(self, "grand_total_label"):
+            return
+        if not self._is_ready_for_pricing():
+            for row in range(self.table.rowCount()):
+                unit_item = QTableWidgetItem("—")
+                line_item = QTableWidgetItem("—")
+                unit_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                line_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self.table.setItem(row, 4, unit_item)
+                self.table.setItem(row, 5, line_item)
+            self.grand_total_label.setText("$0.00")
+            self._update_header()
             return
         total = 0.0
         for row in range(self.table.rowCount()):
@@ -382,6 +414,9 @@ class PurchaseListPanel(QWidget):
         self.refresh_prices()
 
     def _generate_document(self):
+        if not self._is_ready_for_pricing():
+            QMessageBox.information(self, "Purchase List Filter Required", self.context_requirement_message())
+            return
         items = self._collect_items()
         if not items:
             QMessageBox.information(self, "No Items", "No purchase list items selected.")

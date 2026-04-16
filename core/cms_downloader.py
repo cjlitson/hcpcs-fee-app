@@ -17,7 +17,7 @@ import xml.etree.ElementTree as _ET
 import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 
@@ -629,7 +629,26 @@ def _normalize_cms_zip_url(url: str) -> str:
     if not url:
         return ""
     normalized = url.strip().lower()
-    return _re.sub(r"-([a-d])\.zip$", r"\1.zip", normalized)
+    parsed = urlparse(normalized)
+    path = parsed.path.rstrip("/")
+    path = _re.sub(r"-([a-d])\.zip$", r"\1.zip", path)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}{path}"
+    return path
+
+
+def _cms_zip_version_token(url: str) -> tuple[int, int] | None:
+    """Return ``(yy, quarter_rank)`` for known CMS ZIP variants, else ``None``."""
+    normalized = _normalize_cms_zip_url(url)
+    filename = os.path.basename(normalized)
+    # Expected normalized forms: dme26.zip, dme26a.zip
+    m = _re.search(r"^dme(\d{2})([a-d])?\.zip$", filename, _re.IGNORECASE)
+    if not m:
+        return None
+    yy = int(m.group(1))
+    quarter = (m.group(2) or "").lower()
+    rank_map = {"a": 1, "b": 2, "c": 3, "d": 4, "": 0}
+    return yy, rank_map.get(quarter, 0)
 
 
 def _probe_latest_cms_zip_url(year):
@@ -671,6 +690,10 @@ def has_newer_cms_file_available(year):
         latest_url = _probe_latest_cms_zip_url(year)
         if not latest_url:
             return False
+        latest_token = _cms_zip_version_token(latest_url)
+        synced_token = _cms_zip_version_token(synced_url)
+        if latest_token and synced_token:
+            return latest_token > synced_token
         return _normalize_cms_zip_url(latest_url) != _normalize_cms_zip_url(synced_url)
     except Exception:
         return False

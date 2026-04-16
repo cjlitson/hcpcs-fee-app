@@ -188,6 +188,8 @@ class MainWindow(QMainWindow):
             "QMenu::item:selected { background: #EAF0F8; color: #202124; }"
             "QHeaderView::section { background: #EEF2F7; color: #202124; padding: 4px; }"
             "QTableWidget { selection-background-color: #003366; selection-color: white; }"
+            "QTableCornerButton::section { background: #EEF2F7; border: 1px solid #D8DDE6; }"
+            "QTableWidget::item:selected:!active { background-color: #4A7AB5; color: white; }"
             "QTableWidget::item:hover { background-color: #E8F0F8; }"
         )
         self._dark_theme_qss = (
@@ -205,8 +207,10 @@ class MainWindow(QMainWindow):
             "QStatusBar { background: #1E1E1E; color: #D4D4D4; border-top: 1px solid #3E3E3E; }"
             "QHeaderView::section { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; padding: 4px; }"
             "QTableWidget { background: #1E1E1E; alternate-background-color: #252525; gridline-color: #3E3E3E; color: #D4D4D4; selection-background-color: #264F78; selection-color: #FFFFFF; }"
+            "QTableCornerButton::section { background: #2D2D2D; border: 1px solid #3E3E3E; }"
             "QTableWidget::item { color: #D4D4D4; }"
             "QTableWidget::item:selected { background: #264F78; color: #FFFFFF; }"
+            "QTableWidget::item:selected:!active { background-color: #335A8A; color: #FFFFFF; }"
             "QTableWidget::item:hover { background-color: #2A2A2A; color: #E6E6E6; }"
             "QComboBox QAbstractItemView { background: #2D2D2D; color: #D4D4D4; selection-background-color: #264F78; selection-color: #FFFFFF; }"
             "QSpinBox { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 3px; padding: 3px; height: 22px; }"
@@ -292,7 +296,8 @@ class MainWindow(QMainWindow):
         # State filter
         row1.addWidget(QLabel("State:"))
         self.state_combo = QComboBox()
-        self.state_combo.setMinimumWidth(260)
+        # Keep room for full "State Name (AB)" values without clipping.
+        self.state_combo.setMinimumWidth(280)
         self.state_combo.currentIndexChanged.connect(self._apply_filters)
         self.state_combo.currentIndexChanged.connect(self._save_filter_preferences)
         row1.addWidget(self.state_combo)
@@ -406,13 +411,6 @@ class MainWindow(QMainWindow):
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
-        # Ensure selected-row text (including the blue hyperlink in col 0) is
-        # always visible by forcing white text on the selection highlight.
-        self.table.setStyleSheet(
-            "QTableWidget::item:selected { background-color: #003366; color: white; }"
-            "QTableWidget::item:selected:!active { background-color: #4a7ab5; color: white; }"
-            "QTableWidget::item:hover { background-color: #e0e8f0; }"
-        )
         self.table.cellClicked.connect(self._on_cell_clicked)
         self.table.doubleClicked.connect(self._on_row_double_clicked)
         self.table.setToolTip("Click HCPCS code to view history. Right-click for copy options.")
@@ -467,9 +465,9 @@ class MainWindow(QMainWindow):
         self.splitter.setSizes([1000, 120, 0])
         root.addWidget(self.splitter, 1)
 
-        self.year_combo.currentIndexChanged.connect(self._refresh_purchase_list_prices_if_visible)
-        self.state_combo.currentIndexChanged.connect(self._refresh_purchase_list_prices_if_visible)
-        self.zip_edit.textChanged.connect(self._refresh_purchase_list_prices_if_visible)
+        self.year_combo.currentIndexChanged.connect(self._sync_purchase_list_context)
+        self.state_combo.currentIndexChanged.connect(self._sync_purchase_list_context)
+        self.zip_edit.textChanged.connect(self._sync_purchase_list_context)
         QShortcut(QKeySequence("Ctrl+Right"), self, activated=self._add_checked_from_main)
         QShortcut(QKeySequence("Ctrl+Left"), self, activated=self._remove_checked_from_purchase)
         QShortcut(
@@ -997,7 +995,11 @@ class MainWindow(QMainWindow):
         if not self._records:
             QMessageBox.information(self, "No Data", "No records to export. Apply filters first.")
             return
-        from ui.export_dialog import ExportDialog
+        try:
+            from ui.export_dialog import ExportDialog
+        except ImportError as exc:
+            QMessageBox.critical(self, "Export Error", f"Unable to open export dialog:\n{str(exc)}")
+            return
         zip_code = self.zip_edit.text().strip()
         dlg = ExportDialog(self._records, self, is_rural=self._is_rural(), zip_code=zip_code)
         dlg.exec()
@@ -1069,6 +1071,13 @@ class MainWindow(QMainWindow):
     def _open_purchase_list_builder(self, initial_code=None):
         self._set_purchase_list_panel_visible(True)
         if initial_code:
+            if not self._purchase_list_panel.is_context_ready():
+                QMessageBox.information(
+                    self,
+                    "Purchase List Filter Required",
+                    self._purchase_list_panel.context_requirement_message(),
+                )
+                return
             self._purchase_list_panel.add_code(initial_code)
 
     @staticmethod
@@ -1093,6 +1102,13 @@ class MainWindow(QMainWindow):
                 item.setCheckState(Qt.CheckState.Unchecked)
 
     def _add_checked_from_main(self):
+        if not self._purchase_list_panel.is_context_ready():
+            QMessageBox.information(
+                self,
+                "Purchase List Filter Required",
+                self._purchase_list_panel.context_requirement_message(),
+            )
+            return
         added = 0
         for row in range(self.table.rowCount()):
             check_item = self.table.item(row, MAIN_COL_SELECT)
@@ -1133,7 +1149,7 @@ class MainWindow(QMainWindow):
             left = max(1, int(self.splitter.width() * PURCHASE_PANEL_LEFT_RATIO))
             right = max(320, self.splitter.width() - left - 120)
             self.splitter.setSizes([left, 120, right])
-            self._purchase_list_panel.refresh_prices()
+            self._purchase_list_panel.refresh_context_state()
         else:
             # Completely hide the purchase list and middle controls
             self._purchase_list_panel.hide()
@@ -1201,9 +1217,9 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-    def _refresh_purchase_list_prices_if_visible(self, *_args):
-        if self._purchase_list_panel_visible:
-            self._purchase_list_panel.refresh_prices()
+    def _sync_purchase_list_context(self, *_args):
+        if getattr(self, "_purchase_list_panel", None):
+            self._purchase_list_panel.refresh_context_state()
 
     def _update_purchase_button_label(self, count):
         if getattr(self, "_purchase_btn", None):
@@ -1360,8 +1376,28 @@ class MainWindow(QMainWindow):
 
         body = QTextEdit()
         body.setReadOnly(True)
-        body.setHtml("""
-            <style>
+        dark_enabled = bool(get_config_value("dark_mode_enabled", False))
+        if dark_enabled:
+            body.setStyleSheet(
+                "QTextEdit { background: #1E1E1E; color: #E6E6E6; border: 1px solid #3E3E3E; }"
+            )
+            guide_style = """
+                h1 { color: #66B3FF; margin-top: 10px; margin-bottom: 10px; }
+                h2 { color: #4DA3FF; margin-top: 15px; margin-bottom: 8px; font-size: 16px; }
+                h3 { color: #E6E6E6; margin-top: 10px; margin-bottom: 5px; font-size: 14px; }
+                p, ul, li, ol { color: #E6E6E6; }
+                p { margin: 5px 0; }
+                ul { margin: 5px 0 10px 20px; }
+                li { margin: 3px 0; }
+                .section { margin-bottom: 15px; }
+                .tip { background-color: #2A2A2A; padding: 8px; border-left: 3px solid #4DA3FF; margin: 10px 0; color: #E6E6E6; }
+                .shortcut { font-family: monospace; background-color: #2F3E53; padding: 2px 6px; border-radius: 3px; color: #E6E6E6; }
+            """
+        else:
+            body.setStyleSheet(
+                "QTextEdit { background: #FFFFFF; color: #202124; border: 1px solid #C9CED6; }"
+            )
+            guide_style = """
                 h1 { color: #003366; margin-top: 10px; margin-bottom: 10px; }
                 h2 { color: #005A9C; margin-top: 15px; margin-bottom: 8px; font-size: 16px; }
                 h3 { color: #333; margin-top: 10px; margin-bottom: 5px; font-size: 14px; }
@@ -1371,6 +1407,10 @@ class MainWindow(QMainWindow):
                 .section { margin-bottom: 15px; }
                 .tip { background-color: #EEF2F7; padding: 8px; border-left: 3px solid #005A9C; margin: 10px 0; }
                 .shortcut { font-family: monospace; background-color: #E8F0F8; padding: 2px 6px; border-radius: 3px; }
+            """
+        body.setHtml(f"""
+            <style>
+                {guide_style}
             </style>
 
             <h1>VA HCPCS Fee Schedule Manager - Comprehensive User Guide</h1>
