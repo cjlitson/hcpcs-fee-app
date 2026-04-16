@@ -251,3 +251,56 @@ class TestUiAdjustments:
         assert window._add_btn.isVisible()
         assert window._remove_btn.isVisible()
         window.close()
+
+
+class TestPurchaseListPanelStartup:
+    def test_refresh_does_not_run_before_required_widgets_exist(self, qapp, tmp_db, monkeypatch):
+        from ui.purchase_list_panel import PurchaseListPanel
+
+        calls_with_widget_state = []
+        original_refresh = PurchaseListPanel.refresh_prices
+
+        def _tracking_refresh(self):
+            calls_with_widget_state.append(
+                (hasattr(self, "table"), hasattr(self, "grand_total_label"))
+            )
+            return original_refresh(self)
+
+        monkeypatch.setattr(PurchaseListPanel, "refresh_prices", _tracking_refresh)
+
+        panel = PurchaseListPanel()
+        qapp.processEvents()
+
+        assert all(has_table and has_total for has_table, has_total in calls_with_widget_state)
+        panel.close()
+
+    def test_purchase_panel_breadcrumbs_are_logged_during_startup(self, qapp, tmp_db):
+        from ui.main_window import MainWindow
+
+        breadcrumbs = []
+
+        def _capture_breadcrumb(self, message):
+            breadcrumbs.append(message)
+
+        with patch.object(MainWindow, "_write_startup_breadcrumb", new=_capture_breadcrumb):
+            with patch("core.database.get_fees", return_value=[]):
+                window = MainWindow()
+
+        assert any("creating PurchaseListPanel" in msg for msg in breadcrumbs)
+        assert any("created PurchaseListPanel" in msg for msg in breadcrumbs)
+        window.close()
+
+    def test_purchase_panel_failure_is_breadcrumbed_before_reraise(self, qapp, tmp_db):
+        from ui.main_window import MainWindow
+
+        breadcrumbs = []
+
+        def _capture_breadcrumb(self, message):
+            breadcrumbs.append(message)
+
+        with patch.object(MainWindow, "_write_startup_breadcrumb", new=_capture_breadcrumb):
+            with patch("ui.main_window.PurchaseListPanel", side_effect=RuntimeError("panel boom")):
+                with pytest.raises(RuntimeError, match="Failed to initialize main window: panel boom"):
+                    MainWindow()
+
+        assert any("PurchaseListPanel creation failed: panel boom" in msg for msg in breadcrumbs)
