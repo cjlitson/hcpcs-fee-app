@@ -129,20 +129,35 @@ class MainWindow(QMainWindow):
         root.setSpacing(6)
         self._light_theme_qss = (
             "QWidget { background: #FFFFFF; color: #202124; }"
-            "QLineEdit, QComboBox { border: 1px solid #C9CED6; border-radius: 4px; padding: 4px 6px; min-height: 28px; background: #FFFFFF; }"
-            "QPushButton { min-height: 30px; border-radius: 4px; padding: 5px 10px; border: 1px solid #AAB2BF; background: #F8F9FB; }"
+            "QLineEdit, QComboBox { border: 1px solid #C9CED6; border-radius: 3px; padding: 3px 6px; height: 22px; background: #FFFFFF; color: #202124; }"
+            "QDateEdit { border: 1px solid #C9CED6; border-radius: 3px; padding: 3px 6px; height: 22px; background: #FFFFFF; color: #202124; }"
+            "QPushButton { height: 24px; border-radius: 3px; padding: 3px 10px; border: 1px solid #AAB2BF; background: #F8F9FB; color: #202124; }"
             "QPushButton:hover { background-color: #EAF0F8; }"
+            "QLabel { background: transparent; }"
             "QMenuBar, QMenu { background: #FFFFFF; color: #202124; }"
-            "QHeaderView::section { background: #EEF2F7; color: #202124; }"
+            "QHeaderView::section { background: #EEF2F7; color: #202124; padding: 4px; }"
+            "QTableWidget { selection-background-color: #003366; selection-color: white; }"
+            "QTableWidget::item:hover { background-color: #E8F0F8; }"
         )
         self._dark_theme_qss = (
-            "QWidget { background: #1E1E1E; color: #E6E6E6; }"
-            "QLineEdit, QComboBox, QTableWidget, QTextEdit { background: #2A2A2A; color: #E6E6E6; border: 1px solid #555; border-radius: 4px; padding: 4px 6px; min-height: 28px; }"
-            "QPushButton { min-height: 30px; border-radius: 4px; padding: 5px 10px; border: 1px solid #666; background: #343434; color: #F2F2F2; }"
-            "QPushButton:hover { background-color: #3F3F3F; }"
-            "QMenuBar, QMenu, QStatusBar { background: #252525; color: #E6E6E6; }"
-            "QHeaderView::section { background: #303030; color: #E6E6E6; }"
-            "QTableWidget { alternate-background-color: #262626; gridline-color: #4A4A4A; }"
+            "QWidget { background: #1E1E1E; color: #D4D4D4; }"
+            "QLineEdit, QComboBox { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 3px; padding: 3px 6px; height: 22px; selection-background-color: #264F78; selection-color: #FFFFFF; }"
+            "QDateEdit { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 3px; padding: 3px 6px; height: 22px; }"
+            "QTextEdit { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 3px; padding: 4px 6px; selection-background-color: #264F78; selection-color: #FFFFFF; }"
+            "QPushButton { height: 24px; border-radius: 3px; padding: 3px 10px; border: 1px solid #3E3E3E; background: #2D2D2D; color: #D4D4D4; }"
+            "QPushButton:hover { background-color: #383838; border-color: #505050; }"
+            "QPushButton:pressed { background-color: #252525; }"
+            "QLabel { background: transparent; color: #D4D4D4; }"
+            "QMenuBar, QMenu { background: #252525; color: #D4D4D4; }"
+            "QMenu::item:selected { background: #37373D; color: #FFFFFF; }"
+            "QStatusBar { background: #252525; color: #D4D4D4; }"
+            "QHeaderView::section { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; padding: 4px; }"
+            "QTableWidget { background: #1E1E1E; alternate-background-color: #252525; gridline-color: #3E3E3E; color: #D4D4D4; selection-background-color: #264F78; selection-color: #FFFFFF; }"
+            "QTableWidget::item { color: #D4D4D4; }"
+            "QTableWidget::item:selected { background: #264F78; color: #FFFFFF; }"
+            "QTableWidget::item:hover { background-color: #2A2A2A; color: #E6E6E6; }"
+            "QComboBox QAbstractItemView { background: #2D2D2D; color: #D4D4D4; selection-background-color: #264F78; selection-color: #FFFFFF; }"
+            "QSpinBox { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 3px; padding: 3px; height: 22px; }"
         )
 
         # ---- Update notification bar (hidden by default) ----
@@ -187,55 +202,56 @@ class MainWindow(QMainWindow):
         toolbar_card.setObjectName("toolbarCard")
         toolbar_card.setStyleSheet(
             "#toolbarCard { background-color: #F5F6F8; border: 1px solid #D8DDE6; border-radius: 6px; }"
+            "#toolbarCard QLabel { background: transparent; color: #202124; font-size: 12px; }"
         )
         toolbar_container = QVBoxLayout(toolbar_card)
-        toolbar_container.setContentsMargins(10, 8, 10, 8)
-        toolbar_container.setSpacing(4)
+        toolbar_container.setContentsMargins(8, 6, 8, 6)
+        toolbar_container.setSpacing(6)
 
         # ---- Row 1: Sync | Year | State | ZIP ----
         row1 = QHBoxLayout()
-        row1.setSpacing(6)
+        row1.setSpacing(8)
 
         sync_btn = QPushButton("⚌  Sync from CMS")
         sync_btn.setStyleSheet(
-            "background-color: #003366; color: white; padding: 6px 14px; font-weight: bold; font-size: 13px;"
+            "background-color: #003366; color: white; padding: 4px 12px; font-weight: 600; font-size: 12px; height: 24px;"
         )
         sync_btn.setToolTip("Download latest CMS DMEPOS fee schedules for your tracked states")
         sync_btn.clicked.connect(self._sync_cms)
         row1.addWidget(sync_btn)
 
-        row1.addSpacing(12)
+        row1.addSpacing(10)
 
         # Year filter
         row1.addWidget(QLabel("Year:"))
         self.year_combo = QComboBox()
-        self.year_combo.setMinimumWidth(90)
+        self.year_combo.setMinimumWidth(85)
         self.year_combo.currentIndexChanged.connect(self._on_year_changed)
         row1.addWidget(self.year_combo)
 
         # Label showing effective year (updated whenever year combo changes)
         self.year_view_label = QLabel("")
-        self.year_view_label.setStyleSheet("color: #555555; font-style: italic; font-size: 11px;")
-        self.year_view_label.setMinimumWidth(160)
+        self.year_view_label.setStyleSheet("color: #666666; font-style: italic; font-size: 11px;")
+        self.year_view_label.setMinimumWidth(150)
         row1.addWidget(self.year_view_label)
 
-        row1.addSpacing(8)
+        row1.addSpacing(6)
 
         # State filter
         row1.addWidget(QLabel("State:"))
         self.state_combo = QComboBox()
-        self.state_combo.setMinimumWidth(280)
+        self.state_combo.setMinimumWidth(260)
         self.state_combo.currentIndexChanged.connect(self._apply_filters)
         self.state_combo.currentIndexChanged.connect(self._save_filter_preferences)
         row1.addWidget(self.state_combo)
 
-        row1.addSpacing(8)
+        row1.addSpacing(6)
 
         # ZIP code input for rural/non-rural determination
         row1.addWidget(QLabel("ZIP:"))
         self.zip_edit = QLineEdit()
         self.zip_edit.setPlaceholderText("5-digit ZIP")
-        self.zip_edit.setMaximumWidth(80)
+        self.zip_edit.setMaximumWidth(75)
         self.zip_edit.setToolTip(
             "Enter a 5-digit ZIP code to automatically select rural (R) or non-rural (NR) allowable.\n"
             "Leave blank to default to non-rural (NR)."
@@ -244,8 +260,8 @@ class MainWindow(QMainWindow):
         row1.addWidget(self.zip_edit)
 
         self.rural_label = QLabel("No ZIP (default NR)")
-        self.rural_label.setStyleSheet("color: #666666; font-size: 11px;")
-        self.rural_label.setMinimumWidth(150)
+        self.rural_label.setStyleSheet("color: #666666; font-size: 10px;")
+        self.rural_label.setMinimumWidth(140)
         row1.addWidget(self.rural_label)
 
         row1.addStretch()
@@ -253,12 +269,12 @@ class MainWindow(QMainWindow):
 
         # ---- Row 2: Group | HCPCS | Keyword | Search | Clear | Export ----
         row2 = QHBoxLayout()
-        row2.setSpacing(6)
+        row2.setSpacing(8)
 
         # HCPCS Group filter
         row2.addWidget(QLabel("Group:"))
         self.group_combo = QComboBox()
-        self.group_combo.setMinimumWidth(220)
+        self.group_combo.setMinimumWidth(200)
         self.group_combo.addItem("All Groups", None)
         from core.hcpcs_groups import get_group_choices
         from core.database import get_available_hcpcs_prefixes
@@ -268,24 +284,24 @@ class MainWindow(QMainWindow):
         self.group_combo.currentIndexChanged.connect(self._apply_filters)
         self.group_combo.currentIndexChanged.connect(self._save_filter_preferences)
         row2.addWidget(self.group_combo)
-        row2.addSpacing(8)
+        row2.addSpacing(6)
 
         # HCPCS code search (debounced)
         row2.addWidget(QLabel("HCPCS:"))
         self.code_edit = QLineEdit()
         self.code_edit.setPlaceholderText("e.g. E0601")
-        self.code_edit.setMaximumWidth(110)
+        self.code_edit.setMaximumWidth(100)
         self.code_edit.textChanged.connect(self._on_search_text_changed)
         self.code_edit.returnPressed.connect(self._apply_filters)
         row2.addWidget(self.code_edit)
 
-        row2.addSpacing(8)
+        row2.addSpacing(6)
 
         # Keyword search (debounced)
         row2.addWidget(QLabel("Keyword:"))
         self.keyword_edit = QLineEdit()
         self.keyword_edit.setPlaceholderText("Description keyword…")
-        self.keyword_edit.setMinimumWidth(180)
+        self.keyword_edit.setMinimumWidth(170)
         self.keyword_edit.textChanged.connect(self._on_search_text_changed)
         self.keyword_edit.returnPressed.connect(self._apply_filters)
         row2.addWidget(self.keyword_edit)
@@ -304,14 +320,14 @@ class MainWindow(QMainWindow):
 
         export_btn = QPushButton("Export")
         export_btn.setStyleSheet(
-            "background-color: #005A9C; color: white; padding: 6px 14px; font-weight: bold;"
+            "background-color: #005A9C; color: white; padding: 4px 12px; font-weight: 600; height: 24px;"
         )
         export_btn.clicked.connect(self._export)
         row2.addWidget(export_btn)
 
         purchase_btn = QPushButton("Purchase List (0)")
         purchase_btn.setStyleSheet(
-            "background-color: #005A9C; color: white; padding: 6px 14px; font-weight: bold;"
+            "background-color: #005A9C; color: white; padding: 4px 12px; font-weight: 600; height: 24px;"
         )
         purchase_btn.setCheckable(True)
         purchase_btn.toggled.connect(self._toggle_purchase_list_panel)
@@ -362,20 +378,16 @@ class MainWindow(QMainWindow):
         middle_layout.setContentsMargins(4, 4, 4, 4)
         middle_layout.setSpacing(6)
         middle_layout.addStretch()
-        self._main_select_all_checkbox = QCheckBox("Select All")
-        self._main_select_all_checkbox.setTristate(True)
-        self._main_select_all_checkbox.stateChanged.connect(self._on_main_select_all_changed)
-        middle_layout.addWidget(self._main_select_all_checkbox)
-        add_btn = QPushButton("► Add")
-        add_btn.setStyleSheet("font-weight: bold; font-size: 13px; background-color: #003366; color: white;")
+        add_btn = QPushButton("►")
+        add_btn.setStyleSheet("font-weight: bold; font-size: 13px; background-color: #003366; color: white; min-height: 28px;")
+        add_btn.setToolTip("Add selected items to Purchase List (Ctrl+Right)")
         add_btn.clicked.connect(self._add_checked_from_main)
         middle_layout.addWidget(add_btn)
-        remove_btn = QPushButton("◄ Remove")
-        remove_btn.setStyleSheet("font-weight: bold; font-size: 13px; background-color: #003366; color: white;")
+        remove_btn = QPushButton("◄")
+        remove_btn.setStyleSheet("font-weight: bold; font-size: 13px; background-color: #003366; color: white; min-height: 28px;")
+        remove_btn.setToolTip("Remove selected items from Purchase List (Ctrl+Left)")
         remove_btn.clicked.connect(self._remove_checked_from_purchase)
         middle_layout.addWidget(remove_btn)
-        add_btn.setText("►")
-        remove_btn.setText("◄")
         self._add_btn = add_btn
         self._remove_btn = remove_btn
         self._add_btn.hide()
@@ -407,7 +419,6 @@ class MainWindow(QMainWindow):
             self,
             activated=lambda: self._set_purchase_list_panel_visible(not self._purchase_list_panel_visible),
         )
-        self.table.itemChanged.connect(self._update_main_select_all_checkbox_state)
         self._restore_main_table_layout_preferences()
 
         # ---- Status bar ----
@@ -801,7 +812,6 @@ class MainWindow(QMainWindow):
                     item.setForeground(Qt.GlobalColor.darkGray)
                 self.table.setItem(row_i, col_i + 1, item)
         self.table.setSortingEnabled(True)
-        self._recompute_main_select_all_checkbox_state()
 
     def _on_cell_clicked(self, row, col):
         """Open history dialog when the HCPCS code cell (column 0) is clicked."""
@@ -1018,8 +1028,9 @@ class MainWindow(QMainWindow):
             self.splitter.setSizes([left, 120, right])
             self._purchase_list_panel.refresh_prices()
         else:
-            self.splitter.setSizes([1, 120, 0])
+            # Completely hide the purchase list and middle controls
             self._purchase_list_panel.hide()
+            self.splitter.setSizes([self.splitter.width(), 0, 0])
         if getattr(self, "_add_btn", None):
             self._add_btn.setVisible(visible)
         if getattr(self, "_remove_btn", None):
@@ -1029,50 +1040,15 @@ class MainWindow(QMainWindow):
             self._purchase_btn.blockSignals(True)
             self._purchase_btn.setChecked(visible)
             self._purchase_btn.setStyleSheet(
-                "background-color: #005A9C; color: white; padding: 6px 14px; font-weight: bold;"
+                "background-color: #005A9C; color: white; padding: 4px 12px; font-weight: 600; height: 24px;"
                 if not visible
-                else "background-color: #003366; color: white; padding: 6px 14px; font-weight: bold; border: 1px solid #002244;"
+                else "background-color: #003366; color: white; padding: 4px 12px; font-weight: 600; height: 24px; border: 1px solid #002244;"
             )
             self._purchase_btn.blockSignals(False)
         if getattr(self, "_purchase_list_action", None):
             self._purchase_list_action.blockSignals(True)
             self._purchase_list_action.setChecked(visible)
             self._purchase_list_action.blockSignals(False)
-
-    def _on_main_select_all_changed(self, state):
-        if state == Qt.CheckState.PartiallyChecked.value:
-            return
-        if state == Qt.CheckState.Checked.value:
-            self._select_all_main_rows()
-        elif state == Qt.CheckState.Unchecked.value:
-            self._deselect_all_main_rows()
-
-    def _update_main_select_all_checkbox_state(self, item):
-        if item is not None and item.column() != MAIN_COL_SELECT:
-            return
-        self._recompute_main_select_all_checkbox_state()
-
-    def _recompute_main_select_all_checkbox_state(self):
-        if not hasattr(self, "_main_select_all_checkbox"):
-            return
-        total = self.table.rowCount()
-        if total == 0:
-            state = Qt.CheckState.Unchecked
-        else:
-            checked = 0
-            for row in range(total):
-                check_item = self.table.item(row, MAIN_COL_SELECT)
-                if check_item and check_item.checkState() == Qt.CheckState.Checked:
-                    checked += 1
-            if checked == 0:
-                state = Qt.CheckState.Unchecked
-            elif checked == total:
-                state = Qt.CheckState.Checked
-            else:
-                state = Qt.CheckState.PartiallyChecked
-        self._main_select_all_checkbox.blockSignals(True)
-        self._main_select_all_checkbox.setCheckState(state)
-        self._main_select_all_checkbox.blockSignals(False)
 
     def _toggle_dark_mode(self, enabled):
         self._apply_theme(bool(enabled))
@@ -1280,7 +1256,6 @@ class MainWindow(QMainWindow):
             "<p><b>Purchase List Panel</b>: Check rows in the main table, then use <b>►</b>. "
             "Use <b>◄</b> to remove checked rows from the purchase list.</p>"
             "<p><b>Quick Add</b>: Type an HCPCS code directly in the Purchase List panel and press Enter to add it instantly.</p>"
-            "<p><b>Select All</b>: Use the Select All checkbox between tables for bulk selection in the main list.</p>"
             "<p><b>Generate Document</b>: Purchase list items can be sent to a worksheet-style document form with copy-data support, vendor quick-select, and Generate + Attach to Email.</p>"
             "<p><b>Dark Mode</b>: Toggle View → Dark Mode to switch themes. Your preference is saved.</p>"
             "<p><b>CMS Sync Reminder</b>: On startup the app quietly checks for a newer CMS file and only prompts if one is available.</p>"

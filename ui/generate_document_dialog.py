@@ -36,17 +36,24 @@ class GenerateDocumentDialog(QDialog):
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setSpacing(8)
         form = QGridLayout()
+        form.setVerticalSpacing(6)
+        form.setHorizontalSpacing(8)
 
         self.veteran_last_name_edit = QLineEdit()
+        self.veteran_last_name_edit.setFixedHeight(24)
         self.last4_edit = QLineEdit()
         self.last4_edit.setMaxLength(4)
+        self.last4_edit.setFixedHeight(24)
         self.consult_date_edit = QDateEdit()
         self.consult_date_edit.setCalendarPopup(True)
         self.consult_date_edit.setDate(date.today())
+        self.consult_date_edit.setFixedHeight(24)
 
         self.deliver_to_combo = QComboBox()
         self.deliver_to_combo.setEditable(True)
+        self.deliver_to_combo.setFixedHeight(24)
         self.deliver_to_combo.addItems([
             "Veteran",
             "Clinic",
@@ -54,11 +61,20 @@ class GenerateDocumentDialog(QDialog):
             "Home Address",
         ])
 
+        # Vendor row with inline save button
+        vendor_container = QHBoxLayout()
+        vendor_container.setSpacing(6)
         self.vendor_combo = QComboBox()
         self.vendor_combo.setEditable(True)
+        self.vendor_combo.setFixedHeight(24)
         self.vendor_combo.addItems(list_saved_vendors())
-        save_vendor_btn = QPushButton("Save Vendor")
+        vendor_container.addWidget(self.vendor_combo, 1)
+        save_vendor_btn = QPushButton("Save")
+        save_vendor_btn.setFixedHeight(24)
+        save_vendor_btn.setFixedWidth(60)
+        save_vendor_btn.setToolTip("Save this vendor to the quick-select list")
         save_vendor_btn.clicked.connect(self._save_vendor)
+        vendor_container.addWidget(save_vendor_btn)
 
         form.addWidget(QLabel("Veteran Last Name"), 0, 0)
         form.addWidget(self.veteran_last_name_edit, 0, 1)
@@ -69,8 +85,7 @@ class GenerateDocumentDialog(QDialog):
         form.addWidget(QLabel("Deliver To"), 1, 2)
         form.addWidget(self.deliver_to_combo, 1, 3)
         form.addWidget(QLabel("Vendor"), 2, 0)
-        form.addWidget(self.vendor_combo, 2, 1, 1, 2)
-        form.addWidget(save_vendor_btn, 2, 3)
+        form.addLayout(vendor_container, 2, 1, 1, 3)
         root.addLayout(form)
 
         self.items_table = QTableWidget(0, 4)
@@ -83,13 +98,18 @@ class GenerateDocumentDialog(QDialog):
         root.addWidget(QLabel("Additional Comments"))
         self.comments_edit = QTextEdit()
         self.comments_edit.setPlaceholderText("Enter any additional notes for the generated document.")
+        self.comments_edit.setMaximumHeight(80)
         root.addWidget(self.comments_edit)
 
         btns = QHBoxLayout()
         copy_btn = QPushButton("Copy Data")
+        copy_btn.setFixedHeight(26)
         generate_btn = QPushButton("Generate Document")
+        generate_btn.setFixedHeight(26)
         email_btn = QPushButton("Generate + Attach to Email")
+        email_btn.setFixedHeight(26)
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setFixedHeight(26)
         copy_btn.clicked.connect(self._copy_data)
         generate_btn.clicked.connect(lambda: self._generate(attach_to_email=False))
         email_btn.clicked.connect(lambda: self._generate(attach_to_email=True))
