@@ -31,5 +31,8 @@ env/
 Thumbs.db
 desktop.ini
 
+# --- App config (generated at runtime) ---
+hcpcs_app_config.json
+
 # --- Logs ---
 *.log
