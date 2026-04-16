@@ -70,6 +70,29 @@ class SyncWorker(QThread):
             self.error.emit(str(e))
 
 
+class CmsNewFileCheckWorker(QThread):
+    """Background thread that checks all auto-selected years for newer CMS files.
+
+    Emits ``newer_available`` when at least one year has a newer file on CMS
+    than the last synced URL stored in preferences.  Only years that have
+    previously been synced (``cms_synced_source_url_{year}`` is set) will
+    trigger a network probe, so first-time installs make no requests.
+    """
+
+    newer_available = pyqtSignal()
+
+    def run(self):
+        try:
+            from core.cms_downloader import has_newer_cms_file_available
+            from core.database import get_auto_selected_years
+            for year in get_auto_selected_years():
+                if has_newer_cms_file_available(year):
+                    self.newer_available.emit()
+                    return
+        except Exception:
+            pass
+
+
 class MainWindow(QMainWindow):
     def __init__(self, splash=None):
         super().__init__()
@@ -87,6 +110,7 @@ class MainWindow(QMainWindow):
         self._progress_dlg = None
         self._purchase_list_panel_visible = False
         self._cms_notification_shown = False  # Track if CMS notification has been shown this session
+        self._cms_check_worker = None  # Background CMS new-file check thread
         # Debounce timer for live search (HCPCS + Keyword fields)
         self._search_timer = QTimer()
         self._search_timer.setSingleShot(True)
@@ -111,7 +135,9 @@ class MainWindow(QMainWindow):
             self._update_worker = None
             self._start_update_check()
             QTimer.singleShot(0, self._warn_if_pending_update_file)
-            QTimer.singleShot(250, self._prompt_sync_if_newer_available)
+            # CMS new-file check is started from _check_first_run, after first-run
+            # wizard logic has run, to avoid a modal dialog appearing before the
+            # wizard and to avoid blocking the main thread with network calls.
         except Exception as e:
             # Close splash and show error if initialization fails
             if self._splash is not None:
@@ -565,6 +591,35 @@ class MainWindow(QMainWindow):
             wizard.exec()
             self._refresh_filters()
             self._apply_filters()
+        # Start background CMS new-file check now that first-run logic is done.
+        self._start_cms_check()
+
+    def _start_cms_check(self):
+        """Start a background CMS new-file check after first-run logic completes."""
+        if self._cms_notification_shown:
+            return
+        app = QApplication.instance()
+        if app and app.platformName().lower() == "offscreen":
+            return
+        self._cms_check_worker = CmsNewFileCheckWorker()
+        self._cms_check_worker.newer_available.connect(self._on_cms_newer_available)
+        self._cms_check_worker.finished.connect(self._cms_check_worker.deleteLater)
+        self._cms_check_worker.start()
+
+    def _on_cms_newer_available(self):
+        """Show the CMS new-file dialog once a background check finds a newer file."""
+        if self._cms_notification_shown:
+            return
+        self._cms_notification_shown = True
+        ans = QMessageBox.question(
+            self,
+            "New CMS File Available",
+            "A newer CMS fee file appears to be available. Would you like to sync now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if ans == QMessageBox.StandardButton.Yes:
+            self._sync_cms()
 
     def _refresh_filters(self):
         """Reload year and state combos from the database."""
@@ -1604,44 +1659,6 @@ class MainWindow(QMainWindow):
         layout.addLayout(btn_row)
 
         dlg.exec()
-
-    def _prompt_sync_if_newer_available(self):
-        try:
-            # Only show notification once per application session
-            if self._cms_notification_shown:
-                return
-
-            app = QApplication.instance()
-            if app and app.platformName().lower() == "offscreen":
-                return
-
-            from core.cms_downloader import has_newer_cms_file_available
-
-            # Check all auto-selected years for newer files
-            auto_years = get_auto_selected_years()
-            newer_available = False
-            for year in auto_years:
-                if has_newer_cms_file_available(year):
-                    newer_available = True
-                    break
-
-            if not newer_available:
-                return
-
-            # Mark notification as shown for this session
-            self._cms_notification_shown = True
-
-            ans = QMessageBox.question(
-                self,
-                "New CMS File Available",
-                "A newer CMS fee file appears to be available. Would you like to sync now?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes,
-            )
-            if ans == QMessageBox.StandardButton.Yes:
-                self._sync_cms()
-        except Exception:
-            pass
 
     def _start_update_check(self):
         """Start a background thread to check for app updates."""

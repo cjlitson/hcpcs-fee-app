@@ -176,8 +176,6 @@ class SetupWizard(QDialog):
         idx = self._stack.currentIndex()
         last = self._stack.count() - 1
         if idx < last:
-            if idx == 0 and not self._validate_states():
-                return
             self._stack.setCurrentIndex(idx + 1)
             self._update_nav()
         else:

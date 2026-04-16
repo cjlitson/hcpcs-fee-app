@@ -660,13 +660,16 @@ def has_newer_cms_file_available(year):
 
     This check is intentionally quiet. On any network failure or parse issue,
     it returns False so startup remains non-disruptive while offline.
+
+    The synced-URL preference is checked first so that installs that have never
+    synced skip all network calls entirely.
     """
     try:
-        latest_url = _probe_latest_cms_zip_url(year)
-        if not latest_url:
-            return False
         synced_url = get_preference(f"cms_synced_source_url_{year}", "")
         if not synced_url:
+            return False
+        latest_url = _probe_latest_cms_zip_url(year)
+        if not latest_url:
             return False
         return _normalize_cms_zip_url(latest_url) != _normalize_cms_zip_url(synced_url)
     except Exception:
