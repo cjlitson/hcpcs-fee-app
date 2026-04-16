@@ -222,7 +222,7 @@ class TestUiAdjustments:
         window.show()
         qapp.processEvents()
 
-        assert window.state_combo.minimumWidth() >= 250
+        assert window.state_combo.minimumWidth() >= 280
         assert not window._add_btn.isVisible()
         assert not window._remove_btn.isVisible()
 
