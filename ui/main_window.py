@@ -1277,12 +1277,18 @@ class MainWindow(QMainWindow):
             app = QApplication.instance()
             if app and app.platformName().lower() == "offscreen":
                 return
-            from core.cms_downloader import has_newer_cms_file_available
-            year = self._effective_year()
-            if not year:
-                return
 
-            if not has_newer_cms_file_available(year):
+            from core.cms_downloader import has_newer_cms_file_available
+
+            # Check all auto-selected years for newer files
+            auto_years = get_auto_selected_years()
+            newer_available = False
+            for year in auto_years:
+                if has_newer_cms_file_available(year):
+                    newer_available = True
+                    break
+
+            if not newer_available:
                 return
 
             # Mark notification as shown for this session
