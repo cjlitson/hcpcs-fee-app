@@ -11,8 +11,10 @@ A standalone Windows desktop application for VA staff to **manage, view, filter,
 
 1. Download `HCPCSFeeApp-Setup.zip` from **[GitHub Releases](https://github.com/cjlitson/hcpcs-fee-app/releases)**.
 2. Extract the ZIP to any temporary location.
-3. Double-click `Install.bat` to run the installer.
-4. A desktop shortcut will be created — double-click it to launch.
+3. Close any running `HCPCSFeeApp.exe` instances from older installs.
+4. Double-click `Install.bat` to run the installer.
+5. Wait for completion; the installer copies files to your user profile and refreshes your desktop shortcut.
+6. Launch from the desktop shortcut.
 
 The app installs to your Documents folder (`Documents\HCPCSFeeApp\`). No administrator rights are required.
 
@@ -89,7 +91,28 @@ build.bat
 
 Output: `dist\HCPCSFeeApp.exe` and `dist\HCPCSFeeApp-Setup.zip` (the ZIP is the recommended distribution artifact).
 
-> **Note:** The build includes hidden imports for `pyodbc`, `databricks.sql`, and `databricks.sql.client` to ensure the Developer Tools / SQL Publisher feature works correctly in the bundled `.exe`. These are loaded lazily at runtime and would otherwise be missed by PyInstaller's static analysis.
+The build now uses `hcpcs_fee_app.spec`, which automatically collects all submodules in both `ui` and `core` so lazily imported dialogs/features are available in the frozen app.
+
+> **Note:** The spec still includes explicit hidden imports for `pyodbc`, `databricks.sql`, and `databricks.sql.client` to ensure Developer Tools / SQL Publisher support remains bundled.
+
+---
+
+## Per-User Deployment and Update Workflow (Current Model)
+
+This release process is intentionally **per-user** (no shared SQL backend yet):
+
+1. Build with `build.bat` (or CI build workflow) to produce `dist\HCPCSFeeApp-Setup.zip`.
+2. Distribute the ZIP artifact to users.
+3. Each user extracts the ZIP locally and runs `Install.bat`.
+4. Installer copies app files to `Documents\HCPCSFeeApp\` for that user and creates/refreshes a desktop shortcut.
+5. App runs with the local SQLite database under that user context.
+
+### Rollout / Update Guidance
+
+- For updates, users should repeat the same process with the latest ZIP.
+- Always launch using the desktop shortcut after updates.
+- Avoid running an old EXE from previously extracted ZIP folders.
+- If installation reports copy failure, close the running app and rerun `Install.bat`.
 
 ---
 
@@ -159,6 +182,7 @@ hcpcs-fee-app/
 ├── main.py                          # App entry point
 ├── requirements.txt                 # Python dependencies
 ├── build.bat                        # Windows .exe build script
+├── hcpcs_fee_app.spec               # PyInstaller spec (collects ui/core packages)
 ├── Install.bat                      # Per-user batch installer (no admin required)
 ├── INSTALL_README.txt               # Installation instructions (bundled in ZIP)
 ├── .github/
