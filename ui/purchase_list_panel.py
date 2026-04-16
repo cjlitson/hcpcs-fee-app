@@ -1,6 +1,7 @@
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QHeaderView,
@@ -19,6 +20,8 @@ from PyQt6.QtWidgets import (
 from core.config import get_config_value, set_config_value
 from core.database import (
     delete_bundle,
+    get_auto_selected_years,
+    get_available_years,
     get_fees,
     is_rural_zip,
     list_bundles,
@@ -33,10 +36,11 @@ class PurchaseListPanel(QWidget):
 
     def __init__(self, parent=None, year_combo=None, state_combo=None, zip_edit=None):
         super().__init__(parent)
-        self._year_combo = year_combo
+        self._main_year_combo = year_combo  # Main window's year combo (for reference)
         self._state_combo = state_combo
         self._zip_edit = zip_edit
         self._bundle_name = None
+        self._purchase_year_combo = None  # Own year combo for purchase list
         self._init_ui()
 
     def _init_ui(self):
@@ -49,9 +53,20 @@ class PurchaseListPanel(QWidget):
         self.title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         header.addWidget(self.title_label)
         header.addStretch()
+
+        # Add year selector for purchase list pricing
+        header.addWidget(QLabel("Pricing Year:"))
+        self._purchase_year_combo = QComboBox()
+        self._purchase_year_combo.setFixedWidth(80)
+        self._purchase_year_combo.currentIndexChanged.connect(self.refresh_prices)
+        header.addWidget(self._purchase_year_combo)
+
         self.bundle_label = QLabel("Bundle: —")
         header.addWidget(self.bundle_label)
         root.addLayout(header)
+
+        # Populate year dropdown with available years
+        self._populate_year_dropdown()
         instructions = QLabel(
             "Type an HCPCS code in Quick Add and press Enter. "
             "Use checkboxes with ◄ / ► in the center to add or remove items."
@@ -125,6 +140,27 @@ class PurchaseListPanel(QWidget):
         QShortcut(QKeySequence("Ctrl+Shift+C"), self, activated=self._copy_to_clipboard)
         self._restore_table_layout_preferences()
 
+    def _populate_year_dropdown(self):
+        """Populate the year dropdown with available years, defaulting to current year."""
+        from datetime import datetime
+        current_year = datetime.now().year
+
+        # Get available years from database
+        available_years = get_available_years()
+        if not available_years:
+            # Fallback to auto-selected years if DB is empty
+            available_years = get_auto_selected_years()
+
+        # Populate combo box
+        self._purchase_year_combo.clear()
+        for year in sorted(available_years, reverse=True):
+            self._purchase_year_combo.addItem(str(year), year)
+
+        # Default to current year
+        current_idx = self._purchase_year_combo.findData(current_year)
+        if current_idx >= 0:
+            self._purchase_year_combo.setCurrentIndex(current_idx)
+
     @staticmethod
     def _checkbox_item(checked=False):
         item = QTableWidgetItem("")
@@ -135,7 +171,8 @@ class PurchaseListPanel(QWidget):
         return item
 
     def _effective_year(self):
-        return self._year_combo.currentData() if self._year_combo else None
+        """Return the year selected in the purchase list's own year dropdown."""
+        return self._purchase_year_combo.currentData() if self._purchase_year_combo else None
 
     def _state_abbr(self):
         return self._state_combo.currentData() if self._state_combo else None
