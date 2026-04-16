@@ -628,7 +628,8 @@ def _try_download_zip(year, progress_callback=None):
 def _normalize_cms_zip_url(url: str) -> str:
     if not url:
         return ""
-    return url.strip().lower().replace("-a.zip", "a.zip").replace("-b.zip", "b.zip").replace("-c.zip", "c.zip").replace("-d.zip", "d.zip")
+    normalized = url.strip().lower()
+    return _re.sub(r"-([a-d])\.zip$", r"\1.zip", normalized)
 
 
 def _probe_latest_cms_zip_url(year):
