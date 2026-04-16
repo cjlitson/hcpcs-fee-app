@@ -2,7 +2,6 @@ from datetime import datetime
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QTextDocument
-from PyQt6.QtPrintSupport import QPrintPreviewDialog
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -156,6 +155,11 @@ class ExportDialog(QDialog):
         html = self._build_preview_html()
         doc = QTextDocument()
         doc.setHtml(html)
+        try:
+            from PyQt6.QtPrintSupport import QPrintPreviewDialog
+        except ImportError as exc:
+            QMessageBox.warning(self, "Print Preview Unavailable", f"Unable to load print preview:\n{str(exc)}")
+            return
         preview = QPrintPreviewDialog(self)
         preview.setWindowTitle("Print Preview")
         preview.paintRequested.connect(doc.print_)

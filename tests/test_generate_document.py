@@ -32,7 +32,7 @@ def test_generate_purchase_document_docx(tmp_path):
     assert out.exists()
     with zipfile.ZipFile(out, "r") as zf:
         xml = zf.read("word/document.xml").decode("utf-8")
-    assert "HCPCS Worksheet" in xml
+    assert "VA HCPCS Worksheet" in xml
     assert "Smith" in xml
     assert "Acme Medical" in xml
     assert "PO #" not in xml

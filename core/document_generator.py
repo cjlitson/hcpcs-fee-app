@@ -18,7 +18,7 @@ def generate_purchase_document_docx(filepath, payload: dict) -> None:
 
     # Title
     title = doc.add_paragraph()
-    title_run = title.add_run("VA HCPCS PURCHASE ORDER")
+    title_run = title.add_run("VA HCPCS Worksheet")
     title_run.bold = True
     title_run.font.size = Pt(18)
     title_run.font.color.rgb = RGBColor(0, 51, 102)
@@ -128,10 +128,10 @@ def generate_purchase_document_excel(filepath, payload: dict) -> None:
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "HCPCS Purchase Order"
+    ws.title = "HCPCS Worksheet"
 
     # Title
-    ws['A1'] = "VA HCPCS PURCHASE ORDER"
+    ws['A1'] = "VA HCPCS Worksheet"
     ws['A1'].font = Font(size=18, bold=True, color="003366")
     ws['A1'].alignment = Alignment(horizontal='center')
     ws.merge_cells('A1:E1')
@@ -240,7 +240,7 @@ def generate_purchase_document_pdf(filepath, payload: dict) -> None:
         spaceAfter=20,
         alignment=TA_CENTER,
     )
-    story.append(Paragraph("VA HCPCS PURCHASE ORDER", title_style))
+    story.append(Paragraph("VA HCPCS Worksheet", title_style))
     story.append(Spacer(1, 12))
 
     # Patient Information
