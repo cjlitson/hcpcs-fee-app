@@ -172,8 +172,7 @@ def main():
         win_geo.moveCenter(screen_geo.center())
         window.move(win_geo.topLeft())
 
-    # ---- Close splash BEFORE showing the main window --------------------
-    splash.close()
+    # ---- Show the main window (splash will close itself after data loads) --
     window.show()
 
     # Defer the first-run check until after the event loop starts so the
