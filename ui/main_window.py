@@ -226,7 +226,7 @@ class MainWindow(QMainWindow):
         # State filter
         row1.addWidget(QLabel("State:"))
         self.state_combo = QComboBox()
-        self.state_combo.setMinimumWidth(200)
+        self.state_combo.setMinimumWidth(280)
         self.state_combo.currentIndexChanged.connect(self._apply_filters)
         self.state_combo.currentIndexChanged.connect(self._save_filter_preferences)
         row1.addWidget(self.state_combo)
@@ -1841,7 +1841,7 @@ class _HcpcsHistoryDialog(QDialog):
 
         section_label = QLabel(f"<b>Comparison — State: {comp_state}</b>")
         section_label.setStyleSheet(
-            "font-size: 13px; color: #003366; border-top: 1px solid #c0c8d8; padding-top: 6px;"
+            "font-size: 13px; color: #003366; padding-top: 6px;"
         )
         self._comp_layout.addWidget(section_label)
 

@@ -23,6 +23,14 @@ pyinstaller ^
   --hidden-import pyodbc ^
   --hidden-import databricks.sql ^
   --hidden-import databricks.sql.client ^
+  --hidden-import ui.export_dialog ^
+  --hidden-import ui.purchase_list_panel ^
+  --hidden-import ui.group_browser_dialog ^
+  --hidden-import ui.state_selector_dialog ^
+  --hidden-import ui.year_selector_dialog ^
+  --hidden-import ui.setup_wizard ^
+  --hidden-import ui.import_dialog ^
+  --hidden-import ui.dev_tools_dialog ^
   main.py
 
 echo Packaging ZIP...
