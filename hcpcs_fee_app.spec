@@ -3,7 +3,7 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(SPECPATH).resolve()
 
 # Collect all application modules so lazy imports do not break frozen startup.
 HIDDENIMPORTS = sorted(
