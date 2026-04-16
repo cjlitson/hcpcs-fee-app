@@ -6,6 +6,7 @@ from pathlib import Path
 
 from core.config import get_data_dir, _config_path
 from core.database import get_available_years, get_selected_states
+from core.vendor_store import list_saved_vendors
 from core.version import APP_VERSION
 
 
@@ -56,6 +57,7 @@ def create_backup(output_path):
         "record_counts": _record_counts(db_path),
         "selected_states": states,
         "available_years": years,
+        "saved_vendor_count": len(list_saved_vendors()),
     }
 
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as zf:

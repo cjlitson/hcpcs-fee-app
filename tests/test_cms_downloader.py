@@ -21,6 +21,7 @@ from core.cms_downloader import (
     _select_main_dmepos_filename,
     _select_rural_zip_filename,
     discover_available_cms_years,
+    has_newer_cms_file_available,
 )
 
 
@@ -625,3 +626,14 @@ class TestDiscoverYearFromNoQuarterZip:
         years = discover_available_cms_years()
 
         assert 2026 in years
+
+
+class TestNewerCmsCheck:
+    @patch("core.cms_downloader._probe_latest_cms_zip_url", return_value="https://www.cms.gov/files/zip/dme26-d.zip")
+    @patch("core.cms_downloader.get_preference", return_value="https://www.cms.gov/files/zip/dme26-c.zip")
+    def test_detects_newer_file(self, _pref, _probe):
+        assert has_newer_cms_file_available(2026) is True
+
+    @patch("core.cms_downloader._probe_latest_cms_zip_url", side_effect=Exception("offline"))
+    def test_offline_check_is_quiet(self, _probe):
+        assert has_newer_cms_file_available(2026) is False

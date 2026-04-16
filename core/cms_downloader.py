@@ -608,7 +608,7 @@ def _try_download_zip(year, progress_callback=None):
             resp = requests.get(url, timeout=60, stream=True)
             if resp.status_code == 200:
                 _record_successful_pattern(year, url, discovery_method)
-                return resp.content
+                return resp.content, url
             last_error = f"HTTP {resp.status_code} from {url}"
         except requests.RequestException as exc:
             last_error = str(exc)
@@ -623,6 +623,53 @@ def _try_download_zip(year, progress_callback=None):
         "Please visit https://www.cms.gov/medicare/payment/fee-schedules/dmepos "
         "to download the file manually and use File → Import CSV."
     )
+
+
+def _normalize_cms_zip_url(url: str) -> str:
+    if not url:
+        return ""
+    return url.strip().lower().replace("-a.zip", "a.zip").replace("-b.zip", "b.zip").replace("-c.zip", "c.zip").replace("-d.zip", "d.zip")
+
+
+def _probe_latest_cms_zip_url(year):
+    year2d = str(year)[-2:]
+    candidates = [
+        f"https://www.cms.gov/files/zip/dme{year2d}-d.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}-c.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}-b.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}-a.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}d.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}c.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}b.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}a.zip",
+        f"https://www.cms.gov/files/zip/dme{year2d}.zip",
+    ]
+    for url in candidates:
+        try:
+            resp = requests.head(url, timeout=4, allow_redirects=True)
+            if resp.status_code in (200, 301, 302):
+                return resp.url or url
+        except Exception:
+            continue
+    return None
+
+
+def has_newer_cms_file_available(year):
+    """Return True if a newer CMS ZIP appears available than the last synced one.
+
+    This check is intentionally quiet. On any network failure or parse issue,
+    it returns False so startup remains non-disruptive while offline.
+    """
+    try:
+        latest_url = _probe_latest_cms_zip_url(year)
+        if not latest_url:
+            return False
+        synced_url = get_preference(f"cms_synced_source_url_{year}", "")
+        if not synced_url:
+            return False
+        return _normalize_cms_zip_url(latest_url) != _normalize_cms_zip_url(synced_url)
+    except Exception:
+        return False
 
 
 # Keywords that identify documentation / non-data files to always skip.
@@ -766,7 +813,12 @@ def download_cms_fees(year, selected_states, progress_callback=None):
     if progress_callback:
         progress_callback(f"Downloading CMS DMEPOS fee schedule for {year}…")
 
-    zip_bytes = _try_download_zip(year, progress_callback=progress_callback)
+    download_result = _try_download_zip(year, progress_callback=progress_callback)
+    if isinstance(download_result, tuple):
+        zip_bytes, source_url = download_result
+    else:
+        zip_bytes = download_result
+        source_url = ""
 
     if progress_callback:
         progress_callback("Extracting archive…")
@@ -812,6 +864,9 @@ def download_cms_fees(year, selected_states, progress_callback=None):
                 states=state_abbr,
             )
             total += len(records)
+
+        if source_url:
+            set_preference(f"cms_synced_source_url_{year}", source_url)
 
         # Import rural ZIP codes for the year (replace-semantics: delete then insert)
         if tmp_rural_path:

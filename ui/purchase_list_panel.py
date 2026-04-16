@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
@@ -27,7 +25,6 @@ from core.database import (
     load_bundle,
     save_bundle,
 )
-from ui.export_dialog import ExportDialog
 from ui.purchase_list_dialog import BundlePickerDialog
 
 
@@ -107,9 +104,9 @@ class PurchaseListPanel(QWidget):
         btns = QHBoxLayout()
         save_bundle_btn = QPushButton("Save Bundle")
         load_bundle_btn = QPushButton("Load Bundle")
-        export_btn = QPushButton("Export")
+        generate_btn = QPushButton("Generate Document")
         clear_btn = QPushButton("Clear")
-        for btn in (save_bundle_btn, load_bundle_btn, export_btn, clear_btn):
+        for btn in (save_bundle_btn, load_bundle_btn, generate_btn, clear_btn):
             btn.setStyleSheet(
                 "QPushButton { background-color: #F1F3F6; border: 1px solid #AEB6C2; "
                 "padding: 6px 10px; border-radius: 4px; font-weight: 600; }"
@@ -117,11 +114,11 @@ class PurchaseListPanel(QWidget):
             )
         save_bundle_btn.clicked.connect(self._save_bundle)
         load_bundle_btn.clicked.connect(self._load_bundle)
-        export_btn.clicked.connect(self._export)
+        generate_btn.clicked.connect(self._generate_document)
         clear_btn.clicked.connect(self._clear_list)
         btns.addWidget(save_bundle_btn)
         btns.addWidget(load_bundle_btn)
-        btns.addWidget(export_btn)
+        btns.addWidget(generate_btn)
         btns.addWidget(clear_btn)
         root.addLayout(btns)
 
@@ -341,23 +338,13 @@ class PurchaseListPanel(QWidget):
             self.table.setItem(row, 5, QTableWidgetItem("—"))
         self.refresh_prices()
 
-    def _export(self):
+    def _generate_document(self):
         items = self._collect_items()
         if not items:
-            QMessageBox.information(self, "No Items", "No purchase list items to export.")
+            QMessageBox.information(self, "No Items", "No purchase list items selected.")
             return
-        meta = {
-            "year": self._effective_year(),
-            "state": self._state_abbr() or "",
-            "zip_code": self._zip_code(),
-            "rural_status": "Rural (R)" if self._is_rural() else "Non-Rural (NR)",
-            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        }
-        dlg = ExportDialog(
-            parent=self,
-            purchase_items=items,
-            purchase_meta=meta,
-        )
+        from ui.generate_document_dialog import GenerateDocumentDialog
+        dlg = GenerateDocumentDialog(purchase_items=items, parent=self)
         dlg.exec()
 
     def _copy_to_clipboard(self):
