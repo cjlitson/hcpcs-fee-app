@@ -1,6 +1,6 @@
 import sys
 import sqlite3
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 
@@ -314,8 +314,54 @@ def set_preference(key, value):
     conn.close()
 
 
+def get_current_quarter():
+    """Return the current quarter (1-4) based on today's date.
+
+    Q1 = Jan-Mar (1-3)
+    Q2 = Apr-Jun (4-6)
+    Q3 = Jul-Sep (7-9)
+    Q4 = Oct-Dec (10-12)
+    """
+    month = datetime.now().month
+    return (month - 1) // 3 + 1
+
+
+def get_auto_selected_years():
+    """Return list of years that should be auto-synced.
+
+    Auto-sync logic:
+    - Current year (most recent quarter)
+    - Past 2 full years (Q4 only)
+
+    Example: In Q2 2026, returns [2026, 2025, 2024]
+    """
+    current_year = datetime.now().year
+    return [current_year, current_year - 1, current_year - 2]
+
+
+def get_required_quarters_for_year(year):
+    """Return which quarters are required for a given year.
+
+    - For current year: only the most recent quarter
+    - For past years: only Q4 (full year data)
+
+    Returns list of quarter numbers (1-4).
+    """
+    current_year = datetime.now().year
+    if year == current_year:
+        return [get_current_quarter()]
+    elif year < current_year:
+        return [4]  # Q4 only for past years
+    else:
+        return []  # Future years not supported
+
+
 def get_selected_years():
-    """Return list of persisted selected years, or empty list if none saved."""
+    """Return list of persisted selected years, or empty list if none saved.
+
+    DEPRECATED: This function is maintained for backwards compatibility.
+    New code should use get_auto_selected_years() instead.
+    """
     val = get_preference("selected_years")
     if not val:
         return []
@@ -326,7 +372,11 @@ def get_selected_years():
 
 
 def save_selected_years(years):
-    """Persist selected years to user preferences."""
+    """Persist selected years to user preferences.
+
+    DEPRECATED: This function is maintained for backwards compatibility.
+    Auto year management makes this unnecessary.
+    """
     set_preference("selected_years", ",".join(str(y) for y in sorted(years)))
 
 

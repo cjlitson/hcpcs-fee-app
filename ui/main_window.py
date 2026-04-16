@@ -17,13 +17,12 @@ from PyQt6.QtGui import QAction, QFont, QColor, QIcon, QPixmap, QShortcut, QKeyS
 from core.config import get_config_value, set_config_value
 from core.database import (
     get_fees, get_selected_states, get_available_years, get_import_log,
-    get_preference, set_preference, get_selected_years, save_selected_years,
+    get_preference, set_preference, get_auto_selected_years,
     is_rural_zip, get_current_year_or_fallback,
 )
 from core.cms_downloader import download_cms_fees, SUPPORTED_YEARS
 from ui.import_dialog import ImportDialog
 from ui.state_selector_dialog import StateSelectorDialog
-from ui.year_selector_dialog import YearSelectorDialog
 from ui.purchase_list_panel import PurchaseListPanel
 
 PURCHASE_PANEL_LEFT_RATIO = 2 / 3
@@ -471,10 +470,6 @@ class MainWindow(QMainWindow):
         states_action.triggered.connect(self._manage_states)
         settings_menu.addAction(states_action)
 
-        years_action = QAction("Manage &Years…", self)
-        years_action.triggered.connect(self._manage_years)
-        settings_menu.addAction(years_action)
-
         settings_menu.addSeparator()
 
         db_path_action = QAction("Change &Database Path…", self)
@@ -900,10 +895,6 @@ class MainWindow(QMainWindow):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self._refresh_filters()
             self._apply_filters()
-
-    def _manage_years(self):
-        dlg = YearSelectorDialog(self)
-        dlg.exec()
 
     def _browse_groups(self):
         from ui.group_browser_dialog import GroupBrowserDialog
@@ -1522,13 +1513,13 @@ class _AboutDialog(QDialog):
 
 
 class _SyncYearsDialog(QDialog):
-    """Simple dialog to pick which year(s) to sync."""
+    """Simple dialog to confirm which year(s) to sync (auto-determined)."""
 
     def __init__(self, state_abbrs, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Sync from CMS")
         self.setMinimumWidth(340)
-        self._checks = {}
+        self._auto_years = get_auto_selected_years()
         layout = QVBoxLayout(self)
 
         states_label = QLabel(
@@ -1536,19 +1527,22 @@ class _SyncYearsDialog(QDialog):
         )
         states_label.setWordWrap(True)
         layout.addWidget(states_label)
-        layout.addWidget(QLabel("Select year(s) to download:"))
 
-        for year in SUPPORTED_YEARS:
-            cb = QCheckBox(str(year))
-            layout.addWidget(cb)
-            self._checks[year] = cb
+        from core.database import get_current_quarter
+        current_quarter = get_current_quarter()
+        current_year = self._auto_years[0]
 
-        saved_years = get_selected_years()
-        # If nothing saved, default to current + last 3
-        from core.database import get_default_selected_years
-        defaults = saved_years if saved_years else get_default_selected_years()
-        for year, cb in self._checks.items():
-            cb.setChecked(year in defaults)
+        info_text = (
+            f"<p>The app will automatically sync:</p>"
+            f"<ul>"
+            f"<li><b>{current_year} Q{current_quarter}</b> (current year, most recent quarter)</li>"
+            f"<li><b>{current_year - 1} Q4</b> (last full year)</li>"
+            f"<li><b>{current_year - 2} Q4</b> (2 years ago)</li>"
+            f"</ul>"
+        )
+        info_label = QLabel(info_text)
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
 
         btn_row = QHBoxLayout()
         cancel_btn = QPushButton("Cancel")
@@ -1564,7 +1558,7 @@ class _SyncYearsDialog(QDialog):
         layout.addLayout(btn_row)
 
     def selected_years(self):
-        return [y for y, cb in self._checks.items() if cb.isChecked()]
+        return self._auto_years
 
 
 class _HcpcsHistoryDialog(QDialog):

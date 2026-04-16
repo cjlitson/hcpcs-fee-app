@@ -8,8 +8,7 @@ from PyQt6.QtCore import Qt
 from core.cms_downloader import ALL_STATES, SUPPORTED_YEARS, discover_available_cms_years
 from core.database import (
     get_selected_states, save_selected_states,
-    get_selected_years, save_selected_years,
-    get_default_selected_years, set_preference,
+    get_auto_selected_years, set_preference,
 )
 
 _BTN_STYLE = (
@@ -19,7 +18,7 @@ _BTN_STYLE = (
 
 
 class SetupWizard(QDialog):
-    """Single multi-page first-run wizard (Welcome → States → Years)."""
+    """Single multi-page first-run wizard (Welcome → States)."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -29,12 +28,10 @@ class SetupWizard(QDialog):
             self._center_on_parent(parent)
 
         self._state_checkboxes: dict[str, QCheckBox] = {}
-        self._year_checkboxes: dict[int, QCheckBox] = {}
 
         self._stack = QStackedWidget()
         self._stack.addWidget(self._build_welcome_page())
         self._stack.addWidget(self._build_states_page())
-        self._stack.addWidget(self._build_years_page())
 
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(self._stack, 1)
@@ -72,9 +69,9 @@ class SetupWizard(QDialog):
         body = QLabel(
             "To get started:\n\n"
             "  1. Select the states you want to track and sync data for.\n"
-            "  2. Select the years you need.\n"
-            "  3. Click \"Sync from CMS\" to download the latest fee schedules,\n"
+            "  2. Click \"Sync from CMS\" to download the latest fee schedules,\n"
             "     OR use File → Import CSV to load an existing file.\n\n"
+            "The app automatically tracks the current year plus the past 2 full years.\n"
             "Data is stored locally in a SQLite database — no network connection\n"
             "is required after the initial sync.\n\n"
             "Tip: Enter a 5-digit ZIP code in the toolbar to automatically see\n"
@@ -109,7 +106,7 @@ class SetupWizard(QDialog):
         layout.setContentsMargins(24, 16, 24, 8)
         layout.setSpacing(8)
 
-        title = QLabel("Step 1 of 2 — Select States to Track")
+        title = QLabel("Select States to Track")
         title.setStyleSheet("font-size: 14px; font-weight: bold; color: #003366;")
         layout.addWidget(title)
 
@@ -156,54 +153,6 @@ class SetupWizard(QDialog):
 
         return page
 
-    def _build_years_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(24, 16, 24, 8)
-        layout.setSpacing(8)
-
-        title = QLabel("Step 2 of 2 — Select Years to Track")
-        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #003366;")
-        layout.addWidget(title)
-
-        layout.addWidget(QLabel(
-            "Select the years you want to track and sync data for.\n"
-            "Default shows current year + last 3; add more as needed."
-        ))
-
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(sep)
-
-        # Best-effort CMS availability check
-        try:
-            available_years = discover_available_cms_years()
-        except Exception:
-            available_years = set()
-
-        for year in sorted(SUPPORTED_YEARS):
-            if available_years and year not in available_years:
-                cb = QCheckBox(f"{year}  (not currently available on CMS)")
-                cb.setEnabled(False)
-            else:
-                cb = QCheckBox(str(year))
-            self._year_checkboxes[year] = cb
-            layout.addWidget(cb)
-
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(sep2)
-
-        # Pre-populate defaults
-        saved = get_selected_years()
-        defaults = saved if saved else get_default_selected_years()
-        for year, cb in self._year_checkboxes.items():
-            if cb.isEnabled():
-                cb.setChecked(year in defaults)
-
-        layout.addStretch(1)
-        return page
-
     # ----------------------------------------------------------- navigation --
 
     def _update_nav(self):
@@ -227,7 +176,7 @@ class SetupWizard(QDialog):
         idx = self._stack.currentIndex()
         last = self._stack.count() - 1
         if idx < last:
-            if idx == 1 and not self._validate_states():
+            if idx == 0 and not self._validate_states():
                 return
             self._stack.setCurrentIndex(idx + 1)
             self._update_nav()
@@ -255,13 +204,8 @@ class SetupWizard(QDialog):
         return True
 
     def _finish(self):
-        # Validate years
-        selected_years = [year for year, cb in self._year_checkboxes.items() if cb.isChecked()]
-        if not selected_years:
-            QMessageBox.warning(
-                self, "No Years Selected",
-                "Please select at least one year to track.",
-            )
+        # Validate states
+        if not self._validate_states():
             return
 
         # Save states
@@ -271,7 +215,6 @@ class SetupWizard(QDialog):
             if cb.isChecked()
         ]
         save_selected_states(selected_states)
-        save_selected_years(selected_years)
         set_preference("first_run_done", "1")
 
         # Create desktop shortcut if requested
