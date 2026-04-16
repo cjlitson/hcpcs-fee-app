@@ -98,12 +98,12 @@ class MainWindow(QMainWindow):
         self._refresh_filters()
         self._splash_update(70, "Restoring saved preferences…")
         self._restore_filter_preferences()
-        self._splash_update(100, "Ready!")
+        self._splash_update(85, "Loading fee records…")
         self._set_status("Loading fee records…")
+        # Load initial data before showing window so splash stays visible
+        self._apply_filters()
+        self._splash_update(100, "Ready!")
         self._splash = None  # release; splash lifetime managed by main.py
-        # Defer the initial query so the window appears before the DB load runs.
-        # This prevents users from thinking the app has frozen during startup.
-        QTimer.singleShot(0, self._apply_filters)
 
         # Background update check
         self._update_worker = None
