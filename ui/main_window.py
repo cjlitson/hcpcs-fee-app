@@ -22,13 +22,11 @@ from core.database import (
 )
 from core.cms_downloader import download_cms_fees, SUPPORTED_YEARS
 from ui.import_dialog import ImportDialog
-from ui.export_dialog import ExportDialog
 from ui.state_selector_dialog import StateSelectorDialog
 from ui.year_selector_dialog import YearSelectorDialog
 from ui.purchase_list_panel import PurchaseListPanel
 
 PURCHASE_PANEL_LEFT_RATIO = 2 / 3
-STALE_SYNC_THRESHOLD_DAYS = 45
 MAIN_COL_SELECT = 0
 MAIN_COL_HCPCS = 1
 MAIN_COL_DESC = 2
@@ -111,7 +109,7 @@ class MainWindow(QMainWindow):
         self._update_worker = None
         self._start_update_check()
         QTimer.singleShot(0, self._warn_if_pending_update_file)
-        QTimer.singleShot(250, self._prompt_sync_if_stale)
+        QTimer.singleShot(250, self._prompt_sync_if_newer_available)
 
     # ------------------------------------------------------------------ UI --
 
@@ -878,6 +876,7 @@ class MainWindow(QMainWindow):
         if not self._records:
             QMessageBox.information(self, "No Data", "No records to export. Apply filters first.")
             return
+        from ui.export_dialog import ExportDialog
         zip_code = self.zip_edit.text().strip()
         dlg = ExportDialog(self._records, self, is_rural=self._is_rural(), zip_code=zip_code)
         dlg.exec()
@@ -1282,11 +1281,11 @@ class MainWindow(QMainWindow):
             "Use <b>◄</b> to remove checked rows from the purchase list.</p>"
             "<p><b>Quick Add</b>: Type an HCPCS code directly in the Purchase List panel and press Enter to add it instantly.</p>"
             "<p><b>Select All</b>: Use the Select All checkbox between tables for bulk selection in the main list.</p>"
-            "<p><b>Export + Preview</b>: Export dialogs now support Print Preview, PO # (Word/PDF purchase list exports), and copy-to-clipboard for purchase list rows.</p>"
+            "<p><b>Generate Document</b>: Purchase list items can be sent to a worksheet-style document form with copy-data support, vendor quick-select, and Generate + Attach to Email.</p>"
             "<p><b>Dark Mode</b>: Toggle View → Dark Mode to switch themes. Your preference is saved.</p>"
-            "<p><b>CMS Sync Reminder</b>: The app prompts you to sync if CMS data has not been synced recently.</p>"
+            "<p><b>CMS Sync Reminder</b>: On startup the app quietly checks for a newer CMS file and only prompts if one is available.</p>"
             "<p><b>Bundle Preview</b>: In Load Bundle, selecting or hovering a bundle shows HCPCS, description, and quantity preview.</p>"
-            "<p><b>Export</b>: Purchase lists can be exported as Word (.docx), PDF, Excel, or CSV with invoice-style formatting.</p>"
+            "<p><b>Export</b>: Main results can be exported as CSV, Excel, or PDF.</p>"
             "<p><b>Keyboard Shortcuts</b>: Ctrl+Right add checked rows, Ctrl+Left remove checked rows, Ctrl+P toggle purchase panel, Ctrl+Shift+C copy purchase list table.</p>"
             "<p>Developed by the <b>WSNC Impact Team</b>.</p>"
         )
@@ -1299,38 +1298,21 @@ class MainWindow(QMainWindow):
         layout.addLayout(row)
         dlg.exec()
 
-    def _prompt_sync_if_stale(self):
+    def _prompt_sync_if_newer_available(self):
         try:
             app = QApplication.instance()
             if app and app.platformName().lower() == "offscreen":
                 return
-            logs = get_import_log()
-            cms_entries = [
-                row for row in logs
-                if (row.get("source") or "").lower() in {"cms_download", "cms"}
-            ]
-            is_stale = True
-            if cms_entries:
-                latest = cms_entries[0].get("imported_at")
-                if latest:
-                    try:
-                        latest_dt = datetime.strptime(str(latest), "%Y-%m-%d %H:%M:%S")
-                    except ValueError:
-                        try:
-                            latest_dt = datetime.fromisoformat(str(latest).replace(" ", "T"))
-                        except ValueError:
-                            latest_dt = datetime.now()
-                    is_stale = (datetime.now() - latest_dt).days >= STALE_SYNC_THRESHOLD_DAYS
-            if not is_stale:
+            from core.cms_downloader import has_newer_cms_file_available
+            year = self._effective_year()
+            if not year:
                 return
-            today_key = date.today().isoformat()
-            if get_config_value("last_sync_prompt_date", "") == today_key:
+            if not has_newer_cms_file_available(year):
                 return
-            set_config_value("last_sync_prompt_date", today_key)
             ans = QMessageBox.question(
                 self,
-                "CMS Sync Recommended",
-                "CMS fees have not been synced recently. Would you like to sync now?",
+                "New CMS File Available",
+                "A newer CMS fee file appears to be available. Would you like to sync now?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.Yes,
             )

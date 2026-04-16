@@ -29,7 +29,8 @@ The app installs to your Documents folder (`Documents\HCPCSFeeApp\`). No adminis
 - **Quarterly replace** — each CMS sync replaces prior data for the same year/state to keep results current without duplicates
 - **Import** existing VISN-format CSV files (or manually downloaded CMS CSVs)
 - **Filter** by state, year, HCPCS code, and description keyword
-- **Export** to **CSV**, **Excel (.xlsx)**, or **PDF**
+- **Export** main results to **CSV**, **Excel (.xlsx)**, or **PDF**
+- **Generate Document** worksheet flow from purchase-list selections (editable line details, vendor quick-select/save, comments, copy-data, and optional Generate + Attach to Email with PHI encryption warning)
 - **SQLite database** — all data stored locally, no server needed
 - **State management** — select any of the 50 states + DC to track
 - **Year management** — select which fiscal years to track
@@ -47,6 +48,8 @@ The app installs to your Documents folder (`Documents\HCPCSFeeApp\`). No adminis
 5. **Import CSV** — Use `File → Import CSV` to load an existing VISN-format CSV or a manually downloaded CMS file (`.csv`).
 6. **Filter** — Use the toolbar to filter by state, year, HCPCS code, or description keyword.
 7. **Export** — Click `Export…` to save filtered results as CSV, Excel, or PDF.
+8. **Generate Document** — Add items to Purchase List, click `Generate Document`, complete the worksheet form, and generate a `.docx` document (or use `Generate + Attach to Email`).
+9. **PHI Warning** — When using `Generate + Attach to Email`, the app shows a required warning to encrypt email before sending.
 8. **Developer Tools** — Use `Developer Tools → SQL Publisher` to run direct SQL queries or publish data to a Databricks or ODBC endpoint.
 
 ---
@@ -194,13 +197,17 @@ hcpcs-fee-app/
 │   ├── state_selector_dialog.py     # State management dialog
 │   ├── year_selector_dialog.py      # Year management dialog
 │   ├── import_dialog.py             # CSV import wizard
-│   ├── export_dialog.py             # Export options dialog
+│   ├── export_dialog.py             # Main-grid export options dialog
+│   ├── generate_document_dialog.py  # Worksheet-style Generate Document dialog
 │   └── dev_tools_dialog.py          # Developer Tools / SQL Publisher
 ├── core/
 │   ├── database.py                  # SQLite operations + preferences
 │   ├── importer.py                  # CSV parser (VISN + CMS grid formats, auto-delimiter)
 │   ├── cms_downloader.py            # CMS auto-download (scrape + cache + fallback)
-│   ├── exporter.py                  # CSV / Excel / PDF export
+│   ├── exporter.py                  # CSV / Excel / PDF export helpers
+│   ├── document_generator.py        # Worksheet DOCX generation
+│   ├── vendor_store.py              # Saved-vendor persistence (config-backed)
+│   ├── email_helper.py              # Outlook draft + attachment helper
 │   ├── self_updater.py              # In-app self-update (download + swap + restart)
 │   ├── shortcut.py                  # Desktop shortcut creation helper
 │   └── version.py                   # App version + GitHub release update checker

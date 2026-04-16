@@ -81,6 +81,7 @@ def test_backup_create_inspect_restore(tmp_path, tmp_db, monkeypatch):
     save_selected_states([("CA", "California")])
     cfg_path = tmp_path / "hcpcs_app_config.json"
     cfg_path.write_text(json.dumps({"data_dir": str(tmp_path)}), encoding="utf-8")
+    monkeypatch.setattr(backup, "list_saved_vendors", lambda: ["Acme Medical"])
 
     monkeypatch.setattr(backup, "_db_path", lambda: tmp_db)
     monkeypatch.setattr(backup, "_config_path", lambda: cfg_path)
@@ -92,6 +93,7 @@ def test_backup_create_inspect_restore(tmp_path, tmp_db, monkeypatch):
     manifest = backup.inspect_backup(created)
     assert manifest["record_counts"]["hcpcs_fees"] == 1
     assert "available_years" in manifest
+    assert manifest["saved_vendor_count"] == 1
 
     with zipfile.ZipFile(created, "r") as zf:
         assert "hcpcs_fees.db" in zf.namelist()
@@ -161,28 +163,18 @@ def test_purchase_list_docx_export(tmp_path):
     assert "Grand Total" in xml
 
 
-@_skip_no_docx
-def test_purchase_list_docx_export_includes_po(tmp_path):
-    from core.exporter import export_purchase_list_to_docx
+def test_saved_vendor_persistence(monkeypatch):
+    from core import vendor_store
 
-    out = tmp_path / "purchase_po.docx"
-    export_purchase_list_to_docx(
-        [
-            {
-                "hcpcs_code": "L5301",
-                "description": "BK prosthesis",
-                "quantity": 1,
-                "unit_price": 100.0,
-                "line_total": 100.0,
-            }
-        ],
-        out,
-        meta={"year": 2026, "state": "CA", "po_number": "PO-12345"},
-    )
-    with zipfile.ZipFile(out, "r") as zf:
-        xml = zf.read("word/document.xml").decode("utf-8")
-    assert "PO #" in xml
-    assert "PO-12345" in xml
+    cfg = {}
+    monkeypatch.setattr(vendor_store, "get_config_value", lambda key, default=None: cfg.get(key, default))
+    monkeypatch.setattr(vendor_store, "set_config_value", lambda key, value: cfg.__setitem__(key, value))
+
+    assert vendor_store.list_saved_vendors() == []
+    vendor_store.save_vendor_name("Acme Medical")
+    vendor_store.save_vendor_name("acme medical")
+    vendor_store.save_vendor_name("  ")
+    assert vendor_store.list_saved_vendors() == ["Acme Medical"]
 
 
 def test_purchase_list_pdf_export(tmp_path):

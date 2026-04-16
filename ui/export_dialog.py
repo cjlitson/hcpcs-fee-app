@@ -10,7 +10,6 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QPushButton,
     QRadioButton,
@@ -67,16 +66,6 @@ class ExportDialog(QDialog):
         for rb in radios:
             self.btn_group.addButton(rb)
             layout.addWidget(rb)
-            rb.toggled.connect(self._sync_po_visibility)
-
-        self.po_row = QHBoxLayout()
-        self.po_label = QLabel("PO #:")
-        self.po_edit = QLineEdit()
-        self.po_edit.setPlaceholderText("Optional purchase order number")
-        self.po_row.addWidget(self.po_label)
-        self.po_row.addWidget(self.po_edit, 1)
-        layout.addLayout(self.po_row)
-        self._sync_po_visibility()
 
         btns = QHBoxLayout()
         cancel_btn = QPushButton("Cancel")
@@ -96,12 +85,6 @@ class ExportDialog(QDialog):
         btns.addWidget(export_btn)
         layout.addLayout(btns)
 
-    def _sync_po_visibility(self):
-        show_po = self.is_purchase_mode and (self.pdf_radio.isChecked() or self.word_radio.isChecked())
-        self.po_label.setVisible(show_po)
-        self.po_edit.setVisible(show_po)
-        self.po_edit.setEnabled(show_po)
-
     def _selected_format(self):
         if self.csv_radio.isChecked():
             return "csv"
@@ -114,11 +97,7 @@ class ExportDialog(QDialog):
         return "csv"
 
     def _purchase_export_meta(self):
-        meta = dict(self.purchase_meta)
-        po_number = self.po_edit.text().strip()
-        if po_number:
-            meta["po_number"] = po_number
-        return meta
+        return dict(self.purchase_meta)
 
     def _do_export(self):
         fmt = self._selected_format()
@@ -192,9 +171,6 @@ class ExportDialog(QDialog):
                 ("Rural Status", meta.get("rural_status") or "Non-Rural (NR)"),
                 ("Date Generated", meta.get("generated_at") or datetime.now().strftime("%Y-%m-%d %H:%M")),
             ]
-            po_number = (meta.get("po_number") or "").strip()
-            if po_number:
-                meta_rows.insert(0, ("PO #", po_number))
             body = ["<h2>VA HCPCS Purchase List</h2>"]
             body.extend([f"<p><b>{k}:</b> {v}</p>" for k, v in meta_rows])
             body.append("<table border='1' cellspacing='0' cellpadding='4'><tr>"
