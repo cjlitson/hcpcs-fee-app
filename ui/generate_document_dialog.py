@@ -76,6 +76,13 @@ class GenerateDocumentDialog(QDialog):
         save_vendor_btn.clicked.connect(self._save_vendor)
         vendor_container.addWidget(save_vendor_btn)
 
+        # Format selector
+        self.format_combo = QComboBox()
+        self.format_combo.setFixedHeight(24)
+        self.format_combo.addItem("Word Document (.docx)", "docx")
+        self.format_combo.addItem("Excel Spreadsheet (.xlsx)", "xlsx")
+        self.format_combo.addItem("PDF Document (.pdf)", "pdf")
+
         form.addWidget(QLabel("Veteran Last Name"), 0, 0)
         form.addWidget(self.veteran_last_name_edit, 0, 1)
         form.addWidget(QLabel("Last 4"), 0, 2)
@@ -86,6 +93,8 @@ class GenerateDocumentDialog(QDialog):
         form.addWidget(self.deliver_to_combo, 1, 3)
         form.addWidget(QLabel("Vendor"), 2, 0)
         form.addLayout(vendor_container, 2, 1, 1, 3)
+        form.addWidget(QLabel("Format"), 3, 0)
+        form.addWidget(self.format_combo, 3, 1)
         root.addLayout(form)
 
         self.items_table = QTableWidget(0, 4)
@@ -208,13 +217,29 @@ class GenerateDocumentDialog(QDialog):
             if warning != QMessageBox.StandardButton.Yes:
                 return
 
-        path, _ = QFileDialog.getSaveFileName(self, "Save Generated Document", "hcpcs_document.docx", "Word Documents (*.docx)")
+        selected_format = self.format_combo.currentData()
+        ext_map = {
+            "docx": ("Word Documents (*.docx)", "hcpcs_document.docx"),
+            "xlsx": ("Excel Files (*.xlsx)", "hcpcs_document.xlsx"),
+            "pdf": ("PDF Files (*.pdf)", "hcpcs_document.pdf"),
+        }
+        filter_text, default_name = ext_map.get(selected_format, ext_map["docx"])
+
+        path, _ = QFileDialog.getSaveFileName(self, "Save Generated Document", default_name, filter_text)
         if not path:
             return
 
         payload = self._collect_payload()
         try:
-            generate_purchase_document_docx(path, payload)
+            if selected_format == "docx":
+                from core.document_generator import generate_purchase_document_docx
+                generate_purchase_document_docx(path, payload)
+            elif selected_format == "xlsx":
+                from core.document_generator import generate_purchase_document_excel
+                generate_purchase_document_excel(path, payload)
+            elif selected_format == "pdf":
+                from core.document_generator import generate_purchase_document_pdf
+                generate_purchase_document_pdf(path, payload)
         except Exception as exc:
             QMessageBox.critical(self, "Generate Error", f"Document generation failed:\n{exc}")
             return

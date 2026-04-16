@@ -85,6 +85,7 @@ class MainWindow(QMainWindow):
         self._sync_worker = None
         self._progress_dlg = None
         self._purchase_list_panel_visible = False
+        self._cms_notification_shown = False  # Track if CMS notification has been shown this session
         # Debounce timer for live search (HCPCS + Keyword fields)
         self._search_timer = QTimer()
         self._search_timer.setSingleShot(True)
@@ -134,7 +135,9 @@ class MainWindow(QMainWindow):
             "QPushButton { height: 24px; border-radius: 3px; padding: 3px 10px; border: 1px solid #AAB2BF; background: #F8F9FB; color: #202124; }"
             "QPushButton:hover { background-color: #EAF0F8; }"
             "QLabel { background: transparent; }"
-            "QMenuBar, QMenu { background: #FFFFFF; color: #202124; }"
+            "QMenuBar { background: #FFFFFF; color: #202124; border-bottom: 1px solid #D8DDE6; }"
+            "QMenu { background: #FFFFFF; color: #202124; border: 1px solid #D8DDE6; }"
+            "QMenu::item:selected { background: #EAF0F8; color: #202124; }"
             "QHeaderView::section { background: #EEF2F7; color: #202124; padding: 4px; }"
             "QTableWidget { selection-background-color: #003366; selection-color: white; }"
             "QTableWidget::item:hover { background-color: #E8F0F8; }"
@@ -148,9 +151,10 @@ class MainWindow(QMainWindow):
             "QPushButton:hover { background-color: #383838; border-color: #505050; }"
             "QPushButton:pressed { background-color: #252525; }"
             "QLabel { background: transparent; color: #D4D4D4; }"
-            "QMenuBar, QMenu { background: #252525; color: #D4D4D4; }"
+            "QMenuBar { background: #1E1E1E; color: #D4D4D4; border-bottom: 1px solid #3E3E3E; }"
+            "QMenu { background: #252525; color: #D4D4D4; border: 1px solid #3E3E3E; }"
             "QMenu::item:selected { background: #37373D; color: #FFFFFF; }"
-            "QStatusBar { background: #252525; color: #D4D4D4; }"
+            "QStatusBar { background: #1E1E1E; color: #D4D4D4; border-top: 1px solid #3E3E3E; }"
             "QHeaderView::section { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; padding: 4px; }"
             "QTableWidget { background: #1E1E1E; alternate-background-color: #252525; gridline-color: #3E3E3E; color: #D4D4D4; selection-background-color: #264F78; selection-color: #FFFFFF; }"
             "QTableWidget::item { color: #D4D4D4; }"
@@ -1275,6 +1279,10 @@ class MainWindow(QMainWindow):
 
     def _prompt_sync_if_newer_available(self):
         try:
+            # Only show notification once per application session
+            if self._cms_notification_shown:
+                return
+
             app = QApplication.instance()
             if app and app.platformName().lower() == "offscreen":
                 return
@@ -1282,8 +1290,13 @@ class MainWindow(QMainWindow):
             year = self._effective_year()
             if not year:
                 return
+
             if not has_newer_cms_file_available(year):
                 return
+
+            # Mark notification as shown for this session
+            self._cms_notification_shown = True
+
             ans = QMessageBox.question(
                 self,
                 "New CMS File Available",
