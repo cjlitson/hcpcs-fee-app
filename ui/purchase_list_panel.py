@@ -60,7 +60,6 @@ class PurchaseListPanel(QWidget):
             "Use checkboxes with ◄ / ► in the center to add or remove items."
         )
         instructions.setWordWrap(True)
-        instructions.setStyleSheet("color: #444444;")
         root.addWidget(instructions)
 
         controls = QHBoxLayout()

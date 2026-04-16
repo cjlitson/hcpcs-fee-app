@@ -545,7 +545,7 @@ def load_bundle(bundle_id):
     return {
         "id": bundle["id"],
         "name": bundle["name"],
-        "category_id": bundle["category_id"] if "category_id" in bundle.keys() else None,
+        "category_id": bundle["category_id"],
         "created_at": bundle["created_at"],
         "updated_at": bundle["updated_at"],
         "items": [dict(r) for r in items],

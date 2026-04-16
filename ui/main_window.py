@@ -28,6 +28,7 @@ from ui.year_selector_dialog import YearSelectorDialog
 from ui.purchase_list_panel import PurchaseListPanel
 
 PURCHASE_PANEL_LEFT_RATIO = 2 / 3
+STALE_SYNC_THRESHOLD_DAYS = 45
 MAIN_COL_SELECT = 0
 MAIN_COL_HCPCS = 1
 MAIN_COL_DESC = 2
@@ -1286,7 +1287,7 @@ class MainWindow(QMainWindow):
             "<p><b>CMS Sync Reminder</b>: The app prompts you to sync if CMS data has not been synced recently.</p>"
             "<p><b>Bundle Preview</b>: In Load Bundle, selecting or hovering a bundle shows HCPCS, description, and quantity preview.</p>"
             "<p><b>Export</b>: Purchase lists can be exported as Word (.docx), PDF, Excel, or CSV with invoice-style formatting.</p>"
-            "<p><b>Keyboard Shortcuts</b>: Ctrl+Right add checked rows, Ctrl+Left remove checked rows, Ctrl+P toggle purchase panel.</p>"
+            "<p><b>Keyboard Shortcuts</b>: Ctrl+Right add checked rows, Ctrl+Left remove checked rows, Ctrl+P toggle purchase panel, Ctrl+Shift+C copy purchase list table.</p>"
             "<p>Developed by the <b>WSNC Impact Team</b>.</p>"
         )
         layout.addWidget(body)
@@ -1315,8 +1316,11 @@ class MainWindow(QMainWindow):
                     try:
                         latest_dt = datetime.strptime(str(latest), "%Y-%m-%d %H:%M:%S")
                     except ValueError:
-                        latest_dt = datetime.fromisoformat(str(latest).replace(" ", "T"))
-                    is_stale = (datetime.now() - latest_dt).days >= 45
+                        try:
+                            latest_dt = datetime.fromisoformat(str(latest).replace(" ", "T"))
+                        except ValueError:
+                            latest_dt = datetime.now()
+                    is_stale = (datetime.now() - latest_dt).days >= STALE_SYNC_THRESHOLD_DAYS
             if not is_stale:
                 return
             today_key = date.today().isoformat()
