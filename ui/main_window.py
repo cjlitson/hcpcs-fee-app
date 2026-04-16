@@ -100,10 +100,9 @@ class MainWindow(QMainWindow):
         self._restore_filter_preferences()
         self._splash_update(85, "Loading fee records…")
         self._set_status("Loading fee records…")
-        # Load initial data before showing window so splash stays visible
-        self._apply_filters()
-        self._splash_update(100, "Ready!")
-        self._splash = None  # release; splash lifetime managed by main.py
+        # Defer the initial query so the window appears before the DB load runs,
+        # but keep splash visible by not releasing it yet
+        QTimer.singleShot(0, self._load_initial_data)
 
         # Background update check
         self._update_worker = None
@@ -516,6 +515,17 @@ class MainWindow(QMainWindow):
         help_menu.addAction(features_action)
 
     # --------------------------------------------------------------- Slots --
+
+    def _load_initial_data(self):
+        """Load initial fee records and close splash when done."""
+        try:
+            self._apply_filters()
+            self._splash_update(100, "Ready!")
+        finally:
+            # Always close splash, even if there's an error
+            if self._splash is not None:
+                self._splash.close()
+                self._splash = None
 
     def _check_first_run(self):
         if get_preference("first_run_done") != "1":
