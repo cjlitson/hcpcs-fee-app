@@ -39,8 +39,10 @@ def tmp_db(tmp_path, monkeypatch):
     """Provide an isolated SQLite database for each test."""
     db_file = tmp_path / "test_hcpcs.db"
     monkeypatch.setattr("core.database.DB_PATH", db_file)
-    from core.database import init_db
+    from core.database import init_db, set_preference
     init_db()
+    # Mark first-run as complete so the setup wizard never opens and blocks tests.
+    set_preference("first_run_done", "1")
     yield db_file
 
 
