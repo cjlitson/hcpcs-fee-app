@@ -156,13 +156,33 @@ def main():
 
     # ---- Step 1: database -----------------------------------------------
     splash.set_progress(10, "Initializing database…")
-    init_db()
+    try:
+        init_db()
+    except Exception as e:
+        splash.close()
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.critical(
+            None,
+            "Database Initialization Error",
+            f"Failed to initialize the database:\n\n{e}\n\nThe application cannot start."
+        )
+        return
 
     # ---- Step 2–5: build main window (it updates the splash internally) --
     splash.set_progress(25, "Building user interface…")
-    window = MainWindow(splash=splash)
-    from core.version import APP_VERSION
-    window.setWindowTitle(f"VA HCPCS Fee Schedule Manager  v{APP_VERSION}")
+    try:
+        window = MainWindow(splash=splash)
+        from core.version import APP_VERSION
+        window.setWindowTitle(f"VA HCPCS Fee Schedule Manager  v{APP_VERSION}")
+    except Exception as e:
+        splash.close()
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.critical(
+            None,
+            "Application Startup Error",
+            f"Failed to initialize the main window:\n\n{e}\n\nPlease check the logs or contact support."
+        )
+        return
 
     # ---- Center on the same screen the splash used ----------------------
     splash_screen = splash.screen()
@@ -175,9 +195,8 @@ def main():
     # ---- Show the main window (splash will close itself after data loads) --
     window.show()
 
-    # Defer the first-run check until after the event loop starts so the
-    # main window is fully painted before the wizard appears.
-    QTimer.singleShot(0, window._check_first_run)
+    # First-run check is now triggered from _load_initial_data after splash closes
+    # to ensure proper sequencing and prevent the wizard from being hidden behind splash
 
     sys.exit(app.exec())
 

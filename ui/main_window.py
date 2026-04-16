@@ -90,25 +90,35 @@ class MainWindow(QMainWindow):
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(250)
         self._search_timer.timeout.connect(self._apply_filters)
-        self._splash_update(30, "Building user interface…")
-        self._init_ui()
-        self._init_menu()
-        self._apply_theme(bool(get_config_value("dark_mode_enabled", False)))
-        self._splash_update(55, "Loading year and state filters…")
-        self._refresh_filters()
-        self._splash_update(70, "Restoring saved preferences…")
-        self._restore_filter_preferences()
-        self._splash_update(85, "Loading fee records…")
-        self._set_status("Loading fee records…")
-        # Defer the initial query so the window appears before the DB load runs,
-        # but keep splash visible by not releasing it yet
-        QTimer.singleShot(0, self._load_initial_data)
 
-        # Background update check
-        self._update_worker = None
-        self._start_update_check()
-        QTimer.singleShot(0, self._warn_if_pending_update_file)
-        QTimer.singleShot(250, self._prompt_sync_if_newer_available)
+        # Wrap initialization in try-except to ensure splash closes on error
+        try:
+            self._splash_update(30, "Building user interface…")
+            self._init_ui()
+            self._init_menu()
+            self._apply_theme(bool(get_config_value("dark_mode_enabled", False)))
+            self._splash_update(55, "Loading year and state filters…")
+            self._refresh_filters()
+            self._splash_update(70, "Restoring saved preferences…")
+            self._restore_filter_preferences()
+            self._splash_update(85, "Loading fee records…")
+            self._set_status("Loading fee records…")
+            # Defer the initial query so the window appears before the DB load runs,
+            # but keep splash visible by not releasing it yet
+            QTimer.singleShot(0, self._load_initial_data)
+
+            # Background update check
+            self._update_worker = None
+            self._start_update_check()
+            QTimer.singleShot(0, self._warn_if_pending_update_file)
+            QTimer.singleShot(250, self._prompt_sync_if_newer_available)
+        except Exception as e:
+            # Close splash and show error if initialization fails
+            if self._splash is not None:
+                self._splash.close()
+                self._splash = None
+            # Re-raise to prevent partially-initialized window from being used
+            raise RuntimeError(f"Failed to initialize main window: {e}") from e
 
     # ------------------------------------------------------------------ UI --
 
@@ -521,11 +531,17 @@ class MainWindow(QMainWindow):
         try:
             self._apply_filters()
             self._splash_update(100, "Ready!")
+        except Exception as e:
+            # Log the error but don't crash - just show empty table
+            print(f"Error loading initial data: {e}")
         finally:
             # Always close splash, even if there's an error
             if self._splash is not None:
                 self._splash.close()
                 self._splash = None
+            # After splash closes, trigger first-run check
+            # Use a small delay to ensure splash closing animation completes
+            QTimer.singleShot(100, self._check_first_run)
 
     def _check_first_run(self):
         if get_preference("first_run_done") != "1":
