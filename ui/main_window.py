@@ -34,6 +34,7 @@ MAIN_COL_YEAR = 4
 MAIN_COL_ALLOWABLE = 5
 MAIN_COL_MODIFIER = 6
 MAIN_COL_SOURCE = 7
+STARTUP_LOG_FILENAME = "HCPCSFeeApp_startup.log"
 
 
 def _asset(name: str) -> Path:
@@ -159,6 +160,15 @@ class MainWindow(QMainWindow):
                 self._splash.set_progress(pct, message)
             except Exception:
                 pass  # Never let splash failures crash startup
+
+    def _write_startup_breadcrumb(self, message: str) -> None:
+        """Append a startup breadcrumb to a temp log file for frozen-startup diagnosis."""
+        try:
+            log_path = Path(tempfile.gettempdir()) / STARTUP_LOG_FILENAME
+            with log_path.open("a", encoding="utf-8") as fh:
+                fh.write(f"[{datetime.now().isoformat(timespec='seconds')}] {message}\n")
+        except Exception:
+            pass
 
     def _init_ui(self):
         central = QWidget()
@@ -436,12 +446,18 @@ class MainWindow(QMainWindow):
         self._remove_btn.hide()
         middle_layout.addStretch()
         self.splitter.addWidget(middle_controls)
-        self._purchase_list_panel = PurchaseListPanel(
-            self,
-            year_combo=self.year_combo,
-            state_combo=self.state_combo,
-            zip_edit=self.zip_edit,
-        )
+        self._write_startup_breadcrumb("MainWindow._init_ui: creating PurchaseListPanel")
+        try:
+            self._purchase_list_panel = PurchaseListPanel(
+                self,
+                year_combo=self.year_combo,
+                state_combo=self.state_combo,
+                zip_edit=self.zip_edit,
+            )
+        except Exception as e:
+            self._write_startup_breadcrumb(f"MainWindow._init_ui: PurchaseListPanel creation failed: {e}")
+            raise
+        self._write_startup_breadcrumb("MainWindow._init_ui: created PurchaseListPanel")
         self._purchase_list_panel.count_changed.connect(self._update_purchase_button_label)
         self._purchase_list_panel.hide()
         self.splitter.addWidget(self._purchase_list_panel)

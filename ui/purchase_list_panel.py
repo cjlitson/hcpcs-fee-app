@@ -58,7 +58,6 @@ class PurchaseListPanel(QWidget):
         header.addWidget(QLabel("Pricing Year:"))
         self._purchase_year_combo = QComboBox()
         self._purchase_year_combo.setFixedWidth(80)
-        self._purchase_year_combo.currentIndexChanged.connect(self.refresh_prices)
         header.addWidget(self._purchase_year_combo)
 
         self.bundle_label = QLabel("Bundle: —")
@@ -138,6 +137,7 @@ class PurchaseListPanel(QWidget):
         root.addLayout(btns)
 
         QShortcut(QKeySequence("Ctrl+Shift+C"), self, activated=self._copy_to_clipboard)
+        self._purchase_year_combo.currentIndexChanged.connect(self.refresh_prices)
         self._restore_table_layout_preferences()
 
     def _populate_year_dropdown(self):
@@ -152,14 +152,18 @@ class PurchaseListPanel(QWidget):
             available_years = get_auto_selected_years()
 
         # Populate combo box
-        self._purchase_year_combo.clear()
-        for year in sorted(available_years, reverse=True):
-            self._purchase_year_combo.addItem(str(year), year)
+        self._purchase_year_combo.blockSignals(True)
+        try:
+            self._purchase_year_combo.clear()
+            for year in sorted(available_years, reverse=True):
+                self._purchase_year_combo.addItem(str(year), year)
 
-        # Default to current year
-        current_idx = self._purchase_year_combo.findData(current_year)
-        if current_idx >= 0:
-            self._purchase_year_combo.setCurrentIndex(current_idx)
+            # Default to current year
+            current_idx = self._purchase_year_combo.findData(current_year)
+            if current_idx >= 0:
+                self._purchase_year_combo.setCurrentIndex(current_idx)
+        finally:
+            self._purchase_year_combo.blockSignals(False)
 
     @staticmethod
     def _checkbox_item(checked=False):
@@ -259,6 +263,8 @@ class PurchaseListPanel(QWidget):
         return preferred.get("allowable_nr") or preferred.get("allowable")
 
     def refresh_prices(self):
+        if not hasattr(self, "table") or not hasattr(self, "grand_total_label"):
+            return
         total = 0.0
         for row in range(self.table.rowCount()):
             code_item = self.table.item(row, 1)
