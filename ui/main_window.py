@@ -74,6 +74,8 @@ class MainWindow(QMainWindow):
     def __init__(self, splash=None):
         super().__init__()
         self._splash = splash
+        self._initial_load_started = False
+        self._first_run_check_started = False
         self.setWindowTitle("VA HCPCS Fee Schedule Manager")
         self.setMinimumSize(1200, 700)
         # Set the window / taskbar icon from the assets folder.
@@ -103,9 +105,7 @@ class MainWindow(QMainWindow):
             self._restore_filter_preferences()
             self._splash_update(85, "Loading fee records…")
             self._set_status("Loading fee records…")
-            # Defer the initial query so the window appears before the DB load runs,
-            # but keep splash visible by not releasing it yet
-            QTimer.singleShot(0, self._load_initial_data)
+            # Initial data load is started from showEvent, after first paint.
 
             # Background update check
             self._update_worker = None
@@ -119,6 +119,10 @@ class MainWindow(QMainWindow):
                 self._splash = None
             # Re-raise to prevent partially-initialized window from being used
             raise RuntimeError(f"Failed to initialize main window: {e}") from e
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._start_initial_load_when_visible()
 
     # ------------------------------------------------------------------ UI --
 
@@ -528,6 +532,9 @@ class MainWindow(QMainWindow):
 
     def _load_initial_data(self):
         """Load initial fee records and close splash when done."""
+        if self._initial_load_started:
+            return
+        self._initial_load_started = True
         try:
             self._apply_filters()
             self._splash_update(100, "Ready!")
@@ -541,7 +548,15 @@ class MainWindow(QMainWindow):
                 self._splash = None
             # After splash closes, trigger first-run check
             # Use a small delay to ensure splash closing animation completes
-            QTimer.singleShot(100, self._check_first_run)
+            if not self._first_run_check_started:
+                self._first_run_check_started = True
+                QTimer.singleShot(100, self._check_first_run)
+
+    def _start_initial_load_when_visible(self):
+        """Start initial data load only after the main window is visible."""
+        if self._initial_load_started:
+            return
+        QTimer.singleShot(0, self._load_initial_data)
 
     def _check_first_run(self):
         if get_preference("first_run_done") != "1":
