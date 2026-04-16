@@ -14,6 +14,8 @@ echo   %APP_NAME%
 echo   Per-User Installer
 echo ========================================
 echo.
+echo This installer updates only the current user profile.
+echo.
 
 :: -- Locate files in AppFiles subfolder relative to this script ---------------
 set SCRIPT_DIR=%~dp0
@@ -33,13 +35,31 @@ echo Creating install directory...
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%"
 
+if exist "%INSTALL_DIR%\%EXE_NAME%" (
+    echo Existing installation detected at:
+    echo   %INSTALL_DIR%
+    echo.
+    echo If update copy fails, close the running app and re-run Install.bat.
+    echo.
+)
+
 :: -- Copy application files --------------------------------------------------
 echo Copying %EXE_NAME%...
 copy /y "%SRC_EXE%" "%INSTALL_DIR%\%EXE_NAME%" >nul
+if errorlevel 1 (
+    echo ERROR: Failed to copy %EXE_NAME%.
+    echo        The app may still be running. Close it and run Install.bat again.
+    echo.
+    pause
+    exit /b 1
+)
 
 if exist "%SRC_ICO%" (
     echo Copying %ICO_NAME%...
     copy /y "%SRC_ICO%" "%INSTALL_DIR%\%ICO_NAME%" >nul
+    if errorlevel 1 (
+        echo WARNING: Failed to copy %ICO_NAME%. Shortcut will use the EXE icon.
+    )
 )
 
 :: -- Create desktop shortcut via temporary VBScript --------------------------
@@ -75,9 +95,14 @@ set VBS_FILE=%TEMP%\create_shortcut_%RANDOM%.vbs
 cscript //nologo "%VBS_FILE%"
 del "%VBS_FILE%"
 
+if not exist "%SHORTCUT_PATH%" (
+    echo WARNING: Desktop shortcut was not created. You can launch the app from:
+    echo   %INSTALL_DIR%\%EXE_NAME%
+)
+
 echo.
 echo ========================================
-echo   Installation complete!
+echo   Installation / Update complete!
 echo ========================================
 echo.
 echo   Installed to : %INSTALL_DIR%
