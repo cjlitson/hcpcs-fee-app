@@ -211,3 +211,23 @@ class TestRestorePreferencesSignals:
             f"code_edit should contain restored value 'E0601', got: {window.code_edit.text()!r}"
         )
         window.close()
+
+
+class TestUiAdjustments:
+    def test_state_dropdown_is_wider_and_arrows_hidden_when_purchase_panel_hidden(self, qapp, tmp_db):
+        from ui.main_window import MainWindow
+
+        with patch("core.database.get_fees", return_value=[]):
+            window = MainWindow()
+        window.show()
+        qapp.processEvents()
+
+        assert window.state_combo.minimumWidth() >= 200
+        assert not window._add_btn.isVisible()
+        assert not window._remove_btn.isVisible()
+
+        window._set_purchase_list_panel_visible(True)
+        qapp.processEvents()
+        assert window._add_btn.isVisible()
+        assert window._remove_btn.isVisible()
+        window.close()

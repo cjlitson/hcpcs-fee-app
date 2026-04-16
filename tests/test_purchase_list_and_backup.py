@@ -122,6 +122,7 @@ def test_purchase_list_csv_export(tmp_path):
     )
     txt = out.read_text(encoding="utf-8")
     assert "VA HCPCS Purchase List" in txt
+    assert "Bundle" not in txt
     assert "Grand Total" in txt
     assert "200.00" in txt
 
@@ -147,7 +148,31 @@ def test_purchase_list_docx_export(tmp_path):
     with zipfile.ZipFile(out, "r") as zf:
         xml = zf.read("word/document.xml").decode("utf-8")
     assert "VA HCPCS Purchase List" in xml
+    assert "PO #" not in xml
     assert "Grand Total" in xml
+
+
+def test_purchase_list_docx_export_includes_po(tmp_path):
+    from core.exporter import export_purchase_list_to_docx
+
+    out = tmp_path / "purchase_po.docx"
+    export_purchase_list_to_docx(
+        [
+            {
+                "hcpcs_code": "L5301",
+                "description": "BK prosthesis",
+                "quantity": 1,
+                "unit_price": 100.0,
+                "line_total": 100.0,
+            }
+        ],
+        out,
+        meta={"year": 2026, "state": "CA", "po_number": "PO-12345"},
+    )
+    with zipfile.ZipFile(out, "r") as zf:
+        xml = zf.read("word/document.xml").decode("utf-8")
+    assert "PO #" in xml
+    assert "PO-12345" in xml
 
 
 def test_purchase_list_pdf_export(tmp_path):
@@ -169,3 +194,28 @@ def test_purchase_list_pdf_export(tmp_path):
     )
     assert out.exists()
     assert out.read_bytes().startswith(b"%PDF")
+
+
+def test_bundle_categories_crud_and_move(tmp_db):
+    from core.database import (
+        create_bundle_category,
+        delete_bundle_category,
+        list_bundle_categories,
+        list_bundles,
+        save_bundle,
+        set_bundle_category,
+    )
+
+    cat_id = create_bundle_category("BK")
+    assert any(c["id"] == cat_id and c["name"] == "BK" for c in list_bundle_categories())
+
+    bundle_id = save_bundle("Test Bundle", [{"hcpcs_code": "L5301", "quantity": 1, "sort_order": 0}], category_id=cat_id)
+    bundles = list_bundles()
+    assert any(b["id"] == bundle_id and b["category_id"] == cat_id for b in bundles)
+
+    set_bundle_category(bundle_id, None)
+    bundles = list_bundles()
+    assert any(b["id"] == bundle_id and b["category_id"] is None for b in bundles)
+
+    delete_bundle_category(cat_id)
+    assert all(c["id"] != cat_id for c in list_bundle_categories())

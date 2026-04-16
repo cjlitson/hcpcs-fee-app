@@ -107,6 +107,16 @@ def init_db():
             CREATE TABLE IF NOT EXISTS purchase_list_bundles (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 name        TEXT NOT NULL UNIQUE,
+                category_id INTEGER,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (category_id) REFERENCES purchase_list_bundle_categories(id) ON DELETE SET NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS purchase_list_bundle_categories (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL UNIQUE,
                 created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -126,9 +136,11 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_rural_zips ON rural_zips(year, zip5)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bundle_items_bundle ON purchase_list_bundle_items(bundle_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bundle_items_code ON purchase_list_bundle_items(hcpcs_code)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_bundles_category_id ON purchase_list_bundles(category_id)")
 
         # Lightweight migration: add new columns to hcpcs_fees if they don't exist
         _migrate_hcpcs_fees(conn)
+        _migrate_purchase_bundles(conn)
     conn.close()
 
 
@@ -141,6 +153,15 @@ def _migrate_hcpcs_fees(conn):
     for col, coltype in (("allowable_nr", "REAL"), ("allowable_r", "REAL")):
         if col not in existing:
             conn.execute(f"ALTER TABLE hcpcs_fees ADD COLUMN {col} {coltype}")
+
+
+def _migrate_purchase_bundles(conn):
+    existing = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(purchase_list_bundles)").fetchall()
+    }
+    if "category_id" not in existing:
+        conn.execute("ALTER TABLE purchase_list_bundles ADD COLUMN category_id INTEGER")
 
 
 def get_selected_states():
@@ -434,7 +455,7 @@ def get_available_hcpcs_prefixes():
 # Purchase list bundle helpers
 # ---------------------------------------------------------------------------
 
-def save_bundle(name, items):
+def save_bundle(name, items, category_id=None):
     """Create or replace a named purchase-list bundle.
 
     *name* is a unique bundle name.
@@ -470,14 +491,19 @@ def save_bundle(name, items):
         if existing:
             bundle_id = existing["id"]
             conn.execute(
-                "UPDATE purchase_list_bundles SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (bundle_id,),
+                """
+                UPDATE purchase_list_bundles
+                SET updated_at = CURRENT_TIMESTAMP,
+                    category_id = ?
+                WHERE id = ?
+                """,
+                (category_id, bundle_id),
             )
             conn.execute("DELETE FROM purchase_list_bundle_items WHERE bundle_id = ?", (bundle_id,))
         else:
             cur = conn.execute(
-                "INSERT INTO purchase_list_bundles (name) VALUES (?)",
-                (bundle_name,),
+                "INSERT INTO purchase_list_bundles (name, category_id) VALUES (?, ?)",
+                (bundle_name, category_id),
             )
             bundle_id = cur.lastrowid
         if normalized_items:
@@ -497,7 +523,7 @@ def load_bundle(bundle_id):
     conn = _get_conn()
     bundle = conn.execute(
         """
-        SELECT id, name, created_at, updated_at
+        SELECT id, name, category_id, created_at, updated_at
         FROM purchase_list_bundles
         WHERE id = ?
         """,
@@ -519,6 +545,7 @@ def load_bundle(bundle_id):
     return {
         "id": bundle["id"],
         "name": bundle["name"],
+        "category_id": bundle["category_id"] if "category_id" in bundle.keys() else None,
         "created_at": bundle["created_at"],
         "updated_at": bundle["updated_at"],
         "items": [dict(r) for r in items],
@@ -533,13 +560,16 @@ def list_bundles():
         SELECT
             b.id,
             b.name,
+            b.category_id,
+            c.name AS category_name,
             b.created_at,
             b.updated_at,
             COUNT(i.id) AS item_count
         FROM purchase_list_bundles b
+        LEFT JOIN purchase_list_bundle_categories c ON c.id = b.category_id
         LEFT JOIN purchase_list_bundle_items i ON i.bundle_id = b.id
-        GROUP BY b.id, b.name, b.created_at, b.updated_at
-        ORDER BY LOWER(b.name), b.id
+        GROUP BY b.id, b.name, b.category_id, c.name, b.created_at, b.updated_at
+        ORDER BY LOWER(COALESCE(c.name, '')), LOWER(b.name), b.id
         """
     ).fetchall()
     conn.close()
@@ -569,5 +599,78 @@ def rename_bundle(bundle_id, new_name):
             WHERE id = ?
             """,
             (name, bundle_id),
+        )
+    conn.close()
+
+
+def list_bundle_categories():
+    conn = _get_conn()
+    rows = conn.execute(
+        """
+        SELECT id, name, created_at, updated_at
+        FROM purchase_list_bundle_categories
+        ORDER BY LOWER(name), id
+        """
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def create_bundle_category(name):
+    category_name = (name or "").strip()
+    if not category_name:
+        raise ValueError("Category name is required.")
+    conn = _get_conn()
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO purchase_list_bundle_categories (name) VALUES (?)",
+            (category_name,),
+        )
+        category_id = cur.lastrowid
+    conn.close()
+    return category_id
+
+
+def rename_bundle_category(category_id, new_name):
+    category_name = (new_name or "").strip()
+    if not category_name:
+        raise ValueError("Category name is required.")
+    conn = _get_conn()
+    with conn:
+        conn.execute(
+            """
+            UPDATE purchase_list_bundle_categories
+            SET name = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (category_name, category_id),
+        )
+    conn.close()
+
+
+def delete_bundle_category(category_id):
+    conn = _get_conn()
+    with conn:
+        conn.execute(
+            "UPDATE purchase_list_bundles SET category_id = NULL WHERE category_id = ?",
+            (category_id,),
+        )
+        conn.execute(
+            "DELETE FROM purchase_list_bundle_categories WHERE id = ?",
+            (category_id,),
+        )
+    conn.close()
+
+
+def set_bundle_category(bundle_id, category_id):
+    conn = _get_conn()
+    with conn:
+        conn.execute(
+            """
+            UPDATE purchase_list_bundles
+            SET category_id = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (category_id, bundle_id),
         )
     conn.close()
