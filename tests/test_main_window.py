@@ -127,6 +127,24 @@ class TestDeferredLoading:
             )
         window.close()
 
+    def test_apply_filters_does_not_run_until_window_visible(self, qapp, tmp_db):
+        """The initial deferred load must wait until the main window is shown."""
+        from ui.main_window import MainWindow
+
+        with patch("ui.main_window.get_fees", return_value=[]) as mock_gf:
+            window = MainWindow()
+            _pump_events(qapp, ms=200)
+            assert mock_gf.call_count == 0, (
+                "get_fees should not run before the main window is visible."
+            )
+
+            window.show()
+            _pump_events(qapp, ms=200)
+            assert mock_gf.call_count >= 1, (
+                "get_fees should run after the main window is shown."
+            )
+        window.close()
+
     def test_status_updated_after_load(self, qapp, tmp_db):
         """Status bar should show a record count after the deferred load completes."""
         from ui.main_window import MainWindow
