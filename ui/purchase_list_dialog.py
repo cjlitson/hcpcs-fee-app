@@ -18,19 +18,26 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
 )
 
 from core.database import (
+    create_bundle_category,
     delete_bundle,
+    delete_bundle_category,
     get_available_years,
     get_current_year_or_fallback,
     get_fees,
     get_selected_states,
     is_rural_zip,
+    list_bundle_categories,
     list_bundles,
     load_bundle,
+    rename_bundle_category,
     rename_bundle,
+    set_bundle_category,
     save_bundle,
 )
 from core.exporter import (
@@ -52,16 +59,14 @@ class BundlePickerDialog(QDialog):
 
     def _init_ui(self):
         root = QVBoxLayout(self)
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Name", "# Items", "Created", "Last Updated"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.setMouseTracking(True)
-        self.table.doubleClicked.connect(self._load_selected)
-        self.table.itemSelectionChanged.connect(self._preview_selected_bundle)
-        self.table.cellEntered.connect(self._preview_hover_row)
-        root.addWidget(self.table, 1)
+        self.bundle_tree = QTreeWidget()
+        self.bundle_tree.setColumnCount(4)
+        self.bundle_tree.setHeaderLabels(["Name", "# Items", "Created", "Last Updated"])
+        self.bundle_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.bundle_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.bundle_tree.itemSelectionChanged.connect(self._preview_selected_bundle)
+        self.bundle_tree.itemDoubleClicked.connect(lambda *_: self._load_selected())
+        root.addWidget(self.bundle_tree, 1)
 
         root.addWidget(QLabel("Bundle Preview"))
         self.preview_table = QTableWidget(0, 3)
@@ -73,14 +78,26 @@ class BundlePickerDialog(QDialog):
         root.addWidget(self.preview_table, 1)
 
         btns = QHBoxLayout()
+        new_cat_btn = QPushButton("New Category")
+        rename_cat_btn = QPushButton("Rename Category")
+        delete_cat_btn = QPushButton("Delete Category")
+        move_btn = QPushButton("Move Bundle")
         rename_btn = QPushButton("Rename")
         delete_btn = QPushButton("Delete")
         load_btn = QPushButton("Load")
         cancel_btn = QPushButton("Cancel")
+        new_cat_btn.clicked.connect(self._create_category)
+        rename_cat_btn.clicked.connect(self._rename_category)
+        delete_cat_btn.clicked.connect(self._delete_category)
+        move_btn.clicked.connect(self._move_bundle)
         rename_btn.clicked.connect(self._rename_selected)
         delete_btn.clicked.connect(self._delete_selected)
         load_btn.clicked.connect(self._load_selected)
         cancel_btn.clicked.connect(self.reject)
+        btns.addWidget(new_cat_btn)
+        btns.addWidget(rename_cat_btn)
+        btns.addWidget(delete_cat_btn)
+        btns.addWidget(move_btn)
         btns.addWidget(rename_btn)
         btns.addWidget(delete_btn)
         btns.addStretch()
@@ -89,34 +106,85 @@ class BundlePickerDialog(QDialog):
         root.addLayout(btns)
 
     def _refresh(self):
+        current_bundle_id = self._current_bundle_id()
+        self.bundle_tree.clear()
+        categories = list_bundle_categories()
         bundles = list_bundles()
-        self.table.setRowCount(len(bundles))
-        for row, bundle in enumerate(bundles):
-            name_item = QTableWidgetItem(bundle["name"])
-            name_item.setData(Qt.ItemDataRole.UserRole, bundle["id"])
-            self.table.setItem(row, 0, name_item)
-            self.table.setItem(row, 1, QTableWidgetItem(str(bundle.get("item_count", 0))))
-            self.table.setItem(row, 2, QTableWidgetItem(bundle.get("created_at", "") or ""))
-            self.table.setItem(row, 3, QTableWidgetItem(bundle.get("updated_at", "") or ""))
-        if bundles:
-            self.table.selectRow(0)
+        cat_nodes = {}
+        uncategorized = QTreeWidgetItem(["Uncategorized"])
+        uncategorized.setData(0, Qt.ItemDataRole.UserRole, {"kind": "category", "id": None})
+        self.bundle_tree.addTopLevelItem(uncategorized)
+        cat_nodes[None] = uncategorized
+        for category in categories:
+            node = QTreeWidgetItem([category["name"]])
+            node.setData(0, Qt.ItemDataRole.UserRole, {"kind": "category", "id": category["id"]})
+            self.bundle_tree.addTopLevelItem(node)
+            cat_nodes[category["id"]] = node
+        for bundle in bundles:
+            parent = cat_nodes.get(bundle.get("category_id"), uncategorized)
+            node = QTreeWidgetItem([
+                bundle["name"],
+                str(bundle.get("item_count", 0)),
+                bundle.get("created_at", "") or "",
+                bundle.get("updated_at", "") or "",
+            ])
+            node.setData(0, Qt.ItemDataRole.UserRole, {"kind": "bundle", "id": bundle["id"]})
+            parent.addChild(node)
+        self.bundle_tree.expandAll()
+        if current_bundle_id is not None:
+            match = self._find_bundle_item(current_bundle_id)
+            if match:
+                self.bundle_tree.setCurrentItem(match)
+        elif bundles:
+            first = self._find_bundle_item(bundles[0]["id"])
+            if first:
+                self.bundle_tree.setCurrentItem(first)
         else:
             self.preview_table.setRowCount(0)
 
     def _current_bundle_id(self):
-        row = self.table.currentRow()
-        if row < 0:
+        item = self.bundle_tree.currentItem()
+        if item is None:
             return None
-        item = self.table.item(row, 0)
-        if not item:
+        payload = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        if payload.get("kind") != "bundle":
             return None
-        return item.data(Qt.ItemDataRole.UserRole)
+        return payload.get("id")
+
+    def _current_category_id(self):
+        item = self.bundle_tree.currentItem()
+        if item is None:
+            return None
+        payload = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        if payload.get("kind") == "category":
+            return payload.get("id")
+        parent = item.parent()
+        if parent:
+            parent_data = parent.data(0, Qt.ItemDataRole.UserRole) or {}
+            return parent_data.get("id")
+        return None
+
+    def _find_bundle_item(self, bundle_id):
+        def walk(node):
+            for i in range(node.childCount()):
+                child = node.child(i)
+                data = child.data(0, Qt.ItemDataRole.UserRole) or {}
+                if data.get("kind") == "bundle" and data.get("id") == bundle_id:
+                    return child
+            return None
+
+        for i in range(self.bundle_tree.topLevelItemCount()):
+            node = self.bundle_tree.topLevelItem(i)
+            found = walk(node)
+            if found:
+                return found
+        return None
 
     def _rename_selected(self):
         bundle_id = self._current_bundle_id()
         if bundle_id is None:
             return
-        current = self.table.item(self.table.currentRow(), 0).text()
+        current = self.bundle_tree.currentItem().text(0)
         new_name, ok = QInputDialog.getText(self, "Rename Bundle", "New bundle name:", text=current)
         if not ok:
             return
@@ -133,7 +201,7 @@ class BundlePickerDialog(QDialog):
         bundle_id = self._current_bundle_id()
         if bundle_id is None:
             return
-        name = self.table.item(self.table.currentRow(), 0).text()
+        name = self.bundle_tree.currentItem().text(0)
         ans = QMessageBox.question(
             self,
             "Delete Bundle",
@@ -153,20 +221,81 @@ class BundlePickerDialog(QDialog):
         self.selected_bundle_id = bundle_id
         self.accept()
 
-    def _preview_hover_row(self, row, _col):
-        item = self.table.item(row, 0)
-        if not item:
-            return
-        bundle_id = item.data(Qt.ItemDataRole.UserRole)
-        if bundle_id is not None:
-            self._populate_preview(bundle_id)
-
     def _preview_selected_bundle(self):
         bundle_id = self._current_bundle_id()
         if bundle_id is None:
             self.preview_table.setRowCount(0)
             return
         self._populate_preview(bundle_id)
+
+    def _create_category(self):
+        name, ok = QInputDialog.getText(self, "New Category", "Category name:")
+        if not ok:
+            return
+        name = name.strip()
+        if not name:
+            return
+        try:
+            create_bundle_category(name)
+            self._refresh()
+        except Exception as exc:
+            QMessageBox.critical(self, "Category Error", str(exc))
+
+    def _rename_category(self):
+        current_id = self._current_category_id()
+        if current_id is None:
+            QMessageBox.information(self, "Select Category", "Select a category to rename.")
+            return
+        item = self.bundle_tree.currentItem()
+        if item is not None and (item.data(0, Qt.ItemDataRole.UserRole) or {}).get("kind") == "bundle":
+            item = item.parent()
+        current_name = item.text(0) if item else ""
+        new_name, ok = QInputDialog.getText(self, "Rename Category", "New category name:", text=current_name)
+        if not ok:
+            return
+        new_name = new_name.strip()
+        if not new_name:
+            return
+        try:
+            rename_bundle_category(current_id, new_name)
+            self._refresh()
+        except Exception as exc:
+            QMessageBox.critical(self, "Category Error", str(exc))
+
+    def _delete_category(self):
+        current_id = self._current_category_id()
+        if current_id is None:
+            QMessageBox.information(self, "Select Category", "Select a category to delete.")
+            return
+        ans = QMessageBox.question(
+            self,
+            "Delete Category",
+            "Delete this category? Bundles will be moved to Uncategorized.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if ans != QMessageBox.StandardButton.Yes:
+            return
+        delete_bundle_category(current_id)
+        self._refresh()
+
+    def _move_bundle(self):
+        bundle_id = self._current_bundle_id()
+        if bundle_id is None:
+            QMessageBox.information(self, "Select Bundle", "Select a bundle to move.")
+            return
+        categories = list_bundle_categories()
+        options = ["Uncategorized"] + [c["name"] for c in categories]
+        chosen, ok = QInputDialog.getItem(self, "Move Bundle", "Move to category:", options, editable=False)
+        if not ok:
+            return
+        category_id = None
+        for category in categories:
+            if category["name"] == chosen:
+                category_id = category["id"]
+                break
+        set_bundle_category(bundle_id, category_id)
+        self._refresh()
 
     def _populate_preview(self, bundle_id):
         payload = load_bundle(bundle_id)
@@ -253,9 +382,9 @@ class PurchaseListDialog(QDialog):
         root.addLayout(totals)
 
         btns = QHBoxLayout()
-        save_bundle_btn = QPushButton("Save as Bundle…")
-        load_bundle_btn = QPushButton("Load Bundle…")
-        export_btn = QPushButton("Export…")
+        save_bundle_btn = QPushButton("Save as Bundle")
+        load_bundle_btn = QPushButton("Load Bundle")
+        export_btn = QPushButton("Export")
         clear_btn = QPushButton("Clear List")
         close_btn = QPushButton("Close")
         save_bundle_btn.clicked.connect(self._save_bundle)

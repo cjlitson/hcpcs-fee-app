@@ -46,8 +46,8 @@ class ImportDialog(QDialog):
         # File selection
         file_row = QHBoxLayout()
         self.file_label = QLabel("No file selected")
-        self.file_label.setStyleSheet("border: 1px solid #ccc; padding: 4px; background: #f9f9f9;")
-        browse_btn = QPushButton("Browse...")
+        self.file_label.setStyleSheet("padding: 4px;")
+        browse_btn = QPushButton("Browse")
         browse_btn.clicked.connect(self._browse)
         file_row.addWidget(QLabel("File:"))
         file_row.addWidget(self.file_label, 1)

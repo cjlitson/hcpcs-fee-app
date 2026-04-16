@@ -177,16 +177,20 @@ def export_to_pdf(records, filepath, is_rural=False, zip_code=""):
     doc.build(story)
 
 
-def _purchase_meta_lines(meta):
+def _purchase_meta_lines(meta, include_po=False):
     generated = meta.get("generated_at") or datetime.now().strftime("%Y-%m-%d %H:%M")
-    return [
-        ("Bundle", meta.get("bundle_name") or "—"),
+    lines = [
         ("Year", str(meta.get("year") or "—")),
         ("State", meta.get("state") or "—"),
         ("ZIP", meta.get("zip_code") or "—"),
         ("Rural Status", meta.get("rural_status") or "Non-Rural (NR)"),
         ("Date Generated", generated),
     ]
+    if include_po:
+        po_number = (meta.get("po_number") or "").strip()
+        if po_number:
+            lines.insert(0, ("PO #", po_number))
+    return lines
 
 
 def export_purchase_list_to_csv(items, filepath, meta=None):
@@ -293,7 +297,7 @@ def export_purchase_list_to_pdf(items, filepath, meta=None):
     doc = SimpleDocTemplate(str(filepath), pagesize=letter, topMargin=36, bottomMargin=36, leftMargin=36, rightMargin=36)
     styles = getSampleStyleSheet()
     story = [Paragraph("<font name='Helvetica-Bold' color='#003366'>VA HCPCS Purchase List</font>", styles["Title"]), Spacer(1, 8)]
-    for key, value in _purchase_meta_lines(meta):
+    for key, value in _purchase_meta_lines(meta, include_po=True):
         story.append(Paragraph(f"<b>{key}:</b> {value}", styles["Normal"]))
     story.append(Spacer(1, 10))
     data = [["HCPCS Code", "Description", "Quantity", "Unit Price", "Line Total"]]
@@ -346,7 +350,7 @@ def export_purchase_list_to_docx(items, filepath, meta=None):
     heading.runs[0].font.size = None
     heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
-    for key, value in _purchase_meta_lines(meta):
+    for key, value in _purchase_meta_lines(meta, include_po=True):
         p = doc.add_paragraph()
         p.add_run(f"{key}: ").bold = True
         p.add_run(str(value))

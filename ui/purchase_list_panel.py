@@ -1,12 +1,13 @@
 from datetime import datetime
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QDialog,
-    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -17,6 +18,7 @@ from PyQt6.QtWidgets import (
     QInputDialog,
 )
 
+from core.config import get_config_value, set_config_value
 from core.database import (
     delete_bundle,
     get_fees,
@@ -25,12 +27,7 @@ from core.database import (
     load_bundle,
     save_bundle,
 )
-from core.exporter import (
-    export_purchase_list_to_csv,
-    export_purchase_list_to_docx,
-    export_purchase_list_to_excel,
-    export_purchase_list_to_pdf,
-)
+from ui.export_dialog import ExportDialog
 from ui.purchase_list_dialog import BundlePickerDialog
 
 
@@ -58,8 +55,22 @@ class PurchaseListPanel(QWidget):
         self.bundle_label = QLabel("Bundle: —")
         header.addWidget(self.bundle_label)
         root.addLayout(header)
+        instructions = QLabel(
+            "Type an HCPCS code in Quick Add and press Enter. "
+            "Use checkboxes with ◄ / ► in the center to add or remove items."
+        )
+        instructions.setWordWrap(True)
+        root.addWidget(instructions)
 
         controls = QHBoxLayout()
+        controls.addWidget(QLabel("Quick Add HCPCS:"))
+        self.quick_add_edit = QLineEdit()
+        self.quick_add_edit.setPlaceholderText("e.g. L5301")
+        self.quick_add_edit.returnPressed.connect(self._quick_add_from_input)
+        controls.addWidget(self.quick_add_edit, 1)
+        quick_add_btn = QPushButton("Add")
+        quick_add_btn.clicked.connect(self._quick_add_from_input)
+        controls.addWidget(quick_add_btn)
         controls.addStretch()
         select_all_btn = QPushButton("Select All")
         deselect_all_btn = QPushButton("Deselect All")
@@ -74,11 +85,15 @@ class PurchaseListPanel(QWidget):
             ["", "HCPCS Code", "Description", "Qty", "Unit Price", "Line Total"]
         )
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().setSectionsMovable(True)
+        self.table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.horizontalHeader().sectionMoved.connect(self._save_table_layout_preferences)
+        self.table.horizontalHeader().sectionResized.connect(self._save_table_layout_preferences)
         root.addWidget(self.table, 1)
 
         totals = QHBoxLayout()
@@ -90,10 +105,16 @@ class PurchaseListPanel(QWidget):
         root.addLayout(totals)
 
         btns = QHBoxLayout()
-        save_bundle_btn = QPushButton("Save Bundle…")
-        load_bundle_btn = QPushButton("Load Bundle…")
-        export_btn = QPushButton("Export…")
+        save_bundle_btn = QPushButton("Save Bundle")
+        load_bundle_btn = QPushButton("Load Bundle")
+        export_btn = QPushButton("Export")
         clear_btn = QPushButton("Clear")
+        for btn in (save_bundle_btn, load_bundle_btn, export_btn, clear_btn):
+            btn.setStyleSheet(
+                "QPushButton { background-color: #F1F3F6; border: 1px solid #AEB6C2; "
+                "padding: 6px 10px; border-radius: 4px; font-weight: 600; }"
+                "QPushButton:hover { background-color: #E5EBF4; }"
+            )
         save_bundle_btn.clicked.connect(self._save_bundle)
         load_bundle_btn.clicked.connect(self._load_bundle)
         export_btn.clicked.connect(self._export)
@@ -103,6 +124,9 @@ class PurchaseListPanel(QWidget):
         btns.addWidget(export_btn)
         btns.addWidget(clear_btn)
         root.addLayout(btns)
+
+        QShortcut(QKeySequence("Ctrl+Shift+C"), self, activated=self._copy_to_clipboard)
+        self._restore_table_layout_preferences()
 
     @staticmethod
     def _checkbox_item(checked=False):
@@ -157,6 +181,19 @@ class PurchaseListPanel(QWidget):
         self.table.setItem(row, 4, QTableWidgetItem("—"))
         self.table.setItem(row, 5, QTableWidgetItem("—"))
         self.refresh_prices()
+
+    def _quick_add_from_input(self):
+        code = (self.quick_add_edit.text() or "").strip().upper()
+        if not code:
+            return
+        recs = get_fees(hcpcs_code=code)
+        exact = [r for r in recs if (r.get("hcpcs_code") or "").upper() == code]
+        if not exact:
+            QMessageBox.warning(self, "Code Not Found", f"HCPCS code '{code}' was not found.")
+            return
+        desc = exact[0].get("description") or ""
+        self.add_code(code, desc)
+        self.quick_add_edit.clear()
 
     def _lookup_description(self, code):
         records = get_fees(
@@ -309,34 +346,39 @@ class PurchaseListPanel(QWidget):
         if not items:
             QMessageBox.information(self, "No Items", "No purchase list items to export.")
             return
-        default_name = "purchase_list"
-        filters = "Word Documents (*.docx);;PDF Files (*.pdf);;Excel Files (*.xlsx);;CSV Files (*.csv)"
-        path, _ = QFileDialog.getSaveFileName(self, "Export Purchase List", default_name, filters)
-        if not path:
-            return
-        suffix = path.lower().split(".")[-1] if "." in path else ""
         meta = {
-            "bundle_name": self._bundle_name or "",
             "year": self._effective_year(),
             "state": self._state_abbr() or "",
             "zip_code": self._zip_code(),
             "rural_status": "Rural (R)" if self._is_rural() else "Non-Rural (NR)",
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         }
-        try:
-            if suffix == "docx":
-                export_purchase_list_to_docx(items, path, meta=meta)
-            elif suffix == "pdf":
-                export_purchase_list_to_pdf(items, path, meta=meta)
-            elif suffix == "xlsx":
-                export_purchase_list_to_excel(items, path, meta=meta)
-            else:
-                if suffix != "csv":
-                    path = f"{path}.csv"
-                export_purchase_list_to_csv(items, path, meta=meta)
-            QMessageBox.information(self, "Export Complete", f"Purchase list exported to:\n{path}")
-        except Exception as exc:
-            QMessageBox.critical(self, "Export Error", f"Export failed:\n{exc}")
+        dlg = ExportDialog(
+            parent=self,
+            purchase_items=items,
+            purchase_meta=meta,
+        )
+        dlg.exec()
+
+    def _copy_to_clipboard(self):
+        items = self._collect_items()
+        if not items:
+            return
+        headers = ["HCPCS Code", "Description", "Quantity", "Unit Price", "Line Total"]
+        lines = ["\t".join(headers)]
+        for item in items:
+            unit = item.get("unit_price")
+            line = item.get("line_total")
+            lines.append("\t".join([
+                str(item.get("hcpcs_code", "")),
+                str(item.get("description", "")),
+                str(item.get("quantity", 1)),
+                "" if unit is None else f"{unit:.2f}",
+                "" if line is None else f"{line:.2f}",
+            ]))
+        from PyQt6.QtWidgets import QApplication
+        QApplication.clipboard().setText("\n".join(lines))
+        QMessageBox.information(self, "Copied", "Purchase list copied to clipboard.")
 
     def remove_checked_items(self):
         removed = 0
@@ -376,3 +418,32 @@ class PurchaseListPanel(QWidget):
         self._bundle_name = None
         self.bundle_label.setText("Bundle: —")
         self.refresh_prices()
+
+    def _table_layout_key(self):
+        return "purchase_list_table_layout_v1"
+
+    def _restore_table_layout_preferences(self):
+        header = self.table.horizontalHeader()
+        state = get_config_value(self._table_layout_key(), "")
+        if not state:
+            self.table.setColumnWidth(1, 110)
+            self.table.setColumnWidth(2, 320)
+            self.table.setColumnWidth(3, 70)
+            self.table.setColumnWidth(4, 110)
+            self.table.setColumnWidth(5, 110)
+            return
+        try:
+            import base64
+            from PyQt6.QtCore import QByteArray
+            raw = base64.b64decode(state.encode("ascii"))
+            header.restoreState(QByteArray(raw))
+        except Exception:
+            pass
+
+    def _save_table_layout_preferences(self, *_args):
+        try:
+            import base64
+            encoded = base64.b64encode(bytes(self.table.horizontalHeader().saveState())).decode("ascii")
+            set_config_value(self._table_layout_key(), encoded)
+        except Exception:
+            pass

@@ -1,6 +1,6 @@
 import sys
 import tempfile
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize
 from PyQt6.QtGui import QAction, QFont, QColor, QIcon, QPixmap, QShortcut, QKeySequence
 
+from core.config import get_config_value, set_config_value
 from core.database import (
     get_fees, get_selected_states, get_available_years, get_import_log,
     get_preference, set_preference, get_selected_years, save_selected_years,
@@ -27,6 +28,7 @@ from ui.year_selector_dialog import YearSelectorDialog
 from ui.purchase_list_panel import PurchaseListPanel
 
 PURCHASE_PANEL_LEFT_RATIO = 2 / 3
+STALE_SYNC_THRESHOLD_DAYS = 45
 MAIN_COL_SELECT = 0
 MAIN_COL_HCPCS = 1
 MAIN_COL_DESC = 2
@@ -93,6 +95,7 @@ class MainWindow(QMainWindow):
         self._splash_update(30, "Building user interface…")
         self._init_ui()
         self._init_menu()
+        self._apply_theme(bool(get_config_value("dark_mode_enabled", False)))
         self._splash_update(55, "Loading year and state filters…")
         self._refresh_filters()
         self._splash_update(70, "Restoring saved preferences…")
@@ -108,6 +111,7 @@ class MainWindow(QMainWindow):
         self._update_worker = None
         self._start_update_check()
         QTimer.singleShot(0, self._warn_if_pending_update_file)
+        QTimer.singleShot(250, self._prompt_sync_if_stale)
 
     # ------------------------------------------------------------------ UI --
 
@@ -125,10 +129,22 @@ class MainWindow(QMainWindow):
         root = QVBoxLayout(central)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(6)
-        self.setStyleSheet(
-            "QLineEdit, QComboBox { border: 1px solid #C9CED6; border-radius: 4px; padding: 4px 6px; min-height: 28px; }"
-            "QPushButton { min-height: 30px; border-radius: 4px; padding: 5px 10px; }"
+        self._light_theme_qss = (
+            "QWidget { background: #FFFFFF; color: #202124; }"
+            "QLineEdit, QComboBox { border: 1px solid #C9CED6; border-radius: 4px; padding: 4px 6px; min-height: 28px; background: #FFFFFF; }"
+            "QPushButton { min-height: 30px; border-radius: 4px; padding: 5px 10px; border: 1px solid #AAB2BF; background: #F8F9FB; }"
             "QPushButton:hover { background-color: #EAF0F8; }"
+            "QMenuBar, QMenu { background: #FFFFFF; color: #202124; }"
+            "QHeaderView::section { background: #EEF2F7; color: #202124; }"
+        )
+        self._dark_theme_qss = (
+            "QWidget { background: #1E1E1E; color: #E6E6E6; }"
+            "QLineEdit, QComboBox, QTableWidget, QTextEdit { background: #2A2A2A; color: #E6E6E6; border: 1px solid #555; border-radius: 4px; padding: 4px 6px; min-height: 28px; }"
+            "QPushButton { min-height: 30px; border-radius: 4px; padding: 5px 10px; border: 1px solid #666; background: #343434; color: #F2F2F2; }"
+            "QPushButton:hover { background-color: #3F3F3F; }"
+            "QMenuBar, QMenu, QStatusBar { background: #252525; color: #E6E6E6; }"
+            "QHeaderView::section { background: #303030; color: #E6E6E6; }"
+            "QTableWidget { alternate-background-color: #262626; gridline-color: #4A4A4A; }"
         )
 
         # ---- Update notification bar (hidden by default) ----
@@ -140,7 +156,8 @@ class MainWindow(QMainWindow):
             "font-size: 12px;"
         )
         self._update_bar_widget = QWidget()
-        self._update_bar_widget.setStyleSheet(f"QWidget {{ {bar_style} }}")
+        self._update_bar_widget.setObjectName("updateBarWidget")
+        self._update_bar_widget.setStyleSheet(f"#updateBarWidget {{ {bar_style} }}")
         update_bar_layout = QHBoxLayout(self._update_bar_widget)
         update_bar_layout.setContentsMargins(12, 6, 12, 6)
         update_bar_layout.setSpacing(10)
@@ -169,8 +186,9 @@ class MainWindow(QMainWindow):
 
         # ---- Toolbar (two rows) ----
         toolbar_card = QWidget()
+        toolbar_card.setObjectName("toolbarCard")
         toolbar_card.setStyleSheet(
-            "QWidget { background-color: #F5F6F8; border: 1px solid #D8DDE6; border-radius: 6px; }"
+            "#toolbarCard { background-color: #F5F6F8; border: 1px solid #D8DDE6; border-radius: 6px; }"
         )
         toolbar_container = QVBoxLayout(toolbar_card)
         toolbar_container.setContentsMargins(10, 8, 10, 8)
@@ -208,7 +226,7 @@ class MainWindow(QMainWindow):
         # State filter
         row1.addWidget(QLabel("State:"))
         self.state_combo = QComboBox()
-        self.state_combo.setMinimumWidth(130)
+        self.state_combo.setMinimumWidth(200)
         self.state_combo.currentIndexChanged.connect(self._apply_filters)
         self.state_combo.currentIndexChanged.connect(self._save_filter_preferences)
         row1.addWidget(self.state_combo)
@@ -286,7 +304,7 @@ class MainWindow(QMainWindow):
 
         row2.addStretch()
 
-        export_btn = QPushButton("Export…")
+        export_btn = QPushButton("Export")
         export_btn.setStyleSheet(
             "background-color: #005A9C; color: white; padding: 6px 14px; font-weight: bold;"
         )
@@ -315,9 +333,9 @@ class MainWindow(QMainWindow):
             "", "HCPCS Code", "Description", "State", "Year",
             "Allowable ($)", "Modifier", "Source",
         ])
-        self.table.horizontalHeader().setSectionResizeMode(MAIN_COL_SELECT, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(MAIN_COL_DESC, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setDefaultSectionSize(100)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().setSectionsMovable(True)
+        self.table.horizontalHeader().setDefaultSectionSize(110)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
@@ -332,6 +350,10 @@ class MainWindow(QMainWindow):
         self.table.cellClicked.connect(self._on_cell_clicked)
         self.table.doubleClicked.connect(self._on_row_double_clicked)
         self.table.setToolTip("Click HCPCS code to view history. Right-click for copy options.")
+        self.table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.table.horizontalHeader().sectionMoved.connect(self._save_main_table_layout_preferences)
+        self.table.horizontalHeader().sectionResized.connect(self._save_main_table_layout_preferences)
         # Context menu
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_table_context_menu)
@@ -342,12 +364,10 @@ class MainWindow(QMainWindow):
         middle_layout.setContentsMargins(4, 4, 4, 4)
         middle_layout.setSpacing(6)
         middle_layout.addStretch()
-        main_all_btn = QPushButton("Main All")
-        main_all_btn.clicked.connect(self._select_all_main_rows)
-        middle_layout.addWidget(main_all_btn)
-        main_none_btn = QPushButton("Main None")
-        main_none_btn.clicked.connect(self._deselect_all_main_rows)
-        middle_layout.addWidget(main_none_btn)
+        self._main_select_all_checkbox = QCheckBox("Select All")
+        self._main_select_all_checkbox.setTristate(True)
+        self._main_select_all_checkbox.stateChanged.connect(self._on_main_select_all_changed)
+        middle_layout.addWidget(self._main_select_all_checkbox)
         add_btn = QPushButton("► Add")
         add_btn.setStyleSheet("font-weight: bold; font-size: 13px; background-color: #003366; color: white;")
         add_btn.clicked.connect(self._add_checked_from_main)
@@ -356,12 +376,12 @@ class MainWindow(QMainWindow):
         remove_btn.setStyleSheet("font-weight: bold; font-size: 13px; background-color: #003366; color: white;")
         remove_btn.clicked.connect(self._remove_checked_from_purchase)
         middle_layout.addWidget(remove_btn)
-        list_all_btn = QPushButton("List All")
-        list_all_btn.clicked.connect(lambda: self._purchase_list_panel.select_all_items())
-        middle_layout.addWidget(list_all_btn)
-        list_none_btn = QPushButton("List None")
-        list_none_btn.clicked.connect(lambda: self._purchase_list_panel.deselect_all_items())
-        middle_layout.addWidget(list_none_btn)
+        add_btn.setText("►")
+        remove_btn.setText("◄")
+        self._add_btn = add_btn
+        self._remove_btn = remove_btn
+        self._add_btn.hide()
+        self._remove_btn.hide()
         middle_layout.addStretch()
         self.splitter.addWidget(middle_controls)
         self._purchase_list_panel = PurchaseListPanel(
@@ -389,6 +409,8 @@ class MainWindow(QMainWindow):
             self,
             activated=lambda: self._set_purchase_list_panel_visible(not self._purchase_list_panel_visible),
         )
+        self.table.itemChanged.connect(self._update_main_select_all_checkbox_state)
+        self._restore_main_table_layout_preferences()
 
         # ---- Status bar ----
         self.status_bar = QStatusBar()
@@ -462,6 +484,12 @@ class MainWindow(QMainWindow):
         purchase_list_action.toggled.connect(self._toggle_purchase_list_panel)
         self._purchase_list_action = purchase_list_action
         view_menu.addAction(purchase_list_action)
+        dark_mode_action = QAction("Dark Mode", self)
+        dark_mode_action.setCheckable(True)
+        dark_mode_action.setChecked(bool(get_config_value("dark_mode_enabled", False)))
+        dark_mode_action.toggled.connect(self._toggle_dark_mode)
+        self._dark_mode_action = dark_mode_action
+        view_menu.addAction(dark_mode_action)
 
         # Developer Tools
         dev_menu = menubar.addMenu("&Developer Tools")
@@ -775,6 +803,7 @@ class MainWindow(QMainWindow):
                     item.setForeground(Qt.GlobalColor.darkGray)
                 self.table.setItem(row_i, col_i + 1, item)
         self.table.setSortingEnabled(True)
+        self._recompute_main_select_all_checkbox_state()
 
     def _on_cell_clicked(self, row, col):
         """Open history dialog when the HCPCS code cell (column 0) is clicked."""
@@ -961,11 +990,23 @@ class MainWindow(QMainWindow):
         if added:
             self._set_purchase_list_panel_visible(True)
             self._set_status(f"Added {added} item(s) to purchase list.")
+        else:
+            QMessageBox.information(
+                self,
+                "No Selection",
+                "Select at least one item using the checkboxes before adding.",
+            )
 
     def _remove_checked_from_purchase(self):
         removed = self._purchase_list_panel.remove_checked_items()
         if removed:
             self._set_status(f"Removed {removed} item(s) from purchase list.")
+        else:
+            QMessageBox.information(
+                self,
+                "No Selection",
+                "Select at least one item using the checkboxes before removing.",
+            )
 
     def _toggle_purchase_list_panel(self, checked):
         self._set_purchase_list_panel_visible(bool(checked))
@@ -980,6 +1021,10 @@ class MainWindow(QMainWindow):
         else:
             self.splitter.setSizes([1, 120, 0])
             self._purchase_list_panel.hide()
+        if getattr(self, "_add_btn", None):
+            self._add_btn.setVisible(visible)
+        if getattr(self, "_remove_btn", None):
+            self._remove_btn.setVisible(visible)
         self._purchase_list_panel_visible = visible
         if getattr(self, "_purchase_btn", None):
             self._purchase_btn.blockSignals(True)
@@ -994,6 +1039,85 @@ class MainWindow(QMainWindow):
             self._purchase_list_action.blockSignals(True)
             self._purchase_list_action.setChecked(visible)
             self._purchase_list_action.blockSignals(False)
+
+    def _on_main_select_all_changed(self, state):
+        if state == Qt.CheckState.PartiallyChecked.value:
+            return
+        if state == Qt.CheckState.Checked.value:
+            self._select_all_main_rows()
+        elif state == Qt.CheckState.Unchecked.value:
+            self._deselect_all_main_rows()
+
+    def _update_main_select_all_checkbox_state(self, item):
+        if item is not None and item.column() != MAIN_COL_SELECT:
+            return
+        self._recompute_main_select_all_checkbox_state()
+
+    def _recompute_main_select_all_checkbox_state(self):
+        if not hasattr(self, "_main_select_all_checkbox"):
+            return
+        total = self.table.rowCount()
+        if total == 0:
+            state = Qt.CheckState.Unchecked
+        else:
+            checked = 0
+            for row in range(total):
+                check_item = self.table.item(row, MAIN_COL_SELECT)
+                if check_item and check_item.checkState() == Qt.CheckState.Checked:
+                    checked += 1
+            if checked == 0:
+                state = Qt.CheckState.Unchecked
+            elif checked == total:
+                state = Qt.CheckState.Checked
+            else:
+                state = Qt.CheckState.PartiallyChecked
+        self._main_select_all_checkbox.blockSignals(True)
+        self._main_select_all_checkbox.setCheckState(state)
+        self._main_select_all_checkbox.blockSignals(False)
+
+    def _toggle_dark_mode(self, enabled):
+        self._apply_theme(bool(enabled))
+        set_config_value("dark_mode_enabled", bool(enabled))
+
+    def _apply_theme(self, dark_enabled):
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(self._dark_theme_qss if dark_enabled else self._light_theme_qss)
+        if getattr(self, "_dark_mode_action", None):
+            self._dark_mode_action.blockSignals(True)
+            self._dark_mode_action.setChecked(bool(dark_enabled))
+            self._dark_mode_action.blockSignals(False)
+
+    def _main_table_layout_key(self):
+        return "main_table_layout_v1"
+
+    def _restore_main_table_layout_preferences(self):
+        state = get_config_value(self._main_table_layout_key(), "")
+        if not state:
+            self.table.setColumnWidth(MAIN_COL_SELECT, 36)
+            self.table.setColumnWidth(MAIN_COL_HCPCS, 110)
+            self.table.setColumnWidth(MAIN_COL_DESC, 420)
+            self.table.setColumnWidth(MAIN_COL_STATE, 90)
+            self.table.setColumnWidth(MAIN_COL_YEAR, 80)
+            self.table.setColumnWidth(MAIN_COL_ALLOWABLE, 120)
+            self.table.setColumnWidth(MAIN_COL_MODIFIER, 100)
+            self.table.setColumnWidth(MAIN_COL_SOURCE, 120)
+            return
+        try:
+            import base64
+            from PyQt6.QtCore import QByteArray
+            raw = base64.b64decode(state.encode("ascii"))
+            self.table.horizontalHeader().restoreState(QByteArray(raw))
+        except Exception:
+            pass
+
+    def _save_main_table_layout_preferences(self, *_args):
+        try:
+            import base64
+            encoded = base64.b64encode(bytes(self.table.horizontalHeader().saveState())).decode("ascii")
+            set_config_value(self._main_table_layout_key(), encoded)
+        except Exception:
+            pass
 
     def _refresh_purchase_list_prices_if_visible(self, *_args):
         if self._purchase_list_panel_visible:
@@ -1154,12 +1278,16 @@ class MainWindow(QMainWindow):
         body.setReadOnly(True)
         body.setHtml(
             "<h2>Feature Guide</h2>"
-            "<p><b>Purchase List Panel</b>: Check rows in the main table, then use <b>► Add</b>. "
-            "Use <b>◄ Remove</b> to remove checked rows from the purchase list.</p>"
-            "<p><b>Select All/Deselect All</b>: Use the Main/List All/None controls between tables for bulk actions.</p>"
+            "<p><b>Purchase List Panel</b>: Check rows in the main table, then use <b>►</b>. "
+            "Use <b>◄</b> to remove checked rows from the purchase list.</p>"
+            "<p><b>Quick Add</b>: Type an HCPCS code directly in the Purchase List panel and press Enter to add it instantly.</p>"
+            "<p><b>Select All</b>: Use the Select All checkbox between tables for bulk selection in the main list.</p>"
+            "<p><b>Export + Preview</b>: Export dialogs now support Print Preview, PO # (Word/PDF purchase list exports), and copy-to-clipboard for purchase list rows.</p>"
+            "<p><b>Dark Mode</b>: Toggle View → Dark Mode to switch themes. Your preference is saved.</p>"
+            "<p><b>CMS Sync Reminder</b>: The app prompts you to sync if CMS data has not been synced recently.</p>"
             "<p><b>Bundle Preview</b>: In Load Bundle, selecting or hovering a bundle shows HCPCS, description, and quantity preview.</p>"
             "<p><b>Export</b>: Purchase lists can be exported as Word (.docx), PDF, Excel, or CSV with invoice-style formatting.</p>"
-            "<p><b>Keyboard Shortcuts</b>: Ctrl+Right add checked rows, Ctrl+Left remove checked rows, Ctrl+P toggle purchase panel.</p>"
+            "<p><b>Keyboard Shortcuts</b>: Ctrl+Right add checked rows, Ctrl+Left remove checked rows, Ctrl+P toggle purchase panel, Ctrl+Shift+C copy purchase list table.</p>"
             "<p>Developed by the <b>WSNC Impact Team</b>.</p>"
         )
         layout.addWidget(body)
@@ -1170,6 +1298,46 @@ class MainWindow(QMainWindow):
         row.addWidget(close_btn)
         layout.addLayout(row)
         dlg.exec()
+
+    def _prompt_sync_if_stale(self):
+        try:
+            app = QApplication.instance()
+            if app and app.platformName().lower() == "offscreen":
+                return
+            logs = get_import_log()
+            cms_entries = [
+                row for row in logs
+                if (row.get("source") or "").lower() in {"cms_download", "cms"}
+            ]
+            is_stale = True
+            if cms_entries:
+                latest = cms_entries[0].get("imported_at")
+                if latest:
+                    try:
+                        latest_dt = datetime.strptime(str(latest), "%Y-%m-%d %H:%M:%S")
+                    except ValueError:
+                        try:
+                            latest_dt = datetime.fromisoformat(str(latest).replace(" ", "T"))
+                        except ValueError:
+                            latest_dt = datetime.now()
+                    is_stale = (datetime.now() - latest_dt).days >= STALE_SYNC_THRESHOLD_DAYS
+            if not is_stale:
+                return
+            today_key = date.today().isoformat()
+            if get_config_value("last_sync_prompt_date", "") == today_key:
+                return
+            set_config_value("last_sync_prompt_date", today_key)
+            ans = QMessageBox.question(
+                self,
+                "CMS Sync Recommended",
+                "CMS fees have not been synced recently. Would you like to sync now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if ans == QMessageBox.StandardButton.Yes:
+                self._sync_cms()
+        except Exception:
+            pass
 
     def _start_update_check(self):
         """Start a background thread to check for app updates."""
