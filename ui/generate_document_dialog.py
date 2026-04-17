@@ -52,14 +52,18 @@ class GenerateDocumentDialog(QDialog):
         self.consult_date_edit.setFixedHeight(24)
 
         self.deliver_to_combo = QComboBox()
-        self.deliver_to_combo.setEditable(True)
         self.deliver_to_combo.setFixedHeight(24)
         self.deliver_to_combo.addItems([
             "Veteran",
-            "Clinic",
             "Prosthetics",
-            "Home Address",
+            "Other",
         ])
+
+        self.deliver_to_other_edit = QLineEdit()
+        self.deliver_to_other_edit.setFixedHeight(24)
+        self.deliver_to_other_edit.setPlaceholderText("Specify delivery destination…")
+        self.deliver_to_other_edit.setVisible(False)
+        self.deliver_to_combo.currentTextChanged.connect(self._on_deliver_to_changed)
 
         # Vendor row with inline save button
         vendor_container = QHBoxLayout()
@@ -89,8 +93,12 @@ class GenerateDocumentDialog(QDialog):
         form.addWidget(self.last4_edit, 0, 3)
         form.addWidget(QLabel("Consult Date"), 1, 0)
         form.addWidget(self.consult_date_edit, 1, 1)
+        deliver_to_container = QHBoxLayout()
+        deliver_to_container.setSpacing(6)
+        deliver_to_container.addWidget(self.deliver_to_combo)
+        deliver_to_container.addWidget(self.deliver_to_other_edit, 1)
         form.addWidget(QLabel("Deliver To"), 1, 2)
-        form.addWidget(self.deliver_to_combo, 1, 3)
+        form.addLayout(deliver_to_container, 1, 3)
         form.addWidget(QLabel("Vendor"), 2, 0)
         form.addLayout(vendor_container, 2, 1, 1, 3)
         form.addWidget(QLabel("Format"), 3, 0)
@@ -142,6 +150,9 @@ class GenerateDocumentDialog(QDialog):
             self.items_table.setItem(row, 2, QTableWidgetItem("" if cost is None else f"{float(cost):.2f}"))
             self.items_table.setItem(row, 3, QTableWidgetItem(str(item.get("description", ""))))
 
+    def _on_deliver_to_changed(self, text: str):
+        self.deliver_to_other_edit.setVisible(text == "Other")
+
     def _save_vendor(self):
         vendor = self.vendor_combo.currentText().strip()
         vendors = save_vendor_name(vendor)
@@ -179,7 +190,11 @@ class GenerateDocumentDialog(QDialog):
             "veteran_last_name": self.veteran_last_name_edit.text().strip(),
             "last4": self.last4_edit.text().strip(),
             "consult_date": self.consult_date_edit.date().toString("yyyy-MM-dd"),
-            "deliver_to": self.deliver_to_combo.currentText().strip(),
+            "deliver_to": (
+                self.deliver_to_other_edit.text().strip()
+                if self.deliver_to_combo.currentText() == "Other"
+                else self.deliver_to_combo.currentText().strip()
+            ),
             "vendor": self.vendor_combo.currentText().strip(),
             "comments": self.comments_edit.toPlainText().strip(),
             "items": items,
