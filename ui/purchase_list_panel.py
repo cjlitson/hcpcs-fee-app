@@ -2,6 +2,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QDialog,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -46,9 +47,16 @@ class PurchaseListPanel(QWidget):
         self.refresh_context_state()
 
     def _init_ui(self):
+        self.setObjectName("purchaseListPanel")
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(6)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(8)
+
+        header_card = QFrame()
+        header_card.setObjectName("purchaseHeaderCard")
+        header_card_layout = QVBoxLayout(header_card)
+        header_card_layout.setContentsMargins(10, 8, 10, 8)
+        header_card_layout.setSpacing(6)
 
         header = QHBoxLayout()
         self.title_label = QLabel("Purchase List (0)")
@@ -58,23 +66,34 @@ class PurchaseListPanel(QWidget):
 
         self.bundle_label = QLabel("Bundle: —")
         header.addWidget(self.bundle_label)
-        root.addLayout(header)
+        header_card_layout.addLayout(header)
 
+        context = QHBoxLayout()
         self.pricing_context_label = QLabel("")
         self.pricing_context_label.setStyleSheet("font-style: italic;")
-        root.addWidget(self.pricing_context_label)
+        context.addWidget(self.pricing_context_label)
+        context.addStretch()
+        header_card_layout.addLayout(context)
+        root.addWidget(header_card)
+
+        context_card = QFrame()
+        context_card.setObjectName("purchaseContextCard")
+        context_card_layout = QVBoxLayout(context_card)
+        context_card_layout.setContentsMargins(10, 8, 10, 8)
+        context_card_layout.setSpacing(6)
 
         self.selection_requirement_label = QLabel("")
         self.selection_requirement_label.setWordWrap(True)
         self.selection_requirement_label.setStyleSheet("font-size: 11px; font-weight: 600; color: #cc0000;")
-        root.addWidget(self.selection_requirement_label)
+        context_card_layout.addWidget(self.selection_requirement_label)
 
         instructions = QLabel(
             "Type an HCPCS code in Quick Add and press Enter. "
             "Use checkboxes with ◄ / ► in the center to add or remove items."
         )
         instructions.setWordWrap(True)
-        root.addWidget(instructions)
+        context_card_layout.addWidget(instructions)
+        root.addWidget(context_card)
 
         controls = QHBoxLayout()
         controls.addWidget(QLabel("Quick Add HCPCS:"))
@@ -83,11 +102,14 @@ class PurchaseListPanel(QWidget):
         self.quick_add_edit.returnPressed.connect(self._quick_add_from_input)
         controls.addWidget(self.quick_add_edit, 1)
         self._quick_add_btn = QPushButton("Add")
+        self._quick_add_btn.setProperty("role", "primary")
         self._quick_add_btn.clicked.connect(self._quick_add_from_input)
         controls.addWidget(self._quick_add_btn)
         controls.addStretch()
         select_all_btn = QPushButton("Select All")
         deselect_all_btn = QPushButton("Deselect All")
+        select_all_btn.setProperty("role", "ghost")
+        deselect_all_btn.setProperty("role", "ghost")
         select_all_btn.clicked.connect(self.select_all_items)
         deselect_all_btn.clicked.connect(self.deselect_all_items)
         controls.addWidget(select_all_btn)
@@ -123,10 +145,10 @@ class PurchaseListPanel(QWidget):
         self._load_bundle_btn = QPushButton("Load Bundle")
         self._generate_btn = QPushButton("Generate Document")
         self._clear_btn = QPushButton("Clear")
-        for btn in (self._save_bundle_btn, self._load_bundle_btn, self._generate_btn, self._clear_btn):
-            btn.setStyleSheet(
-                "QPushButton { padding: 6px 10px; border-radius: 4px; font-weight: 600; }"
-            )
+        self._save_bundle_btn.setProperty("role", "ghost")
+        self._load_bundle_btn.setProperty("role", "ghost")
+        self._generate_btn.setProperty("role", "primary")
+        self._clear_btn.setProperty("role", "ghost")
         self._save_bundle_btn.clicked.connect(self._save_bundle)
         self._load_bundle_btn.clicked.connect(self._load_bundle)
         self._generate_btn.clicked.connect(self._generate_document)

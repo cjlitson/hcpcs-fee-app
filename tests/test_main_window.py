@@ -252,6 +252,25 @@ class TestUiAdjustments:
         assert window._remove_btn.isVisible()
         window.close()
 
+    def test_modernized_sections_exist_and_purchase_toggle_property_tracks_visibility(self, qapp, tmp_db):
+        from ui.main_window import MainWindow
+
+        with patch("core.database.get_fees", return_value=[]):
+            window = MainWindow()
+        window.show()
+        qapp.processEvents()
+
+        assert window.centralWidget().objectName() == "appShell"
+        assert window._update_bar_widget.objectName() == "updateBannerCard"
+        assert window._toolbar_card.objectName() == "filterCard"
+        assert window._purchase_btn.property("role") == "toggle"
+        assert window._purchase_btn.property("active") == "false"
+
+        window._set_purchase_list_panel_visible(True)
+        qapp.processEvents()
+        assert window._purchase_btn.property("active") == "true"
+        window.close()
+
 
 class TestPurchaseListPanelStartup:
     def test_refresh_does_not_run_before_required_widgets_exist(self, qapp, tmp_db, monkeypatch):
