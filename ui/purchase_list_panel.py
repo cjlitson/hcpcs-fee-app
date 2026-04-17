@@ -120,11 +120,10 @@ class PurchaseListPanel(QWidget):
         root.addWidget(context_card)
 
         controls = QHBoxLayout()
-        controls.setSpacing(8)
-        controls.addWidget(QLabel("Quick Add HCPCS:"))
+        controls.setSpacing(6)
+        controls.addWidget(QLabel("Quick Add:"))
         self.quick_add_edit = QLineEdit()
         self.quick_add_edit.setPlaceholderText("e.g. L5301")
-        self.quick_add_edit.setMinimumWidth(220)
         self.quick_add_edit.returnPressed.connect(self._quick_add_from_input)
         self.quick_add_edit.textChanged.connect(self._queue_quick_add_suggestions)
         self._quick_add_completer = QCompleter(self._quick_add_model, self.quick_add_edit)
@@ -138,8 +137,10 @@ class PurchaseListPanel(QWidget):
         self._quick_add_btn.setMinimumWidth(72)
         self._quick_add_btn.clicked.connect(self._quick_add_from_input)
         controls.addWidget(self._quick_add_btn)
-        select_all_btn = QPushButton("Select All")
-        deselect_all_btn = QPushButton("Deselect All")
+        select_all_btn = QPushButton("\u2713 All")
+        deselect_all_btn = QPushButton("\u2717 All")
+        select_all_btn.setToolTip("Select all purchase list rows")
+        deselect_all_btn.setToolTip("Deselect all purchase list rows")
         select_all_btn.setProperty("role", "ghost")
         deselect_all_btn.setProperty("role", "ghost")
         select_all_btn.clicked.connect(self.select_all_items)
@@ -654,10 +655,10 @@ class PurchaseListPanel(QWidget):
         self.refresh_prices()
 
     def _table_layout_key(self):
-        return "purchase_list_table_layout_v2"
+        return "purchase_list_table_layout_v3"
 
     def _legacy_table_layout_key(self):
-        return "purchase_list_table_layout_v1"
+        return "purchase_list_table_layout_v2"
 
     def _restore_table_layout_preferences(self):
         header = self.table.horizontalHeader()
@@ -668,12 +669,12 @@ class PurchaseListPanel(QWidget):
                 state = legacy_state
                 set_config_value(self._table_layout_key(), legacy_state)
         if not state:
-            self.table.setColumnWidth(PURCHASE_COL_HCPCS, 110)
-            self.table.setColumnWidth(PURCHASE_COL_DESCRIPTION, 320)
-            self.table.setColumnWidth(PURCHASE_COL_QTY, 70)
-            self.table.setColumnWidth(PURCHASE_COL_UNIT_PRICE, 110)
-            self.table.setColumnWidth(PURCHASE_COL_LINE_TOTAL, 110)
-            self.table.setColumnWidth(PURCHASE_COL_DELETE, 42)
+            self.table.setColumnWidth(PURCHASE_COL_HCPCS, 100)
+            self.table.setColumnWidth(PURCHASE_COL_DESCRIPTION, 200)
+            self.table.setColumnWidth(PURCHASE_COL_QTY, 54)
+            self.table.setColumnWidth(PURCHASE_COL_UNIT_PRICE, 88)
+            self.table.setColumnWidth(PURCHASE_COL_LINE_TOTAL, 88)
+            self.table.setColumnWidth(PURCHASE_COL_DELETE, 36)
             return
         try:
             import base64

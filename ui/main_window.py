@@ -27,7 +27,7 @@ from ui.state_selector_dialog import StateSelectorDialog
 from ui.purchase_list_panel import PurchaseListPanel
 
 PURCHASE_PANEL_LEFT_RATIO = 2 / 3
-PURCHASE_PANEL_MIN_WIDTH_PX = 360
+PURCHASE_PANEL_MIN_WIDTH_PX = 480
 TRANSFER_RAIL_WIDTH_PX = 72
 TRANSFER_RAIL_BUTTON_SIZE = QSize(40, 34)
 PREFERRED_RESULTS_PANEL_MIN_WIDTH_PX = 420
