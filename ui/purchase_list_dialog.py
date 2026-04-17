@@ -56,6 +56,7 @@ class BundlePickerDialog(QDialog):
         self.setMinimumSize(620, 360)
         self.selected_bundle_id = None
         self._bundle_payload_cache = {}
+        self._description_cache = {}
         self._init_ui()
         self._refresh()
 
@@ -355,11 +356,28 @@ class BundlePickerDialog(QDialog):
         self.preview_table.setRowCount(len(items))
         for row, entry in enumerate(items):
             code = (entry.get("hcpcs_code") or "").upper()
-            description = entry.get("description") or ""
+            description = (entry.get("description") or "").strip()
+            if code and not description:
+                description = self._lookup_description(code)
             qty = max(1, int(entry.get("quantity", 1) or 1))
             self.preview_table.setItem(row, 0, QTableWidgetItem(code))
             self.preview_table.setItem(row, 1, QTableWidgetItem(description))
             self.preview_table.setItem(row, 2, QTableWidgetItem(str(qty)))
+
+    def _lookup_description(self, code):
+        code = (code or "").strip().upper()
+        if not code:
+            return ""
+        if code in self._description_cache:
+            return self._description_cache[code]
+        records = get_fees(hcpcs_code=code)
+        description = ""
+        for rec in records:
+            if (rec.get("hcpcs_code") or "").upper() == code and rec.get("description"):
+                description = rec["description"]
+                break
+        self._description_cache[code] = description
+        return description
 
 
 class PurchaseListDialog(QDialog):
