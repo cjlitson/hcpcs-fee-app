@@ -1,28 +1,22 @@
 """In-app self-updater for VA HCPCS Fee Schedule Manager.
 
 Downloads the latest HCPCSFeeApp.exe from GitHub Releases, saves it next to
-the current executable as HCPCSFeeApp_new.exe, then launches a detached batch
-script that:
+the current executable as HCPCSFeeApp_new.exe, then launches a detached
+dedicated updater helper executable (HCPCSFeeAppUpdater.exe).
 
-  1. Waits up to 30 s for the current process to exit.
-  2. Pauses 2 s so Windows fully releases the file handle.
-  3. Deletes the old exe (up to 10 retries × 1 s each).
-  4. Renames/moves the new exe into place (up to 5 retries × 2 s each).
-  5. Verifies the replacement exists, then re-launches the app.
-  6. Logs every major step to ``%TEMP%\\HCPCSFeeApp_update.log``.
-  7. Leaves a clear manual-recovery message in the log on failure.
-  8. Deletes itself.
-
-Only works when running as a frozen PyInstaller .exe on Windows.  All errors
+Only works when running as a frozen PyInstaller .exe on Windows. All errors
 are surfaced as exceptions so the caller can fall back gracefully.
 """
 
 import os
 import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 UPDATE_LOG_FILENAME = "HCPCSFeeApp_update.log"
+LAUNCHER_LOG_FILENAME = "HCPCSFeeApp_launcher.log"
+UPDATER_HELPER_EXE_NAME = "HCPCSFeeAppUpdater.exe"
 
 
 def _current_exe() -> Path:
@@ -82,115 +76,69 @@ def download_update(asset_url: str, progress_callback=None) -> Path:
 
 
 def apply_update(new_exe: Path) -> None:
-    """Launch the swap batch script and exit the current process.
+    """Launch the updater helper executable and exit the current process.
 
-    The batch script:
-      1. Waits up to 30 s for the current process to exit.
-      2. Pauses briefly to let Windows fully release the file handle.
-      3. Deletes the old exe (up to 10 retries) before renaming.
-      4. Renames/moves the new exe into place (up to 5 retries).
-      5. Verifies the replacement exists, then re-launches the app.
-      6. Logs every major step and leaves a manual-recovery message on failure.
-      7. Deletes itself.
-
-    This function does not return — it calls ``sys.exit(0)`` after launching
-    the script.
+    This function does not return on success — it calls ``sys.exit(0)`` after
+    starting the helper process.
     """
     import subprocess
 
     exe = _current_exe()
     pid = os.getpid()
     log_path = Path(tempfile.gettempdir()) / UPDATE_LOG_FILENAME
+    launcher_log_path = Path(tempfile.gettempdir()) / LAUNCHER_LOG_FILENAME
+    helper_exe = exe.parent / UPDATER_HELPER_EXE_NAME
 
-    # Write the batch script to a temp file
-    fd, bat_path = tempfile.mkstemp(suffix=".bat", prefix="hcpcs_update_")
-    os.close(fd)
+    helper_args = [
+        str(helper_exe),
+        "--current-exe",
+        str(exe),
+        "--new-exe",
+        str(new_exe),
+        "--pid",
+        str(pid),
+        "--log-path",
+        str(log_path),
+    ]
 
-    bat_content = (
-        "@echo off\r\n"
-        "setlocal enabledelayedexpansion\r\n"
-        f"set \"LOG_PATH={log_path}\"\r\n"
-        # ---- step 1: helper started ----
-        "echo [%date% %time%] Helper started. > \"%LOG_PATH%\"\r\n"
-        f"echo [%date% %time%] Waiting for process {pid} to exit... >> \"%LOG_PATH%\"\r\n"
-        # ---- step 2: wait for the original process to exit ----
-        "set /a _wait_tries=0\r\n"
-        ":wait_pid\r\n"
-        "set /a _wait_tries=_wait_tries+1\r\n"
-        "if !_wait_tries! gtr 30 (\r\n"
-        f"    echo [%date% %time%] WARNING: PID {pid} may still be running after 30 s. Continuing anyway. >> \"%LOG_PATH%\"\r\n"
-        "    goto pid_gone\r\n"
-        ")\r\n"
-        f"tasklist /FI \"PID eq {pid}\" /FO CSV /NH 2>NUL | findstr /B \"\\\"{pid}\\\"\" >NUL 2>&1\r\n"
-        "if not errorlevel 1 (\r\n"
-        "    timeout /t 1 /nobreak >NUL\r\n"
-        "    goto wait_pid\r\n"
-        ")\r\n"
-        ":pid_gone\r\n"
-        f"echo [%date% %time%] Process {pid} no longer detected. >> \"%LOG_PATH%\"\r\n"
-        # ---- step 3: brief settle pause so Windows releases file handles ----
-        "echo [%date% %time%] Waiting 2 s for file handles to release... >> \"%LOG_PATH%\"\r\n"
-        "timeout /t 2 /nobreak >NUL\r\n"
-        # ---- step 4: delete old exe (up to 10 retries × 1 s) ----
-        f"echo [%date% %time%] Attempting to remove old exe: {exe} >> \"%LOG_PATH%\"\r\n"
-        "set /a _del_tries=0\r\n"
-        ":del_retry\r\n"
-        f"if not exist \"{exe}\" goto rename_step\r\n"
-        "set /a _del_tries=_del_tries+1\r\n"
-        f"del /F /Q \"{exe}\" >NUL 2>&1\r\n"
-        f"if not exist \"{exe}\" goto rename_step\r\n"
-        "echo [%date% %time%] Delete attempt !_del_tries! failed. >> \"%LOG_PATH%\"\r\n"
-        "if !_del_tries! gtr 10 goto swap_failed\r\n"
-        "timeout /t 1 /nobreak >NUL\r\n"
-        "goto del_retry\r\n"
-        # ---- step 5: rename new exe into place (up to 5 retries × 2 s) ----
-        ":rename_step\r\n"
-        f"echo [%date% %time%] Renaming new exe into place: {new_exe} -> {exe} >> \"%LOG_PATH%\"\r\n"
-        "set /a _ren_tries=0\r\n"
-        ":ren_retry\r\n"
-        "set /a _ren_tries=_ren_tries+1\r\n"
-        f"move /Y \"{new_exe}\" \"{exe}\" >NUL 2>&1\r\n"
-        "if not errorlevel 1 goto verify_step\r\n"
-        "echo [%date% %time%] Rename attempt !_ren_tries! failed. >> \"%LOG_PATH%\"\r\n"
-        "if !_ren_tries! gtr 5 goto swap_failed\r\n"
-        "timeout /t 2 /nobreak >NUL\r\n"
-        "goto ren_retry\r\n"
-        # ---- step 6: verify replacement exists ----
-        ":verify_step\r\n"
-        f"if not exist \"{exe}\" goto swap_failed\r\n"
-        f"echo [%date% %time%] Replacement verified: {exe} >> \"%LOG_PATH%\"\r\n"
-        # ---- step 7: relaunch ----
-        "echo [%date% %time%] Relaunching application... >> \"%LOG_PATH%\"\r\n"
-        f"start \"\" \"{exe}\"\r\n"
-        "echo [%date% %time%] Relaunch command issued successfully. >> \"%LOG_PATH%\"\r\n"
-        "goto end\r\n"
-        # ---- failure path ----
-        ":swap_failed\r\n"
-        "echo [%date% %time%] ERROR: Update failed — could not replace the application file. >> \"%LOG_PATH%\"\r\n"
-        "echo. >> \"%LOG_PATH%\"\r\n"
-        "echo MANUAL RECOVERY INSTRUCTIONS: >> \"%LOG_PATH%\"\r\n"
-        f"echo   1. Close any running instance of HCPCSFeeApp.exe. >> \"%LOG_PATH%\"\r\n"
-        f"echo   2. In File Explorer, navigate to: {exe.parent} >> \"%LOG_PATH%\"\r\n"
-        f"echo   3. Delete (or rename) HCPCSFeeApp.exe if it still exists. >> \"%LOG_PATH%\"\r\n"
-        f"echo   4. Rename HCPCSFeeApp_new.exe to HCPCSFeeApp.exe. >> \"%LOG_PATH%\"\r\n"
-        "echo   5. Launch HCPCSFeeApp.exe normally. >> \"%LOG_PATH%\"\r\n"
-        "echo. >> \"%LOG_PATH%\"\r\n"
-        "echo This log is saved to: %LOG_PATH% >> \"%LOG_PATH%\"\r\n"
-        ":end\r\n"
-        "echo [%date% %time%] Helper finished. >> \"%LOG_PATH%\"\r\n"
-        "del \"%~f0\"\r\n"
-    )
-
-    with open(bat_path, "w", encoding="cp1252") as fh:
-        fh.write(bat_content)
-
-    # Launch the batch script detached (CREATE_NEW_PROCESS_GROUP + DETACHED_PROCESS)
     DETACHED_PROCESS = 0x00000008
     CREATE_NEW_PROCESS_GROUP = 0x00000200
-    subprocess.Popen(
-        ["cmd.exe", "/c", bat_path],
-        creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
-        close_fds=True,
-    )
+    creationflags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+
+    def _launcher_log(message: str) -> None:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(launcher_log_path, "a", encoding="utf-8") as fh:
+            fh.write(f"[{timestamp}] {message}\n")
+
+    _launcher_log("Launch attempt starting.")
+    _launcher_log(f"Current exe: {exe}")
+    _launcher_log(f"Downloaded exe: {new_exe}")
+    _launcher_log(f"Updater helper path: {helper_exe}")
+    _launcher_log(f"Updater log path: {log_path}")
+    _launcher_log(f"Creation flags: {creationflags}")
+
+    if not helper_exe.exists():
+        _launcher_log("ERROR: Updater helper executable not found.")
+        raise RuntimeError(f"Updater helper not found: {helper_exe}")
+
+    try:
+        subprocess.Popen(
+            helper_args,
+            creationflags=creationflags,
+            close_fds=True,
+        )
+        _launcher_log("Updater helper launched successfully.")
+    except Exception as exc:
+        _launcher_log(f"ERROR: Failed to launch updater helper: {exc!r}")
+        raise RuntimeError(f"Failed to launch updater helper: {exc}") from exc
+
+    try:
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+    except Exception as exc:
+        _launcher_log(f"WARNING: QApplication quit failed: {exc!r}")
 
     sys.exit(0)

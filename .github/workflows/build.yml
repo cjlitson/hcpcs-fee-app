@@ -41,12 +41,14 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           pyinstaller --clean --noconfirm hcpcs_fee_app.spec
+          pyinstaller --clean --noconfirm --onefile --name HCPCSFeeAppUpdater updater_main.py
 
       - name: Package ZIP
         run: |
           mkdir dist\AppFiles
           copy assets\wsnc_map.ico dist\AppFiles\wsnc_map.ico
           copy dist\HCPCSFeeApp.exe dist\AppFiles\HCPCSFeeApp.exe
+          copy dist\HCPCSFeeAppUpdater.exe dist\AppFiles\HCPCSFeeAppUpdater.exe
           copy Install.bat dist\Install.bat
           copy INSTALL_README.txt dist\INSTALL_README.txt
           Compress-Archive -Force -Path dist\AppFiles,dist\Install.bat,dist\INSTALL_README.txt -DestinationPath dist\HCPCSFeeApp-Setup.zip
@@ -67,3 +69,4 @@ jobs:
           files: |
             dist\HCPCSFeeApp-Setup.zip
             dist\HCPCSFeeApp.exe
+            dist\HCPCSFeeAppUpdater.exe
