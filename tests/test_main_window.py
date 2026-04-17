@@ -374,6 +374,44 @@ class TestPurchaseListPanelStartup:
         assert l5301_index < l1234_index
         panel.close()
 
+    def test_quick_add_enter_uses_suggestion_when_partial_code_typed(self, qapp, tmp_db, monkeypatch):
+        from ui.purchase_list_panel import PurchaseListPanel
+
+        panel = PurchaseListPanel()
+        monkeypatch.setattr(panel, "_is_ready_for_pricing", lambda: True)
+        panel._quick_add_suggestions = {"L5301 — BK prosthesis": "L5301"}
+        panel._quick_add_model.setStringList(["L5301 — BK prosthesis"])
+        panel.quick_add_edit.setText("L53")
+
+        with patch("ui.purchase_list_panel.get_fees", return_value=[{"hcpcs_code": "L5301", "description": "BK prosthesis"}]):
+            with patch.object(panel, "add_code") as mock_add_code:
+                panel._quick_add_from_input()
+
+        mock_add_code.assert_called_once_with("L5301", "BK prosthesis")
+        assert panel.quick_add_edit.text() == ""
+        panel.close()
+
+    def test_bundle_preview_hydrates_missing_descriptions(self, qapp, tmp_db):
+        from ui.purchase_list_dialog import BundlePickerDialog
+
+        bundle_payload = {
+            "id": 42,
+            "name": "Knee Bundle",
+            "items": [{"hcpcs_code": "L5301", "description": "", "quantity": 2}],
+        }
+
+        with patch("ui.purchase_list_dialog.list_bundle_categories", return_value=[]):
+            with patch("ui.purchase_list_dialog.list_bundles", return_value=[{"id": 42, "name": "Knee Bundle", "item_count": 1}]):
+                with patch("ui.purchase_list_dialog.load_bundle", return_value=bundle_payload):
+                    with patch("ui.purchase_list_dialog.get_fees", return_value=[{"hcpcs_code": "L5301", "description": "BK prosthesis"}]):
+                        dlg = BundlePickerDialog()
+
+        dlg._populate_preview(42)
+        assert dlg.preview_table.item(0, 0).text() == "L5301"
+        assert dlg.preview_table.item(0, 1).text() == "BK prosthesis"
+        assert dlg.preview_table.item(0, 2).text() == "2"
+        dlg.close()
+
 
 class TestPurchaseListContextRules:
     def test_purchase_list_requires_single_year_and_state(self, qapp, tmp_db):

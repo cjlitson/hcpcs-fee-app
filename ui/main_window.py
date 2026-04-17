@@ -27,6 +27,8 @@ from ui.state_selector_dialog import StateSelectorDialog
 from ui.purchase_list_panel import PurchaseListPanel
 
 PURCHASE_PANEL_LEFT_RATIO = 2 / 3
+PURCHASE_PANEL_MIN_WIDTH_PX = 360
+TRANSFER_RAIL_WIDTH_PX = 72
 MAIN_COL_SELECT = 0
 MAIN_COL_HCPCS = 1
 MAIN_COL_DESC = 2
@@ -104,7 +106,7 @@ class MainWindow(QMainWindow):
         self._initial_load_started = False
         self._first_run_check_started = False
         self.setWindowTitle("VA HCPCS Fee Schedule Manager")
-        self.setMinimumSize(1200, 700)
+        self.setMinimumSize(1080, 680)
         # Set the window / taskbar icon from the assets folder.
         icon_path = _asset("wsnc_map.png")
         if icon_path.exists():
@@ -185,7 +187,7 @@ class MainWindow(QMainWindow):
             "QWidget#appShell { background: #F3F5F8; }"
             "QFrame#updateBannerCard, QFrame#filterCard, QFrame#resultsCard, QFrame#footerStrip, QWidget#purchaseListPanel, QFrame#purchaseHeaderCard, QFrame#purchaseContextCard, QFrame#purchaseSummaryCard { background: #FFFFFF; border: 1px solid #D8DDE6; border-radius: 10px; }"
             "QFrame#updateBannerCard { background: #FFF8E1; border-color: #F2D8A7; }"
-            "QFrame#transferRail { background: #EDF1F7; border: 1px solid #D8DDE6; border-radius: 8px; }"
+            "QFrame#transferRail { background: #F3F6FB; border: 1px solid #D8DDE6; border-radius: 8px; }"
             "QFrame#footerStrip { border-radius: 8px; }"
             "QLineEdit, QComboBox { border: 1px solid #C9CED6; border-radius: 6px; padding: 4px 8px; min-height: 24px; background: #FFFFFF; color: #202124; }"
             "QDateEdit { border: 1px solid #C9CED6; border-radius: 6px; padding: 4px 8px; min-height: 24px; background: #FFFFFF; color: #202124; }"
@@ -199,7 +201,7 @@ class MainWindow(QMainWindow):
             "QToolButton { min-height: 28px; border-radius: 6px; padding: 4px 12px; border: 1px solid #AAB2BF; background: #F8F9FB; color: #202124; font-weight: 600; }"
             "QToolButton:hover { background-color: #EAF0F8; }"
             "QToolButton[role='ghost'] { background: #FFFFFF; color: #2E3A48; border: 1px solid #C9CED6; }"
-            "QPushButton[role='rail'] { background: #003366; color: #FFFFFF; border: 1px solid #002244; min-width: 64px; }"
+            "QPushButton[role='rail'] { background: #003366; color: #FFFFFF; border: 1px solid #002244; min-width: 36px; min-height: 32px; padding: 0; border-radius: 8px; }"
             "QPushButton[role='toggle'][active='true'] { background: #003366; color: #FFFFFF; border: 1px solid #002244; }"
             "QPushButton[role='toggle'][active='false'] { background: #005A9C; color: #FFFFFF; border: 1px solid #004B82; }"
             "QLabel#ruralPill { border: 1px solid #C9CED6; border-radius: 11px; background: #F2F4F7; color: #344054; padding: 2px 10px; font-size: 11px; font-weight: 600; }"
@@ -212,9 +214,13 @@ class MainWindow(QMainWindow):
             "QMenu { background: #FFFFFF; color: #202124; border: 1px solid #D8DDE6; }"
             "QMenu::item:selected { background: #EAF0F8; color: #202124; }"
             "QHeaderView::section { background: #EEF2F7; color: #202124; padding: 6px; border: none; border-bottom: 1px solid #D8DDE6; font-weight: 600; }"
-            "QTableWidget { selection-background-color: #003366; selection-color: white; border: 1px solid #D8DDE6; border-radius: 8px; }"
+            "QAbstractItemView { selection-background-color: #0D6EFD; selection-color: #FFFFFF; }"
+            "QAbstractItemView::item:selected { background-color: #0D6EFD; color: #FFFFFF; }"
+            "QAbstractItemView::item:selected:!active { background-color: #4A7AB5; color: #FFFFFF; }"
+            "QTableWidget { selection-background-color: #0D6EFD; selection-color: #FFFFFF; border: 1px solid #D8DDE6; border-radius: 8px; }"
             "QTableCornerButton::section { background: #EEF2F7; border: 1px solid #D8DDE6; }"
-            "QTableWidget::item:selected:!active { background-color: #4A7AB5; color: white; }"
+            "QTableWidget::item:selected { background-color: #0D6EFD; color: #FFFFFF; }"
+            "QTableWidget::item:selected:!active { background-color: #4A7AB5; color: #FFFFFF; }"
             "QTableWidget::item:hover { background-color: #E8F0F8; }"
             "QStatusBar { background: #F3F5F8; color: #2E3A48; border-top: 1px solid #D8DDE6; }"
         )
@@ -223,7 +229,7 @@ class MainWindow(QMainWindow):
             "QWidget#appShell { background: #181B20; }"
             "QFrame#updateBannerCard, QFrame#filterCard, QFrame#resultsCard, QFrame#footerStrip, QWidget#purchaseListPanel, QFrame#purchaseHeaderCard, QFrame#purchaseContextCard, QFrame#purchaseSummaryCard { background: #22262C; border: 1px solid #353C46; border-radius: 10px; }"
             "QFrame#updateBannerCard { background: #3A2F1B; border-color: #6B5632; }"
-            "QFrame#transferRail { background: #1E232A; border: 1px solid #353C46; border-radius: 8px; }"
+            "QFrame#transferRail { background: #1C2128; border: 1px solid #353C46; border-radius: 8px; }"
             "QLineEdit, QComboBox { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 6px; padding: 4px 8px; min-height: 24px; selection-background-color: #264F78; selection-color: #FFFFFF; }"
             "QDateEdit { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 6px; padding: 4px 8px; min-height: 24px; }"
             "QTextEdit { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 3px; padding: 4px 6px; selection-background-color: #264F78; selection-color: #FFFFFF; }"
@@ -239,7 +245,7 @@ class MainWindow(QMainWindow):
             "QToolButton { min-height: 28px; border-radius: 6px; padding: 4px 12px; border: 1px solid #3E3E3E; background: #2D2D2D; color: #D4D4D4; font-weight: 600; }"
             "QToolButton:hover { background-color: #383838; border-color: #505050; }"
             "QToolButton[role='ghost'] { background: #232830; color: #D4D4D4; border: 1px solid #434B57; }"
-            "QPushButton[role='rail'] { background: #0B5A8C; color: #FFFFFF; border: 1px solid #083E61; min-width: 64px; }"
+            "QPushButton[role='rail'] { background: #0B5A8C; color: #FFFFFF; border: 1px solid #083E61; min-width: 36px; min-height: 32px; padding: 0; border-radius: 8px; }"
             "QPushButton[role='toggle'][active='true'] { background: #0A4D77; color: #FFFFFF; border: 1px solid #083E61; }"
             "QPushButton[role='toggle'][active='false'] { background: #0B5A8C; color: #FFFFFF; border: 1px solid #0A4D77; }"
             "QLabel#ruralPill { border: 1px solid #434B57; border-radius: 11px; background: #232830; color: #C5CED8; padding: 2px 10px; font-size: 11px; font-weight: 600; }"
@@ -253,10 +259,13 @@ class MainWindow(QMainWindow):
             "QMenu::item:selected { background: #37373D; color: #FFFFFF; }"
             "QStatusBar { background: #1E1E1E; color: #D4D4D4; border-top: 1px solid #3E3E3E; }"
             "QHeaderView::section { background: #2D2D2D; color: #D4D4D4; border: none; border-bottom: 1px solid #3E3E3E; padding: 6px; font-weight: 600; }"
-            "QTableWidget { background: #1E1E1E; alternate-background-color: #252525; gridline-color: #3E3E3E; color: #D4D4D4; selection-background-color: #264F78; selection-color: #FFFFFF; border: 1px solid #3E3E3E; border-radius: 8px; }"
+            "QAbstractItemView { selection-background-color: #2A7FD4; selection-color: #FFFFFF; }"
+            "QAbstractItemView::item:selected { background: #2A7FD4; color: #FFFFFF; }"
+            "QAbstractItemView::item:selected:!active { background-color: #335A8A; color: #FFFFFF; }"
+            "QTableWidget { background: #1E1E1E; alternate-background-color: #252525; gridline-color: #3E3E3E; color: #D4D4D4; selection-background-color: #2A7FD4; selection-color: #FFFFFF; border: 1px solid #3E3E3E; border-radius: 8px; }"
             "QTableCornerButton::section { background: #2D2D2D; border: 1px solid #3E3E3E; }"
             "QTableWidget::item { color: #D4D4D4; }"
-            "QTableWidget::item:selected { background: #264F78; color: #FFFFFF; }"
+            "QTableWidget::item:selected { background: #2A7FD4; color: #FFFFFF; }"
             "QTableWidget::item:selected:!active { background-color: #335A8A; color: #FFFFFF; }"
             "QTableWidget::item:hover { background-color: #2A2A2A; color: #E6E6E6; }"
             # Combo box dropdown button and popup
@@ -352,25 +361,26 @@ class MainWindow(QMainWindow):
         sync_btn = self._styled_button("⚌  Sync from CMS", "primary")
         sync_btn.setToolTip("Download latest CMS DMEPOS fee schedules for your tracked states")
         sync_btn.clicked.connect(self._sync_cms)
-        row1.addWidget(sync_btn)
+        sync_btn.setMinimumWidth(148)
+        row1.addWidget(sync_btn, 0)
 
         row1.addWidget(QLabel("Year:"))
         self.year_combo = QComboBox()
         self.year_combo.setMinimumWidth(85)
         self.year_combo.currentIndexChanged.connect(self._on_year_changed)
-        row1.addWidget(self.year_combo)
+        row1.addWidget(self.year_combo, 0)
 
         self.year_view_label = QLabel("")
         self.year_view_label.setStyleSheet("color: #666666; font-style: italic; font-size: 11px;")
-        self.year_view_label.setMinimumWidth(180)
-        row1.addWidget(self.year_view_label)
+        self.year_view_label.setMinimumWidth(150)
+        row1.addWidget(self.year_view_label, 0)
 
         row1.addWidget(QLabel("State:"))
         self.state_combo = QComboBox()
         self.state_combo.setMinimumWidth(280)
         self.state_combo.currentIndexChanged.connect(self._apply_filters)
         self.state_combo.currentIndexChanged.connect(self._save_filter_preferences)
-        row1.addWidget(self.state_combo)
+        row1.addWidget(self.state_combo, 1)
 
         row1.addWidget(QLabel("ZIP:"))
         self.zip_edit = QLineEdit()
@@ -381,18 +391,22 @@ class MainWindow(QMainWindow):
             "Leave blank to default to non-rural (NR)."
         )
         self.zip_edit.textChanged.connect(self._on_zip_changed)
-        row1.addWidget(self.zip_edit)
+        row1.addWidget(self.zip_edit, 0)
 
         self.rural_label = QLabel("No ZIP • NR")
         self.rural_label.setObjectName("ruralPill")
         self.rural_label.setProperty("ruralState", "default")
         self.rural_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.rural_label.setMinimumWidth(112)
-        row1.addWidget(self.rural_label)
+        row1.addWidget(self.rural_label, 0)
+        row1.addStretch(1)
+        toolbar_container.addLayout(row1)
 
-        row1.addWidget(QLabel("HCPCS Group:"))
+        row2 = QHBoxLayout()
+        row2.setSpacing(10)
+        row2.addWidget(QLabel("HCPCS Group:"))
         self.group_combo = QComboBox()
-        self.group_combo.setMinimumWidth(220)
+        self.group_combo.setMinimumWidth(210)
         self.group_combo.addItem("All Groups", None)
         from core.hcpcs_groups import get_group_choices
         from core.database import get_available_hcpcs_prefixes
@@ -401,27 +415,21 @@ class MainWindow(QMainWindow):
             self.group_combo.addItem(label, prefix)
         self.group_combo.currentIndexChanged.connect(self._apply_filters)
         self.group_combo.currentIndexChanged.connect(self._save_filter_preferences)
-        row1.addWidget(self.group_combo)
-
-        row1.addWidget(QLabel("HCPCS Code:"))
+        row2.addWidget(self.group_combo, 0)
+        row2.addWidget(QLabel("HCPCS Code:"))
         self.code_edit = QLineEdit()
         self.code_edit.setPlaceholderText("e.g. E0601")
         self.code_edit.setMaximumWidth(130)
         self.code_edit.textChanged.connect(self._on_search_text_changed)
         self.code_edit.returnPressed.connect(self._apply_filters)
-        row1.addWidget(self.code_edit)
-        row1.addStretch()
-        toolbar_container.addLayout(row1)
-
-        row2 = QHBoxLayout()
-        row2.setSpacing(10)
+        row2.addWidget(self.code_edit, 0)
         row2.addWidget(QLabel("Keyword:"))
         self.keyword_edit = QLineEdit()
         self.keyword_edit.setPlaceholderText("Description keyword…")
-        self.keyword_edit.setMinimumWidth(340)
+        self.keyword_edit.setMinimumWidth(260)
         self.keyword_edit.textChanged.connect(self._on_search_text_changed)
         self.keyword_edit.returnPressed.connect(self._apply_filters)
-        row2.addWidget(self.keyword_edit)
+        row2.addWidget(self.keyword_edit, 1)
 
         search_btn = self._styled_button("Search", "primary")
         search_btn.clicked.connect(self._apply_filters)
@@ -487,8 +495,10 @@ class MainWindow(QMainWindow):
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.setHandleWidth(8)
         self.splitter.addWidget(self.table)
+        self.table.setMinimumWidth(520)
         middle_controls = QFrame()
         middle_controls.setObjectName("transferRail")
+        middle_controls.setFixedWidth(TRANSFER_RAIL_WIDTH_PX)
         middle_layout = QVBoxLayout(middle_controls)
         middle_layout.setContentsMargins(6, 10, 6, 10)
         middle_layout.setSpacing(8)
@@ -496,11 +506,13 @@ class MainWindow(QMainWindow):
 
         add_btn = self._styled_button("►", "rail")
         add_btn.setToolTip("Add selected items to Purchase List (Ctrl+Right)")
+        add_btn.setFixedSize(40, 34)
         add_btn.clicked.connect(self._add_checked_from_main)
         middle_layout.addWidget(add_btn)
 
         remove_btn = self._styled_button("◄", "rail")
         remove_btn.setToolTip("Remove selected items from Purchase List (Ctrl+Left)")
+        remove_btn.setFixedSize(40, 34)
         remove_btn.clicked.connect(self._remove_checked_from_purchase)
         middle_layout.addWidget(remove_btn)
         self._add_btn = add_btn
@@ -524,12 +536,13 @@ class MainWindow(QMainWindow):
             raise
         self._write_startup_breadcrumb("MainWindow._init_ui: created PurchaseListPanel")
         self._purchase_list_panel.count_changed.connect(self._update_purchase_button_label)
+        self._purchase_list_panel.setMinimumWidth(PURCHASE_PANEL_MIN_WIDTH_PX)
         self._purchase_list_panel.hide()
         self.splitter.addWidget(self._purchase_list_panel)
         self.splitter.setStretchFactor(0, 4)
         self.splitter.setStretchFactor(1, 0)
         self.splitter.setStretchFactor(2, 2)
-        self.splitter.setSizes([1000, 120, 0])
+        self.splitter.setSizes([900, TRANSFER_RAIL_WIDTH_PX, 0])
         results_layout.addWidget(self.splitter, 1)
         root_layout.addWidget(results_card, 1)
 
@@ -1207,9 +1220,12 @@ class MainWindow(QMainWindow):
     def _set_purchase_list_panel_visible(self, visible):
         if visible:
             self._purchase_list_panel.show()
-            left = max(1, int(self.splitter.width() * PURCHASE_PANEL_LEFT_RATIO))
-            right = max(320, self.splitter.width() - left - 120)
-            self.splitter.setSizes([left, 120, right])
+            usable_width = max(1, self.splitter.width() - TRANSFER_RAIL_WIDTH_PX)
+            left = max(420, int(usable_width * PURCHASE_PANEL_LEFT_RATIO))
+            right = max(PURCHASE_PANEL_MIN_WIDTH_PX, usable_width - left)
+            if left + right > usable_width:
+                left = max(300, usable_width - right)
+            self.splitter.setSizes([left, TRANSFER_RAIL_WIDTH_PX, right])
             self._purchase_list_panel.refresh_context_state()
         else:
             # Completely hide the purchase list and middle controls

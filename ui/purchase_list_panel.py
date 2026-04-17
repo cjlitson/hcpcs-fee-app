@@ -119,9 +119,11 @@ class PurchaseListPanel(QWidget):
         root.addWidget(context_card)
 
         controls = QHBoxLayout()
+        controls.setSpacing(8)
         controls.addWidget(QLabel("Quick Add HCPCS:"))
         self.quick_add_edit = QLineEdit()
         self.quick_add_edit.setPlaceholderText("e.g. L5301")
+        self.quick_add_edit.setMinimumWidth(220)
         self.quick_add_edit.returnPressed.connect(self._quick_add_from_input)
         self.quick_add_edit.textChanged.connect(self._queue_quick_add_suggestions)
         self._quick_add_completer = QCompleter(self._quick_add_model, self.quick_add_edit)
@@ -132,15 +134,16 @@ class PurchaseListPanel(QWidget):
         controls.addWidget(self.quick_add_edit, 1)
         self._quick_add_btn = QPushButton("Add")
         self._quick_add_btn.setProperty("role", "primary")
+        self._quick_add_btn.setMinimumWidth(72)
         self._quick_add_btn.clicked.connect(self._quick_add_from_input)
         controls.addWidget(self._quick_add_btn)
-        controls.addStretch()
         select_all_btn = QPushButton("Select All")
         deselect_all_btn = QPushButton("Deselect All")
         select_all_btn.setProperty("role", "ghost")
         deselect_all_btn.setProperty("role", "ghost")
         select_all_btn.clicked.connect(self.select_all_items)
         deselect_all_btn.clicked.connect(self.deselect_all_items)
+        controls.addStretch()
         controls.addWidget(select_all_btn)
         controls.addWidget(deselect_all_btn)
         root.addLayout(controls)
@@ -149,9 +152,10 @@ class PurchaseListPanel(QWidget):
         self.table.setHorizontalHeaderLabels(
             ["", "HCPCS Code", "Description", "Qty", "Unit Price", "Line Total", ""]
         )
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(PURCHASE_COL_CHECK, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(PURCHASE_COL_DELETE, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().setSectionResizeMode(PURCHASE_COL_DESCRIPTION, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionsMovable(True)
         self.table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -168,11 +172,12 @@ class PurchaseListPanel(QWidget):
         totals.setContentsMargins(10, 6, 10, 6)
         totals.addWidget(QLabel("Summary"))
         totals.addStretch()
-        self.total_items_label = QLabel("Items: 0")
+        totals.addWidget(QLabel("Total Items:"))
+        self.total_items_label = QLabel("0")
         self.total_items_label.setStyleSheet("font-weight: 600;")
         totals.addWidget(self.total_items_label)
         totals.addSpacing(12)
-        totals.addWidget(QLabel("Grand Total:"))
+        totals.addWidget(QLabel("Estimated Total:"))
         self.grand_total_label = QLabel("$0.00")
         self.grand_total_label.setStyleSheet("font-weight: bold;")
         totals.addWidget(self.grand_total_label)
@@ -325,6 +330,10 @@ class PurchaseListPanel(QWidget):
             if idx.isValid():
                 label = str(idx.data() or "")
                 return normalize(label)
+        if typed in self._quick_add_suggestions:
+            return normalize(typed)
+        if self._quick_add_suggestions:
+            return normalize(next(iter(self._quick_add_suggestions)))
         return normalize(typed)
 
     def _queue_quick_add_suggestions(self, text):
@@ -374,7 +383,7 @@ class PurchaseListPanel(QWidget):
         btn.setToolTip("Remove this line item")
         btn.setAccessibleName("Delete purchase list row")
         btn.setProperty("role", "ghost")
-        btn.setMaximumWidth(36)
+        btn.setFixedSize(30, 26)
         btn.clicked.connect(self._remove_row_for_sender)
         return btn
 
@@ -463,7 +472,7 @@ class PurchaseListPanel(QWidget):
         count = self.table.rowCount()
         self.title_label.setText(f"Purchase List ({count})")
         if hasattr(self, "total_items_label"):
-            self.total_items_label.setText(f"Items: {count}")
+            self.total_items_label.setText(str(count))
         self.count_changed.emit(count)
 
     def _collect_items(self):
