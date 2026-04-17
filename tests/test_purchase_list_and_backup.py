@@ -125,7 +125,14 @@ def test_purchase_list_csv_export(tmp_path):
                 "quantity": 2,
                 "unit_price": 100.0,
                 "line_total": 200.0,
-            }
+            },
+            {
+                "hcpcs_code": "L5620",
+                "description": "Test liner",
+                "quantity": 1,
+                "unit_price": 50.0,
+                "line_total": 50.0,
+            },
         ],
         out,
         meta={"year": 2026, "state": "CA", "zip_code": "90210", "rural_status": "Non-Rural (NR)"},
@@ -150,7 +157,14 @@ def test_purchase_list_docx_export(tmp_path):
                 "quantity": 2,
                 "unit_price": 100.0,
                 "line_total": 200.0,
-            }
+            },
+            {
+                "hcpcs_code": "L5620",
+                "description": "Test liner",
+                "quantity": 1,
+                "unit_price": 50.0,
+                "line_total": 50.0,
+            },
         ],
         out,
         meta={"year": 2026, "state": "CA", "zip_code": "90210", "rural_status": "Non-Rural (NR)"},
@@ -160,7 +174,10 @@ def test_purchase_list_docx_export(tmp_path):
         xml = zf.read("word/document.xml").decode("utf-8")
     assert "VA HCPCS Purchase List" in xml
     assert "PO #" not in xml
+    assert "Quantity" in xml
     assert "Grand Total" in xml
+    assert 'w:fill="003366"' in xml
+    assert 'w:fill="EEF2F7"' in xml
 
 
 def test_saved_vendor_persistence(monkeypatch):

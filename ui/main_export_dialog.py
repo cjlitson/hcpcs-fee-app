@@ -1,6 +1,3 @@
-from datetime import datetime
-
-from PyQt6.QtGui import QTextDocument
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QDialog,
@@ -30,6 +27,23 @@ class MainExportDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(f"Export {len(self.records):,} records as:"))
 
+        selector_style = (
+            "QRadioButton {"
+            " border: 1px solid #9AA6B2;"
+            " border-radius: 6px;"
+            " padding: 8px 10px;"
+            " background: #FFFFFF;"
+            " color: #1F2933;"
+            " font-weight: 600;"
+            "}"
+            "QRadioButton::indicator { width: 0px; height: 0px; }"
+            "QRadioButton:checked {"
+            " background: #003366;"
+            " border: 1px solid #003366;"
+            " color: #FFFFFF;"
+            "}"
+            "QRadioButton:hover { border: 1px solid #005A9C; }"
+        )
         self.btn_group = QButtonGroup(self)
         self.csv_radio = QRadioButton("CSV (.csv)")
         self.excel_radio = QRadioButton("Excel (.xlsx)")
@@ -37,18 +51,16 @@ class MainExportDialog(QDialog):
         self.csv_radio.setChecked(True)
         for rb in [self.csv_radio, self.excel_radio, self.pdf_radio]:
             self.btn_group.addButton(rb)
+            rb.setStyleSheet(selector_style)
             layout.addWidget(rb)
 
         btns = QHBoxLayout()
         cancel_btn = QPushButton("Cancel")
-        preview_btn = QPushButton("Print Preview")
         export_btn = QPushButton("Export")
         export_btn.setStyleSheet("background-color: #003366; color: white; padding: 6px 16px; font-weight: bold;")
         cancel_btn.clicked.connect(self.reject)
-        preview_btn.clicked.connect(self._show_preview)
         export_btn.clicked.connect(self._do_export)
         btns.addStretch()
-        btns.addWidget(preview_btn)
         btns.addWidget(cancel_btn)
         btns.addWidget(export_btn)
         layout.addLayout(btns)
@@ -84,49 +96,3 @@ class MainExportDialog(QDialog):
             self.accept()
         except Exception as e:
             QMessageBox.critical(self, "Export Error", f"Export failed:\n{e}")
-
-    def _show_preview(self):
-        html = self._build_preview_html()
-        doc = QTextDocument()
-        doc.setHtml(html)
-        try:
-            from PyQt6.QtPrintSupport import QPrintPreviewDialog
-        except ImportError as exc:
-            QMessageBox.warning(self, "Print Preview Unavailable", f"Unable to load print preview:\n{str(exc)}")
-            return
-        preview = QPrintPreviewDialog(self)
-        preview.setWindowTitle("Print Preview")
-        preview.paintRequested.connect(doc.print_)
-        preview.exec()
-
-    def _build_preview_html(self):
-        body = ["<h2>VA HCPCS Fee Schedule Report</h2>"]
-        if self.zip_code:
-            rural = "Rural (R)" if self.is_rural else "Non-Rural (NR)"
-            body.append(f"<p><b>ZIP:</b> {self.zip_code} ({rural})</p>")
-        body.append(
-            f"<p><b>Date Generated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>"
-        )
-        body.append(
-            "<table border='1' cellspacing='0' cellpadding='4'><tr>"
-            "<th>HCPCS Code</th><th>Description</th><th>State</th><th>Year</th>"
-            "<th>Allowable ($)</th><th>Modifier</th></tr>"
-        )
-        for r in self.records:
-            chosen = r.get("allowable_r") if self.is_rural else None
-            if chosen is None:
-                chosen = r.get("allowable_nr")
-            if chosen is None:
-                chosen = r.get("allowable")
-            body.append(
-                "<tr>"
-                f"<td>{r.get('hcpcs_code', '')}</td>"
-                f"<td>{r.get('description', '')}</td>"
-                f"<td>{r.get('state_abbr', '')}</td>"
-                f"<td>{r.get('year', '')}</td>"
-                f"<td align='right'>{'' if chosen is None else f'${chosen:,.2f}'}</td>"
-                f"<td>{r.get('modifier', '') or ''}</td>"
-                "</tr>"
-            )
-        body.append("</table>")
-        return "".join(body)
