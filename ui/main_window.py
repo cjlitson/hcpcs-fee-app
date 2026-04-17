@@ -28,18 +28,15 @@ from ui.purchase_list_panel import PurchaseListPanel
 
 PURCHASE_PANEL_LEFT_RATIO = 2 / 3
 PURCHASE_PANEL_MIN_WIDTH_PX = 480
-TRANSFER_RAIL_WIDTH_PX = 72
-TRANSFER_RAIL_BUTTON_SIZE = QSize(40, 34)
 PREFERRED_RESULTS_PANEL_MIN_WIDTH_PX = 420
 RESULTS_PANEL_MIN_WIDTH_PX = 300
-MAIN_COL_SELECT = 0
-MAIN_COL_HCPCS = 1
-MAIN_COL_DESC = 2
-MAIN_COL_STATE = 3
-MAIN_COL_YEAR = 4
-MAIN_COL_ALLOWABLE = 5
-MAIN_COL_MODIFIER = 6
-MAIN_COL_SOURCE = 7
+MAIN_COL_HCPCS = 0
+MAIN_COL_DESC = 1
+MAIN_COL_STATE = 2
+MAIN_COL_YEAR = 3
+MAIN_COL_ALLOWABLE = 4
+MAIN_COL_MODIFIER = 5
+MAIN_COL_SOURCE = 6
 STARTUP_LOG_FILENAME = "HCPCSFeeApp_startup.log"
 USER_GUIDE_DARK_LINK_COLOR = "#8CC8FF"
 ZIP_EDIT_MAX_WIDTH_PX = 96
@@ -432,7 +429,7 @@ class MainWindow(QMainWindow):
         row1 = QHBoxLayout()
         row1.setSpacing(10)
 
-        sync_btn = self._styled_button("⚌  Sync from CMS", "primary")
+        sync_btn = self._styled_button("\u21bb  Sync from CMS", "primary")
         sync_btn.setToolTip("Download latest CMS DMEPOS fee schedules for your tracked states")
         sync_btn.clicked.connect(self._sync_cms)
         sync_btn.setMinimumWidth(148)
@@ -451,7 +448,8 @@ class MainWindow(QMainWindow):
 
         row1.addWidget(QLabel("State:"))
         self.state_combo = QComboBox()
-        self.state_combo.setMinimumWidth(280)
+        self.state_combo.setMinimumWidth(140)
+        self.state_combo.setMaximumWidth(200)
         self.state_combo.currentIndexChanged.connect(self._apply_filters)
         self.state_combo.currentIndexChanged.connect(self._save_filter_preferences)
         row1.addWidget(self.state_combo, 1)
@@ -538,15 +536,15 @@ class MainWindow(QMainWindow):
         heading = QLabel("Fee Schedule Results")
         heading.setStyleSheet("font-size: 14px; font-weight: 700;")
         heading_row.addWidget(heading)
-        hint = QLabel("Click HCPCS for history, or right-click for copy actions")
+        hint = QLabel("Click HCPCS for history  \u00b7  Select rows then \u25ba to add  \u00b7  Right-click for copy actions")
         hint.setProperty("subtle", True)
         heading_row.addStretch()
         heading_row.addWidget(hint)
         results_layout.addLayout(heading_row)
 
-        self.table = QTableWidget(0, 8)
+        self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels([
-            "", "HCPCS Code", "Description", "State", "Year",
+            "HCPCS Code", "Description", "State", "Year",
             "Allowable ($)", "Modifier", "Source",
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
@@ -554,6 +552,7 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().setDefaultSectionSize(110)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
         self.table.cellClicked.connect(self._on_cell_clicked)
@@ -570,31 +569,6 @@ class MainWindow(QMainWindow):
         self.splitter.setHandleWidth(8)
         self.splitter.addWidget(self.table)
         self.table.setMinimumWidth(520)
-        middle_controls = QFrame()
-        middle_controls.setObjectName("transferRail")
-        middle_controls.setFixedWidth(TRANSFER_RAIL_WIDTH_PX)
-        middle_layout = QVBoxLayout(middle_controls)
-        middle_layout.setContentsMargins(6, 10, 6, 10)
-        middle_layout.setSpacing(8)
-        middle_layout.addStretch()
-
-        add_btn = self._styled_button("►", "rail")
-        add_btn.setToolTip("Add selected items to Purchase List (Ctrl+Right)")
-        add_btn.setFixedSize(TRANSFER_RAIL_BUTTON_SIZE)
-        add_btn.clicked.connect(self._add_checked_from_main)
-        middle_layout.addWidget(add_btn)
-
-        remove_btn = self._styled_button("◄", "rail")
-        remove_btn.setToolTip("Remove selected items from Purchase List (Ctrl+Left)")
-        remove_btn.setFixedSize(TRANSFER_RAIL_BUTTON_SIZE)
-        remove_btn.clicked.connect(self._remove_checked_from_purchase)
-        middle_layout.addWidget(remove_btn)
-        self._add_btn = add_btn
-        self._remove_btn = remove_btn
-        self._add_btn.hide()
-        self._remove_btn.hide()
-        middle_layout.addStretch()
-        self.splitter.addWidget(middle_controls)
 
         self._write_startup_breadcrumb("MainWindow._init_ui: creating PurchaseListPanel")
         try:
@@ -603,6 +577,8 @@ class MainWindow(QMainWindow):
                 year_combo=self.year_combo,
                 state_combo=self.state_combo,
                 zip_edit=self.zip_edit,
+                add_callback=self._add_selected_from_main,
+                remove_callback=self._remove_selected_from_purchase,
             )
             self._purchase_list_panel.setObjectName("purchaseListPanel")
         except Exception as e:
@@ -614,9 +590,8 @@ class MainWindow(QMainWindow):
         self._purchase_list_panel.hide()
         self.splitter.addWidget(self._purchase_list_panel)
         self.splitter.setStretchFactor(0, 4)
-        self.splitter.setStretchFactor(1, 0)
-        self.splitter.setStretchFactor(2, 2)
-        self.splitter.setSizes([900, TRANSFER_RAIL_WIDTH_PX, 0])
+        self.splitter.setStretchFactor(1, 2)
+        self.splitter.setSizes([900, 0])
         results_layout.addWidget(self.splitter, 1)
         root_layout.addWidget(results_card, 1)
 
@@ -624,13 +599,41 @@ class MainWindow(QMainWindow):
         footer = QFrame()
         footer.setObjectName("footerStrip")
         footer_layout = QHBoxLayout(footer)
-        footer_layout.setContentsMargins(10, 6, 10, 6)
+        footer_layout.setContentsMargins(10, 5, 10, 5)
         footer_layout.setSpacing(8)
-        footer_label = QLabel("Shortcuts: Ctrl+P toggle purchase list • Ctrl+Right add • Ctrl+Left remove")
-        footer_label.setProperty("subtle", True)
-        footer_layout.addWidget(footer_label)
+
+        self._footer_record_label = QLabel("0 records")
+        self._footer_record_label.setProperty("subtle", True)
+        footer_layout.addWidget(self._footer_record_label)
+
         footer_layout.addStretch()
+
+        last_sync = get_preference("last_sync_timestamp", "")
+        sync_text = (
+            f"\u21bb  Synced: {last_sync}  \u00b7  Data: CMS DMEPOS"
+            if last_sync
+            else "Not yet synced  \u00b7  Data: CMS DMEPOS"
+        )
+        self._footer_sync_label = QLabel(sync_text)
+        self._footer_sync_label.setProperty("subtle", True)
+        footer_layout.addWidget(self._footer_sync_label)
+
         root_layout.addWidget(footer)
+
+    def _update_footer_record_count(self):
+        count = len(getattr(self, "_records", []))
+        if hasattr(self, "_footer_record_label"):
+            self._footer_record_label.setText(f"{count:,} records")
+
+    def _update_footer_sync_time(self, timestamp: str):
+        if hasattr(self, "_footer_sync_label"):
+            self._footer_sync_label.setText(
+                f"\u21bb  Synced: {timestamp}  \u00b7  Data: CMS DMEPOS"
+            )
+        try:
+            set_preference("last_sync_timestamp", timestamp)
+        except Exception:
+            pass
 
     def _init_menu(self):
         menubar = self.menuBar()
@@ -1057,11 +1060,10 @@ class MainWindow(QMainWindow):
                 r.get("description", ""),
                 r.get("state_abbr", ""),
                 str(r.get("year", "")),
-                "—" if chosen is None else f"{chosen:,.2f}",
+                "\u2014" if chosen is None else f"{chosen:,.2f}",
                 r.get("modifier", "") or "",
                 r.get("data_source", "") or "",
             ]
-            self.table.setItem(row_i, MAIN_COL_SELECT, self._checkbox_item(False))
             for col_i, v in enumerate(values):
                 item = QTableWidgetItem(str(v))
                 if col_i == 0:
@@ -1072,8 +1074,9 @@ class MainWindow(QMainWindow):
                     item.setData(Qt.ItemDataRole.UserRole, row_i)
                 if col_i == 4 and chosen is None:
                     item.setForeground(Qt.GlobalColor.darkGray)
-                self.table.setItem(row_i, col_i + 1, item)
+                self.table.setItem(row_i, col_i, item)
         self.table.setSortingEnabled(True)
+        self._update_footer_record_count()
 
     def _on_cell_clicked(self, row, col):
         """Open history dialog when the HCPCS code cell (column 0) is clicked."""
@@ -1097,7 +1100,6 @@ class MainWindow(QMainWindow):
         record = self._records[rec_idx]
         dlg = _HcpcsHistoryDialog(record, self)
         dlg.exec()
-
     # ---------------------------------------------------- Context menu ------
 
     def _on_table_context_menu(self, pos):
@@ -1118,7 +1120,7 @@ class MainWindow(QMainWindow):
 
         def copy_row_csv():
             vals = []
-            for c in range(1, self.table.columnCount()):
+            for c in range(self.table.columnCount()):
                 item = self.table.item(row, c)
                 v = item.text() if item else ""
                 vals.append(f'"{v}"')
@@ -1142,6 +1144,8 @@ class MainWindow(QMainWindow):
     def _on_import_done(self, count):
         self._refresh_filters()
         self._apply_filters()
+        ts = datetime.now().strftime("%b %d, %Y %I:%M %p")
+        self._update_footer_sync_time(ts)
         self._set_status(f"Imported {count:,} records.")
 
     def _export(self):
@@ -1228,28 +1232,13 @@ class MainWindow(QMainWindow):
                 return
             self._purchase_list_panel.add_code(initial_code)
 
-    @staticmethod
-    def _checkbox_item(checked=False):
-        item = QTableWidgetItem("")
-        item.setFlags(
-            Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-        )
-        item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
-        return item
-
     def _select_all_main_rows(self):
-        for row in range(self.table.rowCount()):
-            item = self.table.item(row, MAIN_COL_SELECT)
-            if item:
-                item.setCheckState(Qt.CheckState.Checked)
+        self.table.selectAll()
 
     def _deselect_all_main_rows(self):
-        for row in range(self.table.rowCount()):
-            item = self.table.item(row, MAIN_COL_SELECT)
-            if item:
-                item.setCheckState(Qt.CheckState.Unchecked)
+        self.table.clearSelection()
 
-    def _add_checked_from_main(self):
+    def _add_selected_from_main(self):
         if not self._purchase_list_panel.is_context_ready():
             QMessageBox.information(
                 self,
@@ -1257,36 +1246,47 @@ class MainWindow(QMainWindow):
                 self._purchase_list_panel.context_requirement_message(),
             )
             return
-        added = 0
-        for row in range(self.table.rowCount()):
-            check_item = self.table.item(row, MAIN_COL_SELECT)
-            code_item = self.table.item(row, MAIN_COL_HCPCS)
-            desc_item = self.table.item(row, MAIN_COL_DESC)
-            if not check_item or check_item.checkState() != Qt.CheckState.Checked or not code_item:
-                continue
-            self._purchase_list_panel.add_code(code_item.text(), desc_item.text() if desc_item else "")
-            check_item.setCheckState(Qt.CheckState.Unchecked)
-            added += 1
-        if added:
-            self._set_purchase_list_panel_visible(True)
-            self._set_status(f"Added {added} item(s) to purchase list.")
-        else:
+        selected_rows = list({idx.row() for idx in self.table.selectionModel().selectedRows()})
+        if not selected_rows:
             QMessageBox.information(
                 self,
                 "No Selection",
-                "Select at least one item using the checkboxes before adding.",
+                "Select at least one row before adding to the purchase list.",
             )
+            return
+        added = 0
+        for row in sorted(selected_rows):
+            code_item = self.table.item(row, MAIN_COL_HCPCS)
+            desc_item = self.table.item(row, MAIN_COL_DESC)
+            if not code_item:
+                continue
+            self._purchase_list_panel.add_code(
+                code_item.text(), desc_item.text() if desc_item else ""
+            )
+            added += 1
+        if added:
+            self.table.clearSelection()
+            self._set_purchase_list_panel_visible(True)
+            self._set_status(f"Added {added} item(s) to purchase list.")
 
-    def _remove_checked_from_purchase(self):
-        removed = self._purchase_list_panel.remove_checked_items()
+    # Keep old name as alias for backward compatibility
+    def _add_checked_from_main(self):
+        self._add_selected_from_main()
+
+    def _remove_selected_from_purchase(self):
+        removed = self._purchase_list_panel.remove_selected_items()
         if removed:
             self._set_status(f"Removed {removed} item(s) from purchase list.")
         else:
             QMessageBox.information(
                 self,
                 "No Selection",
-                "Select at least one item using the checkboxes before removing.",
+                "Select at least one row before removing.",
             )
+
+    # Keep old name as alias for backward compatibility
+    def _remove_checked_from_purchase(self):
+        self._remove_selected_from_purchase()
 
     def _toggle_purchase_list_panel(self, checked):
         self._set_purchase_list_panel_visible(bool(checked))
@@ -1294,25 +1294,18 @@ class MainWindow(QMainWindow):
     def _set_purchase_list_panel_visible(self, visible):
         if visible:
             self._purchase_list_panel.show()
-            usable_width = max(1, self.splitter.width() - TRANSFER_RAIL_WIDTH_PX)
+            usable_width = max(1, self.splitter.width())
             left = max(PREFERRED_RESULTS_PANEL_MIN_WIDTH_PX, int(usable_width * PURCHASE_PANEL_LEFT_RATIO))
             right = max(PURCHASE_PANEL_MIN_WIDTH_PX, usable_width - left)
-            # Guard for tight/non-maximized windows where minimums plus integer
-            # rounding can overrun usable width.
             if right >= usable_width:
                 right = max(1, usable_width - RESULTS_PANEL_MIN_WIDTH_PX)
             if left + right > usable_width:
                 left = max(RESULTS_PANEL_MIN_WIDTH_PX, usable_width - right)
-            self.splitter.setSizes([left, TRANSFER_RAIL_WIDTH_PX, right])
+            self.splitter.setSizes([left, right])
             self._purchase_list_panel.refresh_context_state()
         else:
-            # Completely hide the purchase list and middle controls
             self._purchase_list_panel.hide()
-            self.splitter.setSizes([self.splitter.width(), 0, 0])
-        if getattr(self, "_add_btn", None):
-            self._add_btn.setVisible(visible)
-        if getattr(self, "_remove_btn", None):
-            self._remove_btn.setVisible(visible)
+            self.splitter.setSizes([self.splitter.width(), 0])
         self._purchase_list_panel_visible = visible
         if getattr(self, "_purchase_btn", None):
             self._purchase_btn.blockSignals(True)
@@ -1340,12 +1333,11 @@ class MainWindow(QMainWindow):
             self._dark_mode_action.blockSignals(False)
 
     def _main_table_layout_key(self):
-        return "main_table_layout_v1"
+        return "main_table_layout_v2"
 
     def _restore_main_table_layout_preferences(self):
         state = get_config_value(self._main_table_layout_key(), "")
         if not state:
-            self.table.setColumnWidth(MAIN_COL_SELECT, 36)
             self.table.setColumnWidth(MAIN_COL_HCPCS, 110)
             self.table.setColumnWidth(MAIN_COL_DESC, 420)
             self.table.setColumnWidth(MAIN_COL_STATE, 90)
@@ -1499,6 +1491,8 @@ class MainWindow(QMainWindow):
             self._progress_dlg = None
         self._refresh_filters()
         self._apply_filters()
+        ts = datetime.now().strftime("%b %d, %Y %I:%M %p")
+        self._update_footer_sync_time(ts)
         self._set_status(f"CMS sync complete — {count:,} records imported.")
         QMessageBox.information(
             self, "Sync Complete",
@@ -1791,7 +1785,7 @@ class MainWindow(QMainWindow):
                             <li>Downloads the new exe next to the current one.</li>
                             <li>Launches a detached helper script and exits the app.</li>
                             <li>The helper waits for the app to fully close, removes the old exe, renames the new one into place, and relaunches it.</li>
-                            <li>Each step is logged to <span class="shortcut">%TEMP%\HCPCSFeeApp_update.log</span> for diagnostics.</li>
+                            <li>Each step is logged to <span class="shortcut">%TEMP%\\HCPCSFeeApp_update.log</span> for diagnostics.</li>
                             <li>If replacement fails, the log contains step-by-step manual recovery instructions.</li>
                         </ol>
                     </li>
@@ -1879,7 +1873,7 @@ class MainWindow(QMainWindow):
 
                 <h3>Update Now Did Not Complete</h3>
                 <ul>
-                    <li>Open <span class="shortcut">%TEMP%\HCPCSFeeApp_update.log</span> for a step-by-step log of what happened</li>
+                    <li>Open <span class="shortcut">%TEMP%\\HCPCSFeeApp_update.log</span> for a step-by-step log of what happened</li>
                     <li>If the log contains a failure message, follow the MANUAL RECOVERY INSTRUCTIONS section in the log</li>
                     <li>You can always update manually: download the latest <b>HCPCSFeeApp-Setup.zip</b> and run <b>Install.bat</b></li>
                 </ul>
