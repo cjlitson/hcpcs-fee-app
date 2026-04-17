@@ -1,4 +1,4 @@
-from PyQt6.QtCore import Qt, pyqtSignal, QStringListModel, QTimer
+from PyQt6.QtCore import Qt, QSize, pyqtSignal, QStringListModel, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QCompleter,
@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QInputDialog,
+    QStyle,
 )
 
 from core.config import get_config_value, set_config_value
@@ -379,10 +380,15 @@ class PurchaseListPanel(QWidget):
         self._quick_add_model.setStringList(suggestions)
 
     def _make_row_delete_button(self):
-        btn = QPushButton("🗑")
+        btn = QPushButton()
         btn.setToolTip("Remove this line item")
         btn.setAccessibleName("Delete purchase list row")
-        btn.setProperty("role", "ghost")
+        btn.setProperty("deleteAction", "true")
+        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
+        if icon.isNull():
+            icon = self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton)
+        btn.setIcon(icon)
+        btn.setIconSize(QSize(14, 14))
         btn.setFixedSize(30, 26)
         btn.clicked.connect(self._remove_row_for_sender)
         return btn
