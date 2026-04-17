@@ -182,7 +182,7 @@ class MainWindow(QMainWindow):
         self._light_theme_qss = (
             "QWidget { background: #FFFFFF; color: #202124; }"
             "QWidget#appShell { background: #F3F5F8; }"
-            "QFrame#updateBannerCard, QFrame#filterCard, QFrame#resultsCard, QFrame#footerStrip, QWidget#purchaseListPanel, QFrame#purchaseHeaderCard, QFrame#purchaseContextCard { background: #FFFFFF; border: 1px solid #D8DDE6; border-radius: 10px; }"
+            "QFrame#updateBannerCard, QFrame#filterCard, QFrame#resultsCard, QFrame#footerStrip, QWidget#purchaseListPanel, QFrame#purchaseHeaderCard, QFrame#purchaseContextCard, QFrame#purchaseSummaryCard { background: #FFFFFF; border: 1px solid #D8DDE6; border-radius: 10px; }"
             "QFrame#updateBannerCard { background: #FFF8E1; border-color: #F2D8A7; }"
             "QFrame#transferRail { background: #EDF1F7; border: 1px solid #D8DDE6; border-radius: 8px; }"
             "QFrame#footerStrip { border-radius: 8px; }"
@@ -195,9 +195,16 @@ class MainWindow(QMainWindow):
             "QPushButton[role='accent'] { background: #005A9C; color: #FFFFFF; border: 1px solid #004B82; }"
             "QPushButton[role='accent']:hover { background: #004D85; }"
             "QPushButton[role='ghost'] { background: #FFFFFF; color: #2E3A48; border: 1px solid #C9CED6; }"
+            "QToolButton { min-height: 28px; border-radius: 6px; padding: 4px 12px; border: 1px solid #AAB2BF; background: #F8F9FB; color: #202124; font-weight: 600; }"
+            "QToolButton:hover { background-color: #EAF0F8; }"
+            "QToolButton[role='ghost'] { background: #FFFFFF; color: #2E3A48; border: 1px solid #C9CED6; }"
             "QPushButton[role='rail'] { background: #003366; color: #FFFFFF; border: 1px solid #002244; min-width: 64px; }"
             "QPushButton[role='toggle'][active='true'] { background: #003366; color: #FFFFFF; border: 1px solid #002244; }"
             "QPushButton[role='toggle'][active='false'] { background: #005A9C; color: #FFFFFF; border: 1px solid #004B82; }"
+            "QLabel#ruralPill { border: 1px solid #C9CED6; border-radius: 11px; background: #F2F4F7; color: #344054; padding: 2px 10px; font-size: 11px; font-weight: 600; }"
+            "QLabel#ruralPill[ruralState='rural'] { background: #EAF8EF; border-color: #A8D5B9; color: #146C2E; }"
+            "QLabel#ruralPill[ruralState='non_rural'] { background: #EAF2FF; border-color: #B9CCF2; color: #0E4AA6; }"
+            "QLabel#ruralPill[ruralState='invalid'] { background: #F5F5F5; border-color: #D0D5DD; color: #667085; }"
             "QLabel[subtle='true'] { color: #667085; font-size: 11px; }"
             "QLabel { background: transparent; }"
             "QMenuBar { background: #FFFFFF; color: #202124; border-bottom: 1px solid #D8DDE6; }"
@@ -213,7 +220,7 @@ class MainWindow(QMainWindow):
         self._dark_theme_qss = (
             "QWidget { background: #1E1E1E; color: #D4D4D4; }"
             "QWidget#appShell { background: #181B20; }"
-            "QFrame#updateBannerCard, QFrame#filterCard, QFrame#resultsCard, QFrame#footerStrip, QWidget#purchaseListPanel, QFrame#purchaseHeaderCard, QFrame#purchaseContextCard { background: #22262C; border: 1px solid #353C46; border-radius: 10px; }"
+            "QFrame#updateBannerCard, QFrame#filterCard, QFrame#resultsCard, QFrame#footerStrip, QWidget#purchaseListPanel, QFrame#purchaseHeaderCard, QFrame#purchaseContextCard, QFrame#purchaseSummaryCard { background: #22262C; border: 1px solid #353C46; border-radius: 10px; }"
             "QFrame#updateBannerCard { background: #3A2F1B; border-color: #6B5632; }"
             "QFrame#transferRail { background: #1E232A; border: 1px solid #353C46; border-radius: 8px; }"
             "QLineEdit, QComboBox { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 6px; padding: 4px 8px; min-height: 24px; selection-background-color: #264F78; selection-color: #FFFFFF; }"
@@ -228,9 +235,16 @@ class MainWindow(QMainWindow):
             "QPushButton[role='accent'] { background: #0B5A8C; color: #FFFFFF; border: 1px solid #0A4D77; }"
             "QPushButton[role='accent']:hover { background: #0A4D77; }"
             "QPushButton[role='ghost'] { background: #232830; color: #D4D4D4; border: 1px solid #434B57; }"
+            "QToolButton { min-height: 28px; border-radius: 6px; padding: 4px 12px; border: 1px solid #3E3E3E; background: #2D2D2D; color: #D4D4D4; font-weight: 600; }"
+            "QToolButton:hover { background-color: #383838; border-color: #505050; }"
+            "QToolButton[role='ghost'] { background: #232830; color: #D4D4D4; border: 1px solid #434B57; }"
             "QPushButton[role='rail'] { background: #0B5A8C; color: #FFFFFF; border: 1px solid #083E61; min-width: 64px; }"
             "QPushButton[role='toggle'][active='true'] { background: #0A4D77; color: #FFFFFF; border: 1px solid #083E61; }"
             "QPushButton[role='toggle'][active='false'] { background: #0B5A8C; color: #FFFFFF; border: 1px solid #0A4D77; }"
+            "QLabel#ruralPill { border: 1px solid #434B57; border-radius: 11px; background: #232830; color: #C5CED8; padding: 2px 10px; font-size: 11px; font-weight: 600; }"
+            "QLabel#ruralPill[ruralState='rural'] { background: #183626; border-color: #2D6A46; color: #8EE7AB; }"
+            "QLabel#ruralPill[ruralState='non_rural'] { background: #1B2E4D; border-color: #2D4E82; color: #A7C7FF; }"
+            "QLabel#ruralPill[ruralState='invalid'] { background: #2A2D33; border-color: #3A414D; color: #9BA8B7; }"
             "QLabel[subtle='true'] { color: #9BA8B7; font-size: 11px; }"
             "QLabel { background: transparent; color: #D4D4D4; }"
             "QMenuBar { background: #1E1E1E; color: #D4D4D4; border-bottom: 1px solid #3E3E3E; }"
@@ -329,17 +343,16 @@ class MainWindow(QMainWindow):
         toolbar_card.setObjectName("filterCard")
         toolbar_container = QVBoxLayout(toolbar_card)
         toolbar_container.setContentsMargins(12, 10, 12, 10)
-        toolbar_container.setSpacing(8)
+        toolbar_container.setSpacing(10)
 
         row1 = QHBoxLayout()
-        row1.setSpacing(8)
+        row1.setSpacing(10)
 
         sync_btn = self._styled_button("⚌  Sync from CMS", "primary")
         sync_btn.setToolTip("Download latest CMS DMEPOS fee schedules for your tracked states")
         sync_btn.clicked.connect(self._sync_cms)
         row1.addWidget(sync_btn)
 
-        row1.addSpacing(10)
         row1.addWidget(QLabel("Year:"))
         self.year_combo = QComboBox()
         self.year_combo.setMinimumWidth(85)
@@ -351,7 +364,6 @@ class MainWindow(QMainWindow):
         self.year_view_label.setMinimumWidth(180)
         row1.addWidget(self.year_view_label)
 
-        row1.addSpacing(6)
         row1.addWidget(QLabel("State:"))
         self.state_combo = QComboBox()
         self.state_combo.setMinimumWidth(280)
@@ -359,11 +371,10 @@ class MainWindow(QMainWindow):
         self.state_combo.currentIndexChanged.connect(self._save_filter_preferences)
         row1.addWidget(self.state_combo)
 
-        row1.addSpacing(6)
         row1.addWidget(QLabel("ZIP:"))
         self.zip_edit = QLineEdit()
         self.zip_edit.setPlaceholderText("5-digit ZIP")
-        self.zip_edit.setMaximumWidth(90)
+        self.zip_edit.setMaximumWidth(96)
         self.zip_edit.setToolTip(
             "Enter a 5-digit ZIP code to automatically select rural (R) or non-rural (NR) allowable.\n"
             "Leave blank to default to non-rural (NR)."
@@ -371,18 +382,14 @@ class MainWindow(QMainWindow):
         self.zip_edit.textChanged.connect(self._on_zip_changed)
         row1.addWidget(self.zip_edit)
 
-        self.rural_label = QLabel("No ZIP (default NR)")
-        self.rural_label.setStyleSheet("color: #666666; font-size: 11px;")
-        self.rural_label.setMinimumWidth(160)
+        self.rural_label = QLabel("No ZIP • NR")
+        self.rural_label.setObjectName("ruralPill")
+        self.rural_label.setProperty("ruralState", "default")
+        self.rural_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.rural_label.setMinimumWidth(112)
         row1.addWidget(self.rural_label)
 
-        row1.addStretch()
-        toolbar_container.addLayout(row1)
-
-        row2 = QHBoxLayout()
-        row2.setSpacing(8)
-
-        row2.addWidget(QLabel("Group:"))
+        row1.addWidget(QLabel("HCPCS Group:"))
         self.group_combo = QComboBox()
         self.group_combo.setMinimumWidth(220)
         self.group_combo.addItem("All Groups", None)
@@ -393,27 +400,28 @@ class MainWindow(QMainWindow):
             self.group_combo.addItem(label, prefix)
         self.group_combo.currentIndexChanged.connect(self._apply_filters)
         self.group_combo.currentIndexChanged.connect(self._save_filter_preferences)
-        row2.addWidget(self.group_combo)
-        row2.addSpacing(6)
+        row1.addWidget(self.group_combo)
 
-        row2.addWidget(QLabel("HCPCS:"))
+        row1.addWidget(QLabel("HCPCS Code:"))
         self.code_edit = QLineEdit()
         self.code_edit.setPlaceholderText("e.g. E0601")
-        self.code_edit.setMaximumWidth(120)
+        self.code_edit.setMaximumWidth(130)
         self.code_edit.textChanged.connect(self._on_search_text_changed)
         self.code_edit.returnPressed.connect(self._apply_filters)
-        row2.addWidget(self.code_edit)
+        row1.addWidget(self.code_edit)
+        row1.addStretch()
+        toolbar_container.addLayout(row1)
 
-        row2.addSpacing(6)
+        row2 = QHBoxLayout()
+        row2.setSpacing(10)
         row2.addWidget(QLabel("Keyword:"))
         self.keyword_edit = QLineEdit()
         self.keyword_edit.setPlaceholderText("Description keyword…")
-        self.keyword_edit.setMinimumWidth(220)
+        self.keyword_edit.setMinimumWidth(340)
         self.keyword_edit.textChanged.connect(self._on_search_text_changed)
         self.keyword_edit.returnPressed.connect(self._apply_filters)
         row2.addWidget(self.keyword_edit)
 
-        row2.addSpacing(4)
         search_btn = self._styled_button("Search", "primary")
         search_btn.clicked.connect(self._apply_filters)
         row2.addWidget(search_btn)
@@ -421,18 +429,18 @@ class MainWindow(QMainWindow):
         clear_btn = self._styled_button("Clear", "ghost")
         clear_btn.clicked.connect(self._clear_filters)
         row2.addWidget(clear_btn)
-        row2.addStretch()
-
-        export_btn = self._styled_button("Export", "accent")
+        export_btn = self._styled_button("Export", "ghost")
         export_btn.clicked.connect(self._export)
         row2.addWidget(export_btn)
 
-        purchase_btn = self._styled_button("Purchase List (0)", "toggle")
+        purchase_btn = self._styled_button("Purchase List (0)", "accent")
+        purchase_btn.setProperty("role", "toggle")
         purchase_btn.setProperty("active", "false")
         purchase_btn.setCheckable(True)
         purchase_btn.toggled.connect(self._toggle_purchase_list_panel)
         self._purchase_btn = purchase_btn
         row2.addWidget(purchase_btn)
+        row2.addStretch()
 
         toolbar_container.addLayout(row2)
         root_layout.addWidget(toolbar_card)
@@ -805,20 +813,23 @@ class MainWindow(QMainWindow):
         making it safe to call during startup or preference restoration.
         """
         zip5 = self.zip_edit.text().strip()
+        state = "default"
         if not zip5:
-            self.rural_label.setText("No ZIP (default NR)")
-            self.rural_label.setStyleSheet("color: #666666; font-size: 11px;")
+            self.rural_label.setText("No ZIP • NR")
         elif len(zip5) == 5 and zip5.isdigit():
             rural = self._is_rural()
             if rural:
-                self.rural_label.setText(f"ZIP {zip5} → Rural (R)")
-                self.rural_label.setStyleSheet("color: #006600; font-weight: bold; font-size: 11px;")
+                self.rural_label.setText(f"{zip5} • Rural (R)")
+                state = "rural"
             else:
-                self.rural_label.setText(f"ZIP {zip5} → Non-Rural (NR)")
-                self.rural_label.setStyleSheet("color: #003366; font-weight: bold; font-size: 11px;")
+                self.rural_label.setText(f"{zip5} • Non-Rural (NR)")
+                state = "non_rural"
         else:
-            self.rural_label.setText("")
-            self.rural_label.setStyleSheet("color: #666666; font-size: 11px;")
+            self.rural_label.setText("Invalid ZIP")
+            state = "invalid"
+        self.rural_label.setProperty("ruralState", state)
+        self.rural_label.style().unpolish(self.rural_label)
+        self.rural_label.style().polish(self.rural_label)
 
     def _on_zip_changed(self, text):
         """Update rural label and refresh display when ZIP input changes."""
@@ -1561,15 +1572,15 @@ class MainWindow(QMainWindow):
 
                 <h3>Removing Items</h3>
                 <ul>
+                    <li>Click the <b>🗑</b> icon on any purchase-list row for quick single-item removal</li>
                     <li>Check items in the Purchase List, then click <b>◄</b> or press <span class="shortcut">Ctrl+Left</span></li>
                 </ul>
 
                 <h3>Saving and Loading Bundles</h3>
                 <ul>
-                    <li><b>Save Bundle:</b> Save your current list with a name for reuse</li>
-                    <li><b>Load Bundle:</b> Restore a saved bundle (hover to preview contents)</li>
-                    <li><b>Categories:</b> Organize bundles — right-click to manage</li>
-                    <li><b>Rename/Delete:</b> Right-click bundles or categories</li>
+                    <li>Use the <b>Bundles</b> menu in the panel footer to save or load bundles</li>
+                    <li><b>Load / Manage Bundles:</b> Restore a saved bundle and preview item descriptions</li>
+                    <li><b>Manage</b> menu in the loader supports category and bundle create/rename/delete/move</li>
                 </ul>
 
                 <h3>Generating Worksheet Documents</h3>

@@ -271,6 +271,34 @@ class TestUiAdjustments:
         assert window._purchase_btn.property("active") == "true"
         window.close()
 
+    def test_top_bar_uses_rural_pill_badge(self, qapp, tmp_db):
+        from ui.main_window import MainWindow
+
+        with patch("core.database.get_fees", return_value=[]):
+            with patch("ui.main_window.is_rural_zip", return_value=True):
+                window = MainWindow()
+        window.show()
+        window.zip_edit.setText("90210")
+        qapp.processEvents()
+
+        assert window.rural_label.objectName() == "ruralPill"
+        assert window.rural_label.property("ruralState") in {"rural", "non_rural"}
+        assert "90210" in window.rural_label.text()
+        window.close()
+
+    def test_purchase_panel_uses_bundles_menu_and_row_delete_column(self, qapp, tmp_db):
+        from ui.main_window import MainWindow
+
+        with patch("core.database.get_fees", return_value=[]):
+            window = MainWindow()
+        panel = window._purchase_list_panel
+        menu = panel._bundles_btn.menu()
+        actions = [a.text() for a in menu.actions()]
+
+        assert panel.table.columnCount() == 7
+        assert actions == ["Save Current Bundle", "Load / Manage Bundles…"]
+        window.close()
+
 
 class TestPurchaseListPanelStartup:
     def test_refresh_does_not_run_before_required_widgets_exist(self, qapp, tmp_db, monkeypatch):
@@ -323,6 +351,24 @@ class TestPurchaseListPanelStartup:
                     MainWindow()
 
         assert any("PurchaseListPanel creation failed: panel boom" in msg for msg in breadcrumbs)
+
+    def test_quick_add_suggestions_prioritize_code_matches(self, qapp, tmp_db):
+        from ui.purchase_list_panel import PurchaseListPanel
+
+        panel = PurchaseListPanel()
+
+        sample_records = [
+            {"hcpcs_code": "A0001", "description": "Alpha code"},
+            {"hcpcs_code": "L5301", "description": "Lower limb prosthesis"},
+            {"hcpcs_code": "L1234", "description": "L-series example"},
+        ]
+        with patch("ui.purchase_list_panel.get_fees", return_value=sample_records):
+            panel._update_quick_add_suggestions("L5")
+
+        suggestions = panel._quick_add_model.stringList()
+        assert suggestions
+        assert suggestions[0].startswith("L5301")
+        panel.close()
 
 
 class TestPurchaseListContextRules:

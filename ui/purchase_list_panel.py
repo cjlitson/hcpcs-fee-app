@@ -1,17 +1,20 @@
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QStringListModel
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
+    QCompleter,
     QDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
+    QToolButton,
     QVBoxLayout,
     QWidget,
     QInputDialog,
@@ -39,10 +42,12 @@ class PurchaseListPanel(QWidget):
         self._zip_edit = zip_edit
         self._bundle_name = None
         self._quick_add_btn = None
-        self._save_bundle_btn = None
-        self._load_bundle_btn = None
+        self._bundles_btn = None
         self._generate_btn = None
         self._clear_btn = None
+        self._quick_add_suggestions = {}
+        self._quick_add_model = QStringListModel(self)
+        self._quick_add_completer = None
         self._init_ui()
         self.refresh_context_state()
 
@@ -89,7 +94,7 @@ class PurchaseListPanel(QWidget):
 
         instructions = QLabel(
             "Type an HCPCS code in Quick Add and press Enter. "
-            "Use checkboxes with ◄ / ► in the center to add or remove items."
+            "Use row 🗑 buttons for quick removal, or checkboxes with ◄ / ► for bulk actions."
         )
         instructions.setWordWrap(True)
         context_card_layout.addWidget(instructions)
@@ -100,6 +105,12 @@ class PurchaseListPanel(QWidget):
         self.quick_add_edit = QLineEdit()
         self.quick_add_edit.setPlaceholderText("e.g. L5301")
         self.quick_add_edit.returnPressed.connect(self._quick_add_from_input)
+        self.quick_add_edit.textChanged.connect(self._update_quick_add_suggestions)
+        self._quick_add_completer = QCompleter(self._quick_add_model, self.quick_add_edit)
+        self._quick_add_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._quick_add_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._quick_add_completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.quick_add_edit.setCompleter(self._quick_add_completer)
         controls.addWidget(self.quick_add_edit, 1)
         self._quick_add_btn = QPushButton("Add")
         self._quick_add_btn.setProperty("role", "primary")
@@ -116,11 +127,12 @@ class PurchaseListPanel(QWidget):
         controls.addWidget(deselect_all_btn)
         root.addLayout(controls)
 
-        self.table = QTableWidget(0, 6)
+        self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
-            ["", "HCPCS Code", "Description", "Qty", "Unit Price", "Line Total"]
+            ["", "HCPCS Code", "Description", "Qty", "Unit Price", "Line Total", ""]
         )
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setSectionsMovable(True)
         self.table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
@@ -132,29 +144,39 @@ class PurchaseListPanel(QWidget):
         self.table.horizontalHeader().sectionResized.connect(self._save_table_layout_preferences)
         root.addWidget(self.table, 1)
 
-        totals = QHBoxLayout()
+        totals_card = QFrame()
+        totals_card.setObjectName("purchaseSummaryCard")
+        totals = QHBoxLayout(totals_card)
+        totals.setContentsMargins(10, 6, 10, 6)
+        totals.addWidget(QLabel("Summary"))
         totals.addStretch()
+        self.total_items_label = QLabel("Items: 0")
+        self.total_items_label.setStyleSheet("font-weight: 600;")
+        totals.addWidget(self.total_items_label)
+        totals.addSpacing(12)
         totals.addWidget(QLabel("Grand Total:"))
         self.grand_total_label = QLabel("$0.00")
         self.grand_total_label.setStyleSheet("font-weight: bold;")
         totals.addWidget(self.grand_total_label)
-        root.addLayout(totals)
+        root.addWidget(totals_card)
 
         btns = QHBoxLayout()
-        self._save_bundle_btn = QPushButton("Save Bundle")
-        self._load_bundle_btn = QPushButton("Load Bundle")
+        self._bundles_btn = QToolButton()
+        self._bundles_btn.setText("Bundles")
+        self._bundles_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        bundles_menu = QMenu(self._bundles_btn)
+        bundles_menu.addAction("Save Current Bundle", self._save_bundle)
+        bundles_menu.addAction("Load / Manage Bundles…", self._load_bundle)
+        self._bundles_btn.setMenu(bundles_menu)
         self._generate_btn = QPushButton("Generate Document")
         self._clear_btn = QPushButton("Clear")
-        self._save_bundle_btn.setProperty("role", "ghost")
-        self._load_bundle_btn.setProperty("role", "ghost")
+        self._bundles_btn.setProperty("role", "ghost")
         self._generate_btn.setProperty("role", "primary")
         self._clear_btn.setProperty("role", "ghost")
-        self._save_bundle_btn.clicked.connect(self._save_bundle)
-        self._load_bundle_btn.clicked.connect(self._load_bundle)
         self._generate_btn.clicked.connect(self._generate_document)
         self._clear_btn.clicked.connect(self._clear_list)
-        btns.addWidget(self._save_bundle_btn)
-        btns.addWidget(self._load_bundle_btn)
+        btns.addWidget(self._bundles_btn)
+        btns.addStretch()
         btns.addWidget(self._generate_btn)
         btns.addWidget(self._clear_btn)
         root.addLayout(btns)
@@ -208,8 +230,7 @@ class PurchaseListPanel(QWidget):
         for widget in (
             self.quick_add_edit,
             self._quick_add_btn,
-            self._save_bundle_btn,
-            self._load_bundle_btn,
+            self._bundles_btn,
             self._generate_btn,
         ):
             if widget is not None:
@@ -256,13 +277,14 @@ class PurchaseListPanel(QWidget):
         self.table.setCellWidget(row, 3, qty_spin)
         self.table.setItem(row, 4, QTableWidgetItem("—"))
         self.table.setItem(row, 5, QTableWidgetItem("—"))
+        self.table.setCellWidget(row, 6, self._make_row_delete_button(row))
         self.refresh_prices()
 
     def _quick_add_from_input(self):
         if not self._is_ready_for_pricing():
             QMessageBox.information(self, "Purchase List Filter Required", self.context_requirement_message())
             return
-        code = (self.quick_add_edit.text() or "").strip().upper()
+        code = self._resolve_quick_add_code()
         if not code:
             return
         recs = get_fees(hcpcs_code=code)
@@ -273,6 +295,78 @@ class PurchaseListPanel(QWidget):
         desc = exact[0].get("description") or ""
         self.add_code(code, desc)
         self.quick_add_edit.clear()
+
+    def _resolve_quick_add_code(self):
+        typed = (self.quick_add_edit.text() or "").strip()
+        popup = self._quick_add_completer.popup() if self._quick_add_completer else None
+        if popup is not None and popup.isVisible():
+            idx = popup.currentIndex()
+            if idx.isValid():
+                label = str(idx.data() or "")
+                return self._quick_add_suggestions.get(label, typed).upper()
+        return self._quick_add_suggestions.get(typed, typed).upper()
+
+    def _update_quick_add_suggestions(self, text):
+        term = (text or "").strip()
+        if not term:
+            self._quick_add_suggestions = {}
+            self._quick_add_model.setStringList([])
+            return
+        records = get_fees(
+            state_abbr=self._state_abbr(),
+            year=self._effective_year(),
+            hcpcs_code=term,
+            keyword=term,
+        )
+        if not records:
+            records = get_fees(hcpcs_code=term, keyword=term)
+        normalized = term.upper()
+        scored = []
+        seen = set()
+        for rec in records:
+            code = (rec.get("hcpcs_code") or "").upper()
+            if not code or code in seen:
+                continue
+            seen.add(code)
+            desc = (rec.get("description") or "").strip()
+            starts = 0 if code.startswith(normalized) else 1
+            contains = 0 if normalized in code else 1
+            scored.append(((starts, contains, code), code, desc))
+        scored.sort(key=lambda entry: entry[0])
+        suggestions = []
+        mapping = {}
+        for _, code, desc in scored[:20]:
+            label = f"{code} — {desc}" if desc else code
+            suggestions.append(label)
+            mapping[label] = code
+        self._quick_add_suggestions = mapping
+        self._quick_add_model.setStringList(suggestions)
+
+    def _make_row_delete_button(self, row):
+        btn = QPushButton("🗑")
+        btn.setToolTip("Remove this line item")
+        btn.setProperty("role", "ghost")
+        btn.setMaximumWidth(36)
+        btn.clicked.connect(lambda _=False, r=row: self._remove_row(r))
+        return btn
+
+    def _remove_row(self, row):
+        if row < 0 or row >= self.table.rowCount():
+            return
+        self.table.removeRow(row)
+        self._rebind_remove_buttons()
+        self.refresh_prices()
+
+    def _rebind_remove_buttons(self):
+        for row in range(self.table.rowCount()):
+            btn = self.table.cellWidget(row, 6)
+            if not isinstance(btn, QPushButton):
+                continue
+            try:
+                btn.clicked.disconnect()
+            except Exception:
+                pass
+            btn.clicked.connect(lambda _=False, r=row: self._remove_row(r))
 
     def _lookup_description(self, code):
         records = get_fees(
@@ -343,6 +437,8 @@ class PurchaseListPanel(QWidget):
     def _update_header(self):
         count = self.table.rowCount()
         self.title_label.setText(f"Purchase List ({count})")
+        if hasattr(self, "total_items_label"):
+            self.total_items_label.setText(f"Items: {count}")
         self.count_changed.emit(count)
 
     def _collect_items(self):
@@ -431,6 +527,8 @@ class PurchaseListPanel(QWidget):
             self.table.setCellWidget(row, 3, qty_spin)
             self.table.setItem(row, 4, QTableWidgetItem("—"))
             self.table.setItem(row, 5, QTableWidgetItem("—"))
+            self.table.setCellWidget(row, 6, self._make_row_delete_button(row))
+        self._rebind_remove_buttons()
         self.refresh_prices()
 
     def _generate_document(self):
@@ -473,6 +571,7 @@ class PurchaseListPanel(QWidget):
                 self.table.removeRow(row)
                 removed += 1
         if removed:
+            self._rebind_remove_buttons()
             self.refresh_prices()
         return removed
 
@@ -505,7 +604,7 @@ class PurchaseListPanel(QWidget):
         self.refresh_prices()
 
     def _table_layout_key(self):
-        return "purchase_list_table_layout_v1"
+        return "purchase_list_table_layout_v2"
 
     def _restore_table_layout_preferences(self):
         header = self.table.horizontalHeader()
@@ -516,6 +615,7 @@ class PurchaseListPanel(QWidget):
             self.table.setColumnWidth(3, 70)
             self.table.setColumnWidth(4, 110)
             self.table.setColumnWidth(5, 110)
+            self.table.setColumnWidth(6, 42)
             return
         try:
             import base64
