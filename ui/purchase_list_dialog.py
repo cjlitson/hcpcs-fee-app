@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -54,11 +55,22 @@ class BundlePickerDialog(QDialog):
         self.setWindowTitle("Load Bundle")
         self.setMinimumSize(620, 360)
         self.selected_bundle_id = None
+        self._bundle_payload_cache = {}
         self._init_ui()
         self._refresh()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(8)
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Find Bundle:"))
+        self.bundle_filter_edit = QLineEdit()
+        self.bundle_filter_edit.setPlaceholderText("Search categories, bundle names, or preview descriptions…")
+        self.bundle_filter_edit.textChanged.connect(self._apply_tree_filter)
+        filter_row.addWidget(self.bundle_filter_edit, 1)
+        root.addLayout(filter_row)
+
         self.bundle_tree = QTreeWidget()
         self.bundle_tree.setColumnCount(4)
         self.bundle_tree.setHeaderLabels(["Name", "# Items", "Created", "Last Updated"])
@@ -68,7 +80,9 @@ class BundlePickerDialog(QDialog):
         self.bundle_tree.itemDoubleClicked.connect(lambda *_: self._load_selected())
         root.addWidget(self.bundle_tree, 1)
 
-        root.addWidget(QLabel("Bundle Preview"))
+        self.preview_label = QLabel("Bundle Preview")
+        self.preview_label.setStyleSheet("font-weight: 600;")
+        root.addWidget(self.preview_label)
         self.preview_table = QTableWidget(0, 3)
         self.preview_table.setHorizontalHeaderLabels(["HCPCS Code", "Description", "Quantity"])
         self.preview_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -78,28 +92,23 @@ class BundlePickerDialog(QDialog):
         root.addWidget(self.preview_table, 1)
 
         btns = QHBoxLayout()
-        new_cat_btn = QPushButton("New Category")
-        rename_cat_btn = QPushButton("Rename Category")
-        delete_cat_btn = QPushButton("Delete Category")
-        move_btn = QPushButton("Move Bundle")
-        rename_btn = QPushButton("Rename")
-        delete_btn = QPushButton("Delete")
-        load_btn = QPushButton("Load")
+        manage_btn = QToolButton()
+        manage_btn.setText("Manage")
+        manage_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        manage_menu = QMenu(manage_btn)
+        manage_menu.addAction("Create Category…", self._create_category)
+        manage_menu.addAction("Rename Category…", self._rename_category)
+        manage_menu.addAction("Delete Category…", self._delete_category)
+        manage_menu.addSeparator()
+        manage_menu.addAction("Move Bundle…", self._move_bundle)
+        manage_menu.addAction("Rename Bundle…", self._rename_selected)
+        manage_menu.addAction("Delete Bundle…", self._delete_selected)
+        manage_btn.setMenu(manage_menu)
+        load_btn = QPushButton("Load Bundle")
         cancel_btn = QPushButton("Cancel")
-        new_cat_btn.clicked.connect(self._create_category)
-        rename_cat_btn.clicked.connect(self._rename_category)
-        delete_cat_btn.clicked.connect(self._delete_category)
-        move_btn.clicked.connect(self._move_bundle)
-        rename_btn.clicked.connect(self._rename_selected)
-        delete_btn.clicked.connect(self._delete_selected)
         load_btn.clicked.connect(self._load_selected)
         cancel_btn.clicked.connect(self.reject)
-        btns.addWidget(new_cat_btn)
-        btns.addWidget(rename_cat_btn)
-        btns.addWidget(delete_cat_btn)
-        btns.addWidget(move_btn)
-        btns.addWidget(rename_btn)
-        btns.addWidget(delete_btn)
+        btns.addWidget(manage_btn)
         btns.addStretch()
         btns.addWidget(cancel_btn)
         btns.addWidget(load_btn)
@@ -108,6 +117,7 @@ class BundlePickerDialog(QDialog):
     def _refresh(self):
         current_bundle_id = self._current_bundle_id()
         self.bundle_tree.clear()
+        self._bundle_payload_cache = {}
         categories = list_bundle_categories()
         bundles = list_bundles()
         cat_nodes = {}
@@ -141,6 +151,8 @@ class BundlePickerDialog(QDialog):
                 self.bundle_tree.setCurrentItem(first)
         else:
             self.preview_table.setRowCount(0)
+            self.preview_label.setText("Bundle Preview")
+        self._apply_tree_filter()
 
     def _current_bundle_id(self):
         item = self.bundle_tree.currentItem()
@@ -225,8 +237,44 @@ class BundlePickerDialog(QDialog):
         bundle_id = self._current_bundle_id()
         if bundle_id is None:
             self.preview_table.setRowCount(0)
+            self.preview_label.setText("Bundle Preview")
             return
         self._populate_preview(bundle_id)
+
+    def _apply_tree_filter(self):
+        term = (self.bundle_filter_edit.text() or "").strip().lower()
+
+        def bundle_matches(item):
+            data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+            if data.get("kind") != "bundle":
+                return False
+            if not term:
+                return True
+            bundle_id = data.get("id")
+            if term in (item.text(0) or "").lower():
+                return True
+            if bundle_id not in self._bundle_payload_cache:
+                self._bundle_payload_cache[bundle_id] = load_bundle(bundle_id) or {}
+            payload = self._bundle_payload_cache[bundle_id]
+            for entry in (payload or {}).get("items", []):
+                code = (entry.get("hcpcs_code") or "").lower()
+                desc = (entry.get("description") or "").lower()
+                if term in code or term in desc:
+                    return True
+            return False
+
+        for i in range(self.bundle_tree.topLevelItemCount()):
+            category_item = self.bundle_tree.topLevelItem(i)
+            category_name_match = term in (category_item.text(0) or "").lower() if term else True
+            visible_children = 0
+            for c in range(category_item.childCount()):
+                bundle_item = category_item.child(c)
+                visible = category_name_match or bundle_matches(bundle_item)
+                bundle_item.setHidden(not visible)
+                if visible:
+                    visible_children += 1
+            category_visible = category_name_match or visible_children > 0
+            category_item.setHidden(not category_visible)
 
     def _create_category(self):
         name, ok = QInputDialog.getText(self, "New Category", "Category name:")
@@ -298,8 +346,12 @@ class BundlePickerDialog(QDialog):
         self._refresh()
 
     def _populate_preview(self, bundle_id):
-        payload = load_bundle(bundle_id)
+        if bundle_id not in self._bundle_payload_cache:
+            self._bundle_payload_cache[bundle_id] = load_bundle(bundle_id) or {}
+        payload = self._bundle_payload_cache[bundle_id]
         items = payload.get("items", []) if payload else []
+        bundle_name = (payload or {}).get("name") or ""
+        self.preview_label.setText(f"Bundle Preview — {bundle_name} ({len(items)} item{'s' if len(items) != 1 else ''})")
         self.preview_table.setRowCount(len(items))
         for row, entry in enumerate(items):
             code = (entry.get("hcpcs_code") or "").upper()
