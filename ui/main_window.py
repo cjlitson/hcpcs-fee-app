@@ -195,9 +195,9 @@ class MainWindow(QMainWindow):
             "QFrame#updateBannerCard { background: #FFF8E1; border-color: #F2D8A7; }"
             "QFrame#footerStrip { border-radius: 8px; }"
             "QLineEdit, QComboBox { border: 1px solid #C9CED6; border-radius: 6px; padding: 4px 8px; min-height: 24px; background: #FFFFFF; color: #202124; }"
-            "QComboBox { padding-right: 24px; }"
-            "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 22px; border-left: 1px solid #C9CED6; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background: #F0F4F8; }"
-            "QComboBox::down-arrow { width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #555E6B; margin-right: 3px; }"
+            "QComboBox { padding-right: 28px; }"
+            "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 24px; border-left: 1px solid #C9CED6; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background: #F0F4F8; }"
+            "QComboBox::down-arrow { width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #555E6B; margin: 0; }"
             "QComboBox QAbstractItemView { background: #FFFFFF; color: #202124; selection-background-color: #0D6EFD; selection-color: #FFFFFF; border: 1px solid #C9CED6; outline: none; }"
             "QDateEdit { border: 1px solid #C9CED6; border-radius: 6px; padding: 4px 8px; min-height: 24px; background: #FFFFFF; color: #202124; }"
             "QPushButton { min-height: 28px; border-radius: 6px; padding: 4px 12px; border: 1px solid #AAB2BF; background: #F8F9FB; color: #202124; font-weight: 600; }"
@@ -207,7 +207,7 @@ class MainWindow(QMainWindow):
             "QPushButton[role='accent'] { background: #005A9C; color: #FFFFFF; border: 1px solid #004B82; }"
             "QPushButton[role='accent']:hover { background: #004D85; }"
             "QPushButton[role='ghost'] { background: #FFFFFF; color: #2E3A48; border: 1px solid #C9CED6; }"
-            "QPushButton[deleteAction='true'] { background: #FFFFFF; color: #B42318; border: 1px solid #F2C7C4; padding: 0; border-radius: 6px; font-size: 13px; font-weight: 700; }"
+            "QPushButton[deleteAction='true'] { background: #FFFFFF; color: #B42318; border: 1px solid #F2C7C4; padding: 0; border-radius: 6px; font-size: 13px; font-weight: 700; text-align: center; }"
             "QPushButton[deleteAction='true']:hover { background: #FFF1F0; border-color: #E6938E; color: #8B1108; }"
             "QPushButton[role='stepper'] { min-height: 22px; min-width: 22px; max-width: 28px; padding: 0; font-size: 15px; font-weight: 700; border-radius: 6px; border: 1px solid #C9CED6; background: #F0F4F8; color: #344054; }"
             "QPushButton[role='stepper']:hover { background: #DDE5F0; border-color: #9BA8B7; }"
@@ -261,9 +261,9 @@ class MainWindow(QMainWindow):
             "QFrame#updateBannerCard, QFrame#filterCard, QFrame#resultsCard, QFrame#footerStrip, QWidget#purchaseListPanel, QFrame#purchaseHeaderCard, QFrame#purchaseSummaryCard { background: #22262C; border: 1px solid #353C46; border-radius: 10px; }"
             "QFrame#updateBannerCard { background: #3A2F1B; border-color: #6B5632; }"
             "QLineEdit, QComboBox { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 6px; padding: 4px 8px; min-height: 24px; selection-background-color: #264F78; selection-color: #FFFFFF; }"
-            "QComboBox { padding-right: 24px; }"
-            "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 22px; border-left: 1px solid #3E3E3E; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background: #383838; }"
-            "QComboBox::down-arrow { width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #A0A0A0; margin-right: 3px; }"
+            "QComboBox { padding-right: 28px; }"
+            "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 24px; border-left: 1px solid #3E3E3E; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background: #383838; }"
+            "QComboBox::down-arrow { width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #A0A0A0; margin: 0; }"
             "QComboBox QAbstractItemView { background: #2D2D2D; color: #D4D4D4; selection-background-color: #264F78; selection-color: #FFFFFF; border: 1px solid #3E3E3E; }"
             "QDateEdit { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 6px; padding: 4px 8px; min-height: 24px; }"
             "QTextEdit { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 3px; padding: 4px 6px; selection-background-color: #264F78; selection-color: #FFFFFF; }"
@@ -276,7 +276,7 @@ class MainWindow(QMainWindow):
             "QPushButton[role='accent'] { background: #0B5A8C; color: #FFFFFF; border: 1px solid #0A4D77; }"
             "QPushButton[role='accent']:hover { background: #0A4D77; }"
             "QPushButton[role='ghost'] { background: #232830; color: #D4D4D4; border: 1px solid #434B57; }"
-            "QPushButton[deleteAction='true'] { background: #232830; color: #FF938B; border: 1px solid #7B3A35; padding: 0; border-radius: 6px; font-size: 13px; font-weight: 700; }"
+            "QPushButton[deleteAction='true'] { background: #232830; color: #FF938B; border: 1px solid #7B3A35; padding: 0; border-radius: 6px; font-size: 13px; font-weight: 700; text-align: center; }"
             "QPushButton[deleteAction='true']:hover { background: #3A2525; border-color: #A55650; color: #FFB8B2; }"
             "QPushButton[role='stepper'] { min-height: 22px; min-width: 22px; max-width: 28px; padding: 0; font-size: 15px; font-weight: 700; border-radius: 6px; border: 1px solid #4A5260; background: #2D3340; color: #C5CED8; }"
             "QPushButton[role='stepper']:hover { background: #363D4D; border-color: #6B7789; }"
@@ -521,6 +521,13 @@ class MainWindow(QMainWindow):
         purchase_btn.toggled.connect(self._toggle_purchase_list_panel)
         self._purchase_btn = purchase_btn
         row2.addWidget(purchase_btn)
+
+        self._add_selected_btn = self._styled_button("Select row(s) to add", "accent")
+        self._add_selected_btn.setToolTip("Add selected results rows to the purchase list")
+        self._add_selected_btn.setVisible(False)
+        self._add_selected_btn.setEnabled(False)
+        self._add_selected_btn.clicked.connect(self._add_selected_from_main)
+        row2.addWidget(self._add_selected_btn)
         row2.addStretch()
 
         toolbar_container.addLayout(row2)
@@ -537,7 +544,7 @@ class MainWindow(QMainWindow):
         heading = QLabel("Fee Schedule Results")
         heading.setStyleSheet("font-size: 14px; font-weight: 700;")
         heading_row.addWidget(heading)
-        hint = QLabel("Click HCPCS for history  \u00b7  Select rows then \u25ba to add  \u00b7  Right-click for copy actions")
+        hint = QLabel("Click HCPCS for history  \u00b7  Select rows then use Add Selected  \u00b7  Right-click for copy actions")
         hint.setProperty("subtle", True)
         heading_row.addStretch()
         heading_row.addWidget(hint)
@@ -565,6 +572,8 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().sectionResized.connect(self._save_main_table_layout_preferences)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_table_context_menu)
+        if self.table.selectionModel() is not None:
+            self.table.selectionModel().selectionChanged.connect(self._update_add_selected_button_state)
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.setHandleWidth(8)
@@ -1269,6 +1278,7 @@ class MainWindow(QMainWindow):
             self.table.clearSelection()
             self._set_purchase_list_panel_visible(True)
             self._set_status(f"Added {added} item(s) to purchase list.")
+        self._update_add_selected_button_state()
 
     # Keep old name as alias for backward compatibility
     def _add_checked_from_main(self):
@@ -1319,6 +1329,7 @@ class MainWindow(QMainWindow):
             self._purchase_list_action.blockSignals(True)
             self._purchase_list_action.setChecked(visible)
             self._purchase_list_action.blockSignals(False)
+        self._update_add_selected_button_state()
 
     def _toggle_dark_mode(self, enabled):
         self._apply_theme(bool(enabled))
@@ -1370,6 +1381,22 @@ class MainWindow(QMainWindow):
     def _update_purchase_button_label(self, count):
         if getattr(self, "_purchase_btn", None):
             self._purchase_btn.setText(f"Purchase List ({count})")
+
+    def _update_add_selected_button_state(self, *_args):
+        btn = getattr(self, "_add_selected_btn", None)
+        if btn is None:
+            return
+        visible = bool(getattr(self, "_purchase_list_panel_visible", False))
+        btn.setVisible(visible)
+        if not visible:
+            return
+        selected_count = len({idx.row() for idx in self.table.selectionModel().selectedRows()})
+        if selected_count > 0:
+            btn.setText(f"Add {selected_count} item(s) to List")
+            btn.setEnabled(True)
+        else:
+            btn.setText("Select row(s) to add")
+            btn.setEnabled(False)
 
     def _create_backup(self):
         from core.backup import create_backup
@@ -1586,7 +1613,7 @@ class MainWindow(QMainWindow):
                 <h3>Application Layout</h3>
                 <ul>
                     <li><b>Top Toolbar (Row 1):</b> Sync from CMS, Year filter, State filter, ZIP code entry</li>
-                    <li><b>Top Toolbar (Row 2):</b> HCPCS Group filter, HCPCS code search, Keyword search, Export button, Purchase List button</li>
+                    <li><b>Top Toolbar (Row 2):</b> HCPCS Group filter, HCPCS code search, Keyword search, Export button, Purchase List toggle, and contextual Add Selected action</li>
                     <li><b>Main Table:</b> HCPCS code, description, state, year, allowable amount, modifier, and source</li>
                     <li><b>Status Bar:</b> Record count and operation status</li>
                 </ul>
@@ -1654,15 +1681,16 @@ class MainWindow(QMainWindow):
 
                 <h3>Adding Items</h3>
                 <ul>
-                    <li><b>From Main Table:</b> Check items, then click <b>►</b> or press <span class="shortcut">Ctrl+Right</span></li>
-                    <li><b>Quick Add:</b> Type an HCPCS code directly in the Purchase List input field and press Enter</li>
+                    <li><b>From Main Table:</b> Select one or more rows, then click <b>Add N item(s) to List</b> in the toolbar area (visible when Purchase List is open) or press <span class="shortcut">Ctrl+Right</span></li>
+                    <li><b>Quick Add:</b> Type an HCPCS code directly in the Purchase List input field and press Enter; autocomplete suggestions appear as you type</li>
                     <li><b>Right-Click Menu:</b> Right-click any row in the main table → "Add to Purchase List"</li>
                 </ul>
 
                 <h3>Removing Items</h3>
                 <ul>
                     <li>Click the <b>🗑</b> icon on any purchase-list row for quick single-item removal</li>
-                    <li>Check items in the Purchase List, then click <b>◄</b> or press <span class="shortcut">Ctrl+Left</span></li>
+                    <li>Select one or more purchase-list rows, then press <span class="shortcut">Ctrl+Left</span> for bulk removal</li>
+                    <li>Use <b>Clear</b> to remove all line items at once</li>
                 </ul>
 
                 <h3>Saving and Loading Bundles</h3>
@@ -1823,11 +1851,11 @@ class MainWindow(QMainWindow):
                     </tr>
                     <tr>
                         <td><span class="shortcut">Ctrl+Right</span></td>
-                        <td>Add checked items to Purchase List</td>
+                        <td>Add selected result rows to Purchase List</td>
                     </tr>
                     <tr>
                         <td><span class="shortcut">Ctrl+Left</span></td>
-                        <td>Remove checked items from Purchase List</td>
+                        <td>Remove selected Purchase List rows</td>
                     </tr>
                     <tr>
                         <td><span class="shortcut">Ctrl+Shift+C</span></td>

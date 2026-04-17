@@ -234,8 +234,9 @@ class TestRestorePreferencesSignals:
 
 
 class TestUiAdjustments:
-    def test_state_dropdown_sized_and_transfer_btns_in_purchase_panel(self, qapp, tmp_db):
+    def test_state_dropdown_sized_and_add_selected_button_tracks_panel_visibility(self, qapp, tmp_db):
         from ui.main_window import MainWindow
+        from PyQt6.QtWidgets import QTableWidgetItem
 
         with patch("core.database.get_fees", return_value=[]):
             window = MainWindow()
@@ -246,18 +247,25 @@ class TestUiAdjustments:
         assert window.state_combo.minimumWidth() >= 100
         assert window.state_combo.maximumWidth() <= 220
 
-        # Transfer buttons live inside the purchase panel, not main window
+        # Add-selected CTA should stay hidden until Purchase List panel is shown
         panel = window._purchase_list_panel
-        assert panel._add_transfer_btn is not None
-        assert panel._remove_transfer_btn is not None
-        # Panel is hidden, so its buttons are not visible
+        assert window._add_selected_btn is not None
         assert not panel.isVisible()
+        assert not window._add_selected_btn.isVisible()
 
         window._set_purchase_list_panel_visible(True)
         qapp.processEvents()
         assert panel.isVisible()
-        assert panel._add_transfer_btn.isVisible()
-        assert panel._remove_transfer_btn.isVisible()
+        assert window._add_selected_btn.isVisible()
+        assert not window._add_selected_btn.isEnabled()
+        assert window._add_selected_btn.text() == "Select row(s) to add"
+
+        window.table.setRowCount(1)
+        window.table.setItem(0, 0, QTableWidgetItem("L5301"))
+        window.table.selectRow(0)
+        qapp.processEvents()
+        assert window._add_selected_btn.isEnabled()
+        assert window._add_selected_btn.text() == "Add 1 item(s) to List"
         window.close()
 
     def test_modernized_sections_exist_and_purchase_toggle_property_tracks_visibility(self, qapp, tmp_db):

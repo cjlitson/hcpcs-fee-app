@@ -4,6 +4,8 @@ VA HCPCS Fee Schedule Manager is a Windows desktop application for VA teams to s
 
 It is designed for day-to-day fee lookup and procurement workflows while keeping data local to each user profile.
 
+Current release: **v1.2.0**
+
 ---
 
 ## What the app does
@@ -24,7 +26,9 @@ It is designed for day-to-day fee lookup and procurement workflows while keeping
 - Compare the same HCPCS code across states.
 
 ### Purchase List workflow
-- Add HCPCS items from results, right-click actions, or quick-add code entry.
+- Open the Purchase List panel, select one or more results rows, then use **Add N item(s) to List**.
+- Add HCPCS items from right-click actions or quick-add code entry with autocomplete suggestions.
+- Remove individual line items with the row delete button, or remove selected purchase-list rows via `Ctrl+Left`.
 - Save/load bundles for recurring workflows.
 - Keep pricing tied to a specific selected CMS year and state.
 
@@ -71,7 +75,7 @@ Install target: `Documents\HCPCSFeeApp\` (per-user install). No administrator ri
 - Shows year-over-year values and supports state comparison.
 
 ### 3) Purchase List panel
-- Build a checked item list with quantities and pricing.
+- Build a selected-row workflow list with quantities and pricing.
 - Save/load bundles and generate documents.
 
 ### 4) Export dialog
@@ -101,6 +105,7 @@ https://www.cms.gov/medicare/payment/fee-schedules/dmepos
 
 ## Release notes
 
+- [v1.2.0 — UI Workflow Refinement and Documentation Refresh](docs/releases/v1.2.0.md)
 - [v1.1.3 — Public Release for Updater Validation](docs/releases/v1.1.3.md)
 - [v1.1.2 — Updater Reliability and Release-Prep Polish](docs/releases/v1.1.2.md)
 - [v1.1.1 — Reliability, Export, Purchase List, and Dark Mode refresh](docs/releases/v1.1.1.md)
