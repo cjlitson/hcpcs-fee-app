@@ -3,6 +3,7 @@ setlocal enabledelayedexpansion
 
 set APP_NAME=VA HCPCS Fee Schedule Manager
 set EXE_NAME=HCPCSFeeApp.exe
+set UPDATER_EXE_NAME=HCPCSFeeAppUpdater.exe
 set ICO_NAME=wsnc_map.ico
 set SHORTCUT_NAME=VA HCPCS Fee Schedule Manager.lnk
 set INSTALL_DIR=%USERPROFILE%\Documents\HCPCSFeeApp
@@ -20,10 +21,19 @@ echo.
 :: -- Locate files in AppFiles subfolder relative to this script ---------------
 set SCRIPT_DIR=%~dp0
 set SRC_EXE=%SCRIPT_DIR%AppFiles\%EXE_NAME%
+set SRC_UPDATER=%SCRIPT_DIR%AppFiles\%UPDATER_EXE_NAME%
 set SRC_ICO=%SCRIPT_DIR%AppFiles\%ICO_NAME%
 
 if not exist "%SRC_EXE%" (
     echo ERROR: %EXE_NAME% not found in the AppFiles folder.
+    echo        Make sure you extracted the full ZIP and the AppFiles folder is present.
+    echo.
+    pause
+    exit /b 1
+)
+
+if not exist "%SRC_UPDATER%" (
+    echo ERROR: %UPDATER_EXE_NAME% not found in the AppFiles folder.
     echo        Make sure you extracted the full ZIP and the AppFiles folder is present.
     echo.
     pause
@@ -48,6 +58,16 @@ echo Copying %EXE_NAME%...
 copy /y "%SRC_EXE%" "%INSTALL_DIR%\%EXE_NAME%" >nul
 if errorlevel 1 (
     echo ERROR: Failed to copy %EXE_NAME%.
+    echo        The app may still be running. Close it and run Install.bat again.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo Copying %UPDATER_EXE_NAME%...
+copy /y "%SRC_UPDATER%" "%INSTALL_DIR%\%UPDATER_EXE_NAME%" >nul
+if errorlevel 1 (
+    echo ERROR: Failed to copy %UPDATER_EXE_NAME%.
     echo        The app may still be running. Close it and run Install.bat again.
     echo.
     pause

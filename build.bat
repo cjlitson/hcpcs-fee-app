@@ -12,12 +12,14 @@ python -c "from PIL import Image; img = Image.open('assets/wsnc_map.png').conver
 
 echo Building VA HCPCS Fee Schedule Manager...
 pyinstaller --clean --noconfirm hcpcs_fee_app.spec
+pyinstaller --clean --noconfirm --onefile --name HCPCSFeeAppUpdater updater_main.py
 
 echo Packaging ZIP...
 :: Create AppFiles subfolder and copy app files into it
 if not exist dist\AppFiles mkdir dist\AppFiles
 copy /y assets\wsnc_map.ico dist\AppFiles\wsnc_map.ico
 copy /y dist\HCPCSFeeApp.exe dist\AppFiles\HCPCSFeeApp.exe
+copy /y dist\HCPCSFeeAppUpdater.exe dist\AppFiles\HCPCSFeeAppUpdater.exe
 :: Keep Install.bat and INSTALL_README.txt at dist root
 copy /y Install.bat dist\Install.bat
 copy /y INSTALL_README.txt dist\INSTALL_README.txt

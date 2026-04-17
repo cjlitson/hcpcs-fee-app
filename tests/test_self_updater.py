@@ -10,14 +10,12 @@ def _setup_apply_update(tmp_path, monkeypatch):
     exe_path.write_bytes(b"old")
     new_exe = tmp_path / "HCPCSFeeApp_new.exe"
     new_exe.write_bytes(b"new")
-    bat_path = tmp_path / "swap.bat"
+    helper_exe = tmp_path / self_updater.UPDATER_HELPER_EXE_NAME
+    helper_exe.write_bytes(b"helper")
 
     monkeypatch.setattr(self_updater.sys, "frozen", True, raising=False)
     monkeypatch.setattr(self_updater.sys, "executable", str(exe_path), raising=False)
-    monkeypatch.setattr(
-        self_updater.tempfile, "mkstemp", lambda **_kwargs: (1, str(bat_path))
-    )
-    monkeypatch.setattr(self_updater.os, "close", lambda _fd: None)
+    monkeypatch.setattr(self_updater.tempfile, "gettempdir", lambda: str(tmp_path))
     monkeypatch.setattr(self_updater.sys, "exit", _raise_system_exit)
 
     popen_calls = {}
@@ -30,11 +28,11 @@ def _setup_apply_update(tmp_path, monkeypatch):
 
     monkeypatch.setattr("subprocess.Popen", _DummyPopen)
 
-    return self_updater, exe_path, new_exe, bat_path, popen_calls
+    return self_updater, exe_path, new_exe, helper_exe, popen_calls
 
 
-def test_apply_update_generates_robust_swap_script(tmp_path, monkeypatch):
-    self_updater, exe_path, new_exe, bat_path, popen_calls = _setup_apply_update(
+def test_apply_update_launches_updater_helper_with_expected_args(tmp_path, monkeypatch):
+    self_updater, exe_path, new_exe, helper_exe, popen_calls = _setup_apply_update(
         tmp_path, monkeypatch
     )
 
@@ -44,61 +42,32 @@ def test_apply_update_generates_robust_swap_script(tmp_path, monkeypatch):
     except SystemExit as exc:
         assert exc.code == 0
 
-    content = bat_path.read_text(encoding="cp1252")
     pid = self_updater.os.getpid()
+    update_log_path = tmp_path / self_updater.UPDATE_LOG_FILENAME
+    launcher_log_path = tmp_path / self_updater.LAUNCHER_LOG_FILENAME
 
-    # ---- PID wait loop ----
-    assert f'tasklist /FI "PID eq {pid}" /FO CSV /NH' in content
-    assert f'findstr /B "\\"{pid}\\""' in content
-    assert ":wait_pid" in content
-    assert "goto wait_pid" in content
+    assert popen_calls["args"] == [
+        str(helper_exe),
+        "--current-exe",
+        str(exe_path),
+        "--new-exe",
+        str(new_exe),
+        "--pid",
+        str(pid),
+        "--log-path",
+        str(update_log_path),
+    ]
+    assert popen_calls["close_fds"] is True
 
-    # ---- process-gone confirmation ----
-    assert f"Process {pid} no longer detected" in content
-
-    # ---- settle pause ----
-    assert "Waiting 2 s for file handles to release" in content
-    assert "timeout /t 2 /nobreak >NUL" in content
-
-    # ---- delete-old-exe loop (up to 10 retries) ----
-    assert "Attempting to remove old exe" in content
-    assert f'del /F /Q "{exe_path}"' in content
-    assert ":del_retry" in content
-    assert "goto del_retry" in content
-    assert "_del_tries! gtr 10" in content
-
-    # ---- rename-new-exe loop (up to 5 retries) ----
-    assert "Renaming new exe into place" in content
-    assert f'move /Y "{new_exe}" "{exe_path}"' in content
-    assert ":ren_retry" in content
-    assert "goto ren_retry" in content
-    assert "_ren_tries! gtr 5" in content
-
-    # ---- verify + relaunch ----
-    assert ":verify_step" in content
-    assert f'if not exist "{exe_path}" goto swap_failed' in content
-    assert "Replacement verified" in content
-    assert "Relaunching application" in content
-    assert f'start "" "{exe_path}"' in content
-    assert "Relaunch command issued successfully" in content
-
-    # ---- manual recovery on failure ----
-    assert "MANUAL RECOVERY INSTRUCTIONS" in content
-    assert "Rename HCPCSFeeApp_new.exe to HCPCSFeeApp.exe" in content
-
-    # ---- log filename present ----
-    assert "HCPCSFeeApp_update.log" in content
-
-    # ---- helper started / finished markers ----
-    assert "Helper started" in content
-    assert "Helper finished" in content
-
-    # ---- subprocess call ----
-    assert popen_calls["args"] == ["cmd.exe", "/c", str(bat_path)]
+    log_content = launcher_log_path.read_text(encoding="utf-8")
+    assert "Launch attempt starting." in log_content
+    assert f"Updater helper path: {helper_exe}" in log_content
+    assert f"Updater log path: {update_log_path}" in log_content
+    assert "Updater helper launched successfully." in log_content
 
 
 def test_apply_update_uses_detached_creation_flags(tmp_path, monkeypatch):
-    self_updater, _exe, new_exe, _bat, calls = _setup_apply_update(tmp_path, monkeypatch)
+    self_updater, _exe, new_exe, _helper, calls = _setup_apply_update(tmp_path, monkeypatch)
 
     try:
         self_updater.apply_update(new_exe)
@@ -110,8 +79,16 @@ def test_apply_update_uses_detached_creation_flags(tmp_path, monkeypatch):
 
 
 def test_apply_update_exits_with_code_zero(tmp_path, monkeypatch):
-    self_updater, _exe, new_exe, _bat, _calls = _setup_apply_update(tmp_path, monkeypatch)
+    self_updater, _exe, new_exe, _helper, _calls = _setup_apply_update(tmp_path, monkeypatch)
 
     with __import__("pytest").raises(SystemExit) as exc_info:
         self_updater.apply_update(new_exe)
     assert exc_info.value.code == 0
+
+
+def test_apply_update_raises_if_helper_missing(tmp_path, monkeypatch):
+    self_updater, _exe, new_exe, helper_exe, _calls = _setup_apply_update(tmp_path, monkeypatch)
+    helper_exe.unlink()
+
+    with __import__("pytest").raises(RuntimeError, match="Updater helper not found"):
+        self_updater.apply_update(new_exe)
