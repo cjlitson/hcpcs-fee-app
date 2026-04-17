@@ -101,6 +101,7 @@ https://www.cms.gov/medicare/payment/fee-schedules/dmepos
 
 ## Release notes
 
+- [v1.1.3 — Public Release for Updater Validation](docs/releases/v1.1.3.md)
 - [v1.1.2 — Updater Reliability and Release-Prep Polish](docs/releases/v1.1.2.md)
 - [v1.1.1 — Reliability, Export, Purchase List, and Dark Mode refresh](docs/releases/v1.1.1.md)
 - [v1.0.0 — Initial Release](docs/releases/v1.0.0.md)
