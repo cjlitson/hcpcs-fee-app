@@ -44,6 +44,7 @@ QUICK_ADD_SUGGEST_DEBOUNCE_MS = 140
 SCORE_PREFIX_MATCH = 0
 SCORE_PREFIX_MISS_PENALTY = 10
 SCORE_CONTAINS_MISS_PENALTY = 5
+ROW_DELETE_BUTTON_SIZE = QSize(30, 26)
 
 
 class PurchaseListPanel(QWidget):
@@ -153,6 +154,7 @@ class PurchaseListPanel(QWidget):
         self.table.setHorizontalHeaderLabels(
             ["", "HCPCS Code", "Description", "Qty", "Unit Price", "Line Total", ""]
         )
+        # Set default mode first, then override specific columns below.
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(PURCHASE_COL_CHECK, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(PURCHASE_COL_DELETE, QHeaderView.ResizeMode.ResizeToContents)
@@ -321,21 +323,33 @@ class PurchaseListPanel(QWidget):
         self.quick_add_edit.clear()
 
     def _resolve_quick_add_code(self):
-        def normalize(raw):
-            return self._quick_add_suggestions.get(raw, raw).upper()
-
         typed = (self.quick_add_edit.text() or "").strip()
+        typed_upper = typed.upper()
         popup = self._quick_add_completer.popup() if self._quick_add_completer else None
         if popup is not None and popup.isVisible():
             idx = popup.currentIndex()
             if idx.isValid():
                 label = str(idx.data() or "")
-                return normalize(label)
+                return self._quick_add_suggestions.get(label, label).upper()
         if typed in self._quick_add_suggestions:
-            return normalize(typed)
-        if self._quick_add_suggestions:
-            return normalize(next(iter(self._quick_add_suggestions)))
-        return normalize(typed)
+            return self._quick_add_suggestions[typed].upper()
+        first_suggestion = None
+        first_prefix_match = None
+        for _label, code in self._quick_add_suggestions.items():
+            normalized_code = (code or "").upper()
+            if not normalized_code:
+                continue
+            if first_suggestion is None:
+                first_suggestion = normalized_code
+            if normalized_code == typed_upper:
+                return normalized_code
+            if typed_upper and first_prefix_match is None and normalized_code.startswith(typed_upper):
+                first_prefix_match = normalized_code
+        if first_prefix_match:
+            return first_prefix_match
+        if first_suggestion:
+            return first_suggestion
+        return self._quick_add_suggestions.get(typed, typed).upper()
 
     def _queue_quick_add_suggestions(self, text):
         self._pending_quick_add_text = text or ""
@@ -389,7 +403,7 @@ class PurchaseListPanel(QWidget):
             icon = self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton)
         btn.setIcon(icon)
         btn.setIconSize(QSize(14, 14))
-        btn.setFixedSize(30, 26)
+        btn.setFixedSize(ROW_DELETE_BUTTON_SIZE)
         btn.clicked.connect(self._remove_row_for_sender)
         return btn
 

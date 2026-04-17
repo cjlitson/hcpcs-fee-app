@@ -29,6 +29,9 @@ from ui.purchase_list_panel import PurchaseListPanel
 PURCHASE_PANEL_LEFT_RATIO = 2 / 3
 PURCHASE_PANEL_MIN_WIDTH_PX = 360
 TRANSFER_RAIL_WIDTH_PX = 72
+TRANSFER_RAIL_BUTTON_SIZE = QSize(40, 34)
+PREFERRED_RESULTS_PANEL_MIN_WIDTH_PX = 420
+RESULTS_PANEL_MIN_WIDTH_PX = 300
 MAIN_COL_SELECT = 0
 MAIN_COL_HCPCS = 1
 MAIN_COL_DESC = 2
@@ -203,7 +206,7 @@ class MainWindow(QMainWindow):
             "QToolButton { min-height: 28px; border-radius: 6px; padding: 4px 12px; border: 1px solid #AAB2BF; background: #F8F9FB; color: #202124; font-weight: 600; }"
             "QToolButton:hover { background-color: #EAF0F8; }"
             "QToolButton[role='ghost'] { background: #FFFFFF; color: #2E3A48; border: 1px solid #C9CED6; }"
-            "QPushButton[role='rail'] { background: #003366; color: #FFFFFF; border: 1px solid #002244; min-width: 36px; min-height: 32px; padding: 0; border-radius: 8px; }"
+            "QPushButton[role='rail'] { background: #003366; color: #FFFFFF; border: 1px solid #002244; min-width: 40px; min-height: 34px; padding: 0; border-radius: 8px; }"
             "QPushButton[role='toggle'][active='true'] { background: #003366; color: #FFFFFF; border: 1px solid #002244; }"
             "QPushButton[role='toggle'][active='false'] { background: #005A9C; color: #FFFFFF; border: 1px solid #004B82; }"
             "QLabel#ruralPill { border: 1px solid #C9CED6; border-radius: 11px; background: #F2F4F7; color: #344054; padding: 2px 10px; font-size: 11px; font-weight: 600; }"
@@ -257,7 +260,7 @@ class MainWindow(QMainWindow):
             "QToolButton { min-height: 28px; border-radius: 6px; padding: 4px 12px; border: 1px solid #3E3E3E; background: #2D2D2D; color: #D4D4D4; font-weight: 600; }"
             "QToolButton:hover { background-color: #383838; border-color: #505050; }"
             "QToolButton[role='ghost'] { background: #232830; color: #D4D4D4; border: 1px solid #434B57; }"
-            "QPushButton[role='rail'] { background: #0B5A8C; color: #FFFFFF; border: 1px solid #083E61; min-width: 36px; min-height: 32px; padding: 0; border-radius: 8px; }"
+            "QPushButton[role='rail'] { background: #0B5A8C; color: #FFFFFF; border: 1px solid #083E61; min-width: 40px; min-height: 34px; padding: 0; border-radius: 8px; }"
             "QPushButton[role='toggle'][active='true'] { background: #0A4D77; color: #FFFFFF; border: 1px solid #083E61; }"
             "QPushButton[role='toggle'][active='false'] { background: #0B5A8C; color: #FFFFFF; border: 1px solid #0A4D77; }"
             "QLabel#ruralPill { border: 1px solid #434B57; border-radius: 11px; background: #232830; color: #C5CED8; padding: 2px 10px; font-size: 11px; font-weight: 600; }"
@@ -518,13 +521,13 @@ class MainWindow(QMainWindow):
 
         add_btn = self._styled_button("►", "rail")
         add_btn.setToolTip("Add selected items to Purchase List (Ctrl+Right)")
-        add_btn.setFixedSize(40, 34)
+        add_btn.setFixedSize(TRANSFER_RAIL_BUTTON_SIZE)
         add_btn.clicked.connect(self._add_checked_from_main)
         middle_layout.addWidget(add_btn)
 
         remove_btn = self._styled_button("◄", "rail")
         remove_btn.setToolTip("Remove selected items from Purchase List (Ctrl+Left)")
-        remove_btn.setFixedSize(40, 34)
+        remove_btn.setFixedSize(TRANSFER_RAIL_BUTTON_SIZE)
         remove_btn.clicked.connect(self._remove_checked_from_purchase)
         middle_layout.addWidget(remove_btn)
         self._add_btn = add_btn
@@ -1233,10 +1236,14 @@ class MainWindow(QMainWindow):
         if visible:
             self._purchase_list_panel.show()
             usable_width = max(1, self.splitter.width() - TRANSFER_RAIL_WIDTH_PX)
-            left = max(420, int(usable_width * PURCHASE_PANEL_LEFT_RATIO))
+            left = max(PREFERRED_RESULTS_PANEL_MIN_WIDTH_PX, int(usable_width * PURCHASE_PANEL_LEFT_RATIO))
             right = max(PURCHASE_PANEL_MIN_WIDTH_PX, usable_width - left)
+            # Guard for tight/non-maximized windows where minimums plus integer
+            # rounding can overrun usable width.
+            if right >= usable_width:
+                right = max(1, usable_width - RESULTS_PANEL_MIN_WIDTH_PX)
             if left + right > usable_width:
-                left = max(300, usable_width - right)
+                left = max(RESULTS_PANEL_MIN_WIDTH_PX, usable_width - right)
             self.splitter.setSizes([left, TRANSFER_RAIL_WIDTH_PX, right])
             self._purchase_list_panel.refresh_context_state()
         else:
