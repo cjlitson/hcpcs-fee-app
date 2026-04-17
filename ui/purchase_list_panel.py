@@ -41,9 +41,8 @@ QUICK_ADD_SUGGEST_DEBOUNCE_MS = 140
 SCORE_PREFIX_MATCH = 0
 SCORE_PREFIX_MISS_PENALTY = 10
 SCORE_CONTAINS_MISS_PENALTY = 5
-ROW_DELETE_BUTTON_SIZE = QSize(30, 36)
+ROW_DELETE_BUTTON_SIZE = QSize(30, 30)
 PURCHASE_ROW_HEIGHT = 52
-TRANSFER_BTN_SIZE = QSize(36, 30)
 
 _QUICK_ADD_TOOLTIP = (
     "Quick Add HCPCS\n"
@@ -52,7 +51,7 @@ _QUICK_ADD_TOOLTIP = (
     "\u2022 Autocomplete suggestions appear as you type\n"
     "\u2022 Arrow keys navigate suggestions; Enter confirms\n"
     "\u2022 Use the \u2715 button on each row to remove it\n"
-    "\u2022 Select rows then use \u25c4 / \u25ba to bulk-add or remove"
+    "\u2022 Select rows in results, then use Add Selected (shown near Purchase List in the top toolbar)"
 )
 
 
@@ -159,29 +158,6 @@ class PurchaseListPanel(QWidget):
 
         header = QHBoxLayout()
         header.setSpacing(6)
-
-        # Transfer buttons (add from results / remove from list) embedded in panel header
-        if self._remove_callback is not None:
-            self._remove_transfer_btn = QPushButton("\u25c4")  # ◄
-            self._remove_transfer_btn.setToolTip("Remove selected rows from purchase list (Ctrl+Left)")
-            self._remove_transfer_btn.setProperty("role", "rail")
-            self._remove_transfer_btn.setFixedSize(TRANSFER_BTN_SIZE)
-            self._remove_transfer_btn.clicked.connect(self._remove_callback)
-            header.addWidget(self._remove_transfer_btn)
-        if self._add_callback is not None:
-            self._add_transfer_btn = QPushButton("\u25ba")  # ►
-            self._add_transfer_btn.setToolTip("Add selected results to purchase list (Ctrl+Right)")
-            self._add_transfer_btn.setProperty("role", "rail")
-            self._add_transfer_btn.setFixedSize(TRANSFER_BTN_SIZE)
-            self._add_transfer_btn.clicked.connect(self._add_callback)
-            header.addWidget(self._add_transfer_btn)
-
-        if self._add_callback is not None or self._remove_callback is not None:
-            sep = QFrame()
-            sep.setFrameShape(QFrame.Shape.VLine)
-            sep.setFixedHeight(20)
-            header.addWidget(sep)
-            header.addSpacing(2)
 
         self.title_label = QLabel("Purchase List (0)")
         self.title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
@@ -463,6 +439,12 @@ class PurchaseListPanel(QWidget):
         self._quick_add_model.setStringList(suggestions)
 
     def _make_row_delete_button(self):
+        holder = QWidget()
+        holder_layout = QHBoxLayout(holder)
+        holder_layout.setContentsMargins(0, 0, 0, 0)
+        holder_layout.setSpacing(0)
+        holder_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         btn = QPushButton("\u2715")  # ✕  MULTIPLICATION X — crisp on all platforms
         btn.setToolTip("Remove this line item")
         btn.setAccessibleName("Delete purchase list row")
@@ -473,14 +455,19 @@ class PurchaseListPanel(QWidget):
         btn.setFont(f)
         btn.setFixedSize(ROW_DELETE_BUTTON_SIZE)
         btn.clicked.connect(self._remove_row_for_sender)
-        return btn
+        holder_layout.addWidget(btn)
+        return holder
 
     def _remove_row_for_sender(self):
         btn = self.sender()
         if not isinstance(btn, QPushButton):
             return
         for row in range(self.table.rowCount()):
-            if self.table.cellWidget(row, PURCHASE_COL_DELETE) is btn:
+            delete_cell = self.table.cellWidget(row, PURCHASE_COL_DELETE)
+            if delete_cell is btn:
+                self._remove_row(row)
+                return
+            if isinstance(delete_cell, QWidget) and delete_cell.findChild(QPushButton) is btn:
                 self._remove_row(row)
                 return
 
