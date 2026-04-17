@@ -143,7 +143,11 @@ def run(argv: list[str] | None = None) -> int:
             return 5
 
         _log_message(log_path, "Replacement verified. Relaunching application.")
-        subprocess.Popen([str(current_exe)], close_fds=True)
+        try:
+            subprocess.Popen([str(current_exe)], close_fds=True)
+        except Exception as exc:
+            _log_message(log_path, f"ERROR: Failed to relaunch application: {exc!r}")
+            return 6
         _log_message(log_path, "Relaunch command issued successfully.")
         _log_message(log_path, "Helper finished.")
         return 0

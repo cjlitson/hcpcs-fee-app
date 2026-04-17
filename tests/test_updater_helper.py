@@ -1,3 +1,5 @@
+import os
+
 from core import updater_helper
 
 
@@ -76,7 +78,7 @@ def test_run_invokes_wait_replace_and_relaunch(tmp_path, monkeypatch):
 
     def _replace(src, dst):
         calls["replace_paths"] = (src, dst)
-        __import__("os").replace(src, dst)
+        os.replace(src, dst)
         return True
 
     class _DummyPopen:

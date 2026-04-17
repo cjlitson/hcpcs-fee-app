@@ -1,3 +1,6 @@
+import pytest
+
+
 def _raise_system_exit(code):
     raise SystemExit(code)
 
@@ -81,7 +84,7 @@ def test_apply_update_uses_detached_creation_flags(tmp_path, monkeypatch):
 def test_apply_update_exits_with_code_zero(tmp_path, monkeypatch):
     self_updater, _exe, new_exe, _helper, _calls = _setup_apply_update(tmp_path, monkeypatch)
 
-    with __import__("pytest").raises(SystemExit) as exc_info:
+    with pytest.raises(SystemExit) as exc_info:
         self_updater.apply_update(new_exe)
     assert exc_info.value.code == 0
 
@@ -90,5 +93,5 @@ def test_apply_update_raises_if_helper_missing(tmp_path, monkeypatch):
     self_updater, _exe, new_exe, helper_exe, _calls = _setup_apply_update(tmp_path, monkeypatch)
     helper_exe.unlink()
 
-    with __import__("pytest").raises(RuntimeError, match="Updater helper not found"):
+    with pytest.raises(RuntimeError, match="Updater helper not found"):
         self_updater.apply_update(new_exe)

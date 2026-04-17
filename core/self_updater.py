@@ -138,7 +138,7 @@ def apply_update(new_exe: Path) -> None:
         app = QApplication.instance()
         if app is not None:
             app.quit()
-    except Exception:
-        pass
+    except Exception as exc:
+        _launcher_log(f"WARNING: QApplication quit failed: {exc!r}")
 
     sys.exit(0)
