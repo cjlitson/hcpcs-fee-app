@@ -36,6 +36,7 @@ MAIN_COL_ALLOWABLE = 5
 MAIN_COL_MODIFIER = 6
 MAIN_COL_SOURCE = 7
 STARTUP_LOG_FILENAME = "HCPCSFeeApp_startup.log"
+USER_GUIDE_DARK_LINK_COLOR = "#8CC8FF"
 
 
 def _asset(name: str) -> Path:
@@ -1416,17 +1417,24 @@ class MainWindow(QMainWindow):
                 "QTextEdit { background: #1E1E1E; color: #E6E6E6; border: 1px solid #3E3E3E; }"
             )
             guide_style = """
-                h1 { color: #66B3FF; margin-top: 10px; margin-bottom: 10px; }
+                h1 { color: __DARK_LINK_COLOR__; margin-top: 10px; margin-bottom: 10px; }
                 h2 { color: #4DA3FF; margin-top: 15px; margin-bottom: 8px; font-size: 16px; }
                 h3 { color: #E6E6E6; margin-top: 10px; margin-bottom: 5px; font-size: 14px; }
                 p, ul, li, ol { color: #E6E6E6; }
                 p { margin: 5px 0; }
                 ul { margin: 5px 0 10px 20px; }
                 li { margin: 3px 0; }
+                a { color: __DARK_LINK_COLOR__; }
                 .section { margin-bottom: 15px; }
                 .tip { background-color: #2A2A2A; padding: 8px; border-left: 3px solid #4DA3FF; margin: 10px 0; color: #E6E6E6; }
                 .shortcut { font-family: monospace; background-color: #2F3E53; padding: 2px 6px; border-radius: 3px; color: #E6E6E6; }
-            """
+                .footer-note { margin-top: 20px; padding: 10px; background-color: #2A2A2A; border: 1px solid #3E3E3E; border-radius: 6px; }
+                .footer-note p { color: #E6E6E6; }
+                .footer-note a { color: __DARK_LINK_COLOR__; }
+                .shortcut-table { border-collapse: collapse; width: 100%; }
+                .shortcut-table th, .shortcut-table td { border: 1px solid #3E3E3E; padding: 5px; }
+                .shortcut-table th { background-color: #2F3E53; color: #E6E6E6; }
+            """.replace("__DARK_LINK_COLOR__", USER_GUIDE_DARK_LINK_COLOR)
         else:
             body.setStyleSheet(
                 "QTextEdit { background: #FFFFFF; color: #202124; border: 1px solid #C9CED6; }"
@@ -1441,6 +1449,10 @@ class MainWindow(QMainWindow):
                 .section { margin-bottom: 15px; }
                 .tip { background-color: #EEF2F7; padding: 8px; border-left: 3px solid #005A9C; margin: 10px 0; }
                 .shortcut { font-family: monospace; background-color: #E8F0F8; padding: 2px 6px; border-radius: 3px; }
+                .footer-note { margin-top: 20px; padding: 10px; background-color: #F5F6F8; border-radius: 6px; }
+                .shortcut-table { border-collapse: collapse; width: 100%; }
+                .shortcut-table th, .shortcut-table td { border: 1px solid #C9CED6; padding: 5px; }
+                .shortcut-table th { background-color: #EEF2F7; }
             """
         body.setHtml(f"""
             <style>
@@ -1657,8 +1669,8 @@ class MainWindow(QMainWindow):
 
             <div class="section">
                 <h2>11. Keyboard Shortcuts</h2>
-                <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%;">
-                    <tr style="background-color: #EEF2F7;">
+                <table class="shortcut-table">
+                    <tr>
                         <th>Shortcut</th>
                         <th>Action</th>
                     </tr>
@@ -1729,7 +1741,7 @@ class MainWindow(QMainWindow):
                 Click "Update Now" for automatic installation (when running as .exe).</p>
             </div>
 
-            <div class="section" style="margin-top: 20px; padding: 10px; background-color: #F5F6F8; border-radius: 6px;">
+            <div class="section footer-note">
                 <p><b>Data Source:</b> CMS DMEPOS Fee Schedule (<a href="https://www.cms.gov/medicare/payment/fee-schedules/dmepos">cms.gov</a>)</p>
                 <p><b>Developed by:</b> WSNC Impact Team</p>
                 <p><b>Support:</b> For questions or issues, contact your VA IT support team.</p>

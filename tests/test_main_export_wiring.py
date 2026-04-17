@@ -27,3 +27,17 @@ def test_main_export_dialog_has_visible_checked_selector_style():
     source = (REPO_ROOT / "ui" / "main_export_dialog.py").read_text(encoding="utf-8")
     assert "QRadioButton:checked" in source
     assert "background: #003366;" in source
+
+
+def test_user_guide_footer_uses_dark_mode_aware_style_class():
+    source = (REPO_ROOT / "ui" / "main_window.py").read_text(encoding="utf-8")
+    assert ".footer-note" in source
+    assert ".footer-note p { color: #E6E6E6; }" in source
+    assert '<div class="section footer-note">' in source
+
+
+def test_user_guide_shortcuts_table_uses_dark_mode_aware_style_class():
+    source = (REPO_ROOT / "ui" / "main_window.py").read_text(encoding="utf-8")
+    assert ".shortcut-table th { background-color: #2F3E53; color: #E6E6E6; }" in source
+    assert '<table class="shortcut-table">' in source
+    assert '<tr style="background-color: #EEF2F7;">' not in source

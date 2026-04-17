@@ -12,6 +12,24 @@ from PyQt6.QtWidgets import (
 
 from core.exporter import export_to_csv, export_to_excel, export_to_pdf
 
+SELECTOR_STYLE = (
+    "QRadioButton {"
+    " border: 1px solid #9AA6B2;"
+    " border-radius: 6px;"
+    " padding: 8px 10px;"
+    " background: #FFFFFF;"
+    " color: #1F2933;"
+    " font-weight: 600;"
+    "}"
+    "QRadioButton::indicator { width: 0px; height: 0px; }"
+    "QRadioButton:checked {"
+    " background: #003366;"
+    " border: 1px solid #003366;"
+    " color: #FFFFFF;"
+    "}"
+    "QRadioButton:hover { border: 1px solid #005A9C; }"
+)
+
 
 class MainExportDialog(QDialog):
     def __init__(self, records, parent=None, is_rural=False, zip_code=""):
@@ -27,23 +45,6 @@ class MainExportDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(f"Export {len(self.records):,} records as:"))
 
-        selector_style = (
-            "QRadioButton {"
-            " border: 1px solid #9AA6B2;"
-            " border-radius: 6px;"
-            " padding: 8px 10px;"
-            " background: #FFFFFF;"
-            " color: #1F2933;"
-            " font-weight: 600;"
-            "}"
-            "QRadioButton::indicator { width: 0px; height: 0px; }"
-            "QRadioButton:checked {"
-            " background: #003366;"
-            " border: 1px solid #003366;"
-            " color: #FFFFFF;"
-            "}"
-            "QRadioButton:hover { border: 1px solid #005A9C; }"
-        )
         self.btn_group = QButtonGroup(self)
         self.csv_radio = QRadioButton("CSV (.csv)")
         self.excel_radio = QRadioButton("Excel (.xlsx)")
@@ -51,7 +52,7 @@ class MainExportDialog(QDialog):
         self.csv_radio.setChecked(True)
         for rb in [self.csv_radio, self.excel_radio, self.pdf_radio]:
             self.btn_group.addButton(rb)
-            rb.setStyleSheet(selector_style)
+            rb.setStyleSheet(SELECTOR_STYLE)
             layout.addWidget(rb)
 
         btns = QHBoxLayout()
