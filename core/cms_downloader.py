@@ -893,7 +893,15 @@ def download_cms_fees(year, selected_states, progress_callback=None):
             total += len(records)
 
         if source_url:
-            set_preference(f"cms_synced_source_url_{year}", source_url)
+            # After a successful sync, probe for the currently-latest available
+            # CMS URL and persist *that* as the baseline.  Without this, the
+            # startup check compares the download URL (e.g. dme26.zip, rank 0)
+            # against the probe result (e.g. dme26-a.zip, rank 1) and falsely
+            # reports a newer file on every reopening — even when the user just
+            # finished syncing.  Storing the probed-latest URL ensures both
+            # sides of the comparison reflect the same "most recent" state.
+            probed_latest = _probe_latest_cms_zip_url(year)
+            set_preference(f"cms_synced_source_url_{year}", probed_latest or source_url)
 
         # Import rural ZIP codes for the year (replace-semantics: delete then insert)
         if tmp_rural_path:
