@@ -21,6 +21,7 @@ from core.database import (
     is_rural_zip, get_current_year_or_fallback,
 )
 from core.cms_downloader import download_cms_fees, SUPPORTED_YEARS
+from core.version import APP_VERSION
 from ui.import_dialog import ImportDialog
 from ui.main_export_dialog import MainExportDialog
 from ui.state_selector_dialog import StateSelectorDialog
@@ -388,7 +389,7 @@ class MainWindow(QMainWindow):
 
         layout.addStretch()
 
-        meta_label = QLabel("v1.1.3  \u00b7  WSNC IMPACT Team")
+        meta_label = QLabel(f"v{APP_VERSION}  \u00b7  WSNC IMPACT Team")
         meta_label.setObjectName("appHeaderMeta")
         layout.addWidget(meta_label)
 

@@ -163,7 +163,7 @@ class PurchaseListPanel(QWidget):
         # Transfer buttons (add from results / remove from list) embedded in panel header
         if self._remove_callback is not None:
             self._remove_transfer_btn = QPushButton("\u25c4")  # ◄
-            self._remove_transfer_btn.setToolTip("Remove checked items from purchase list (Ctrl+Left)")
+            self._remove_transfer_btn.setToolTip("Remove selected rows from purchase list (Ctrl+Left)")
             self._remove_transfer_btn.setProperty("role", "rail")
             self._remove_transfer_btn.setFixedSize(TRANSFER_BTN_SIZE)
             self._remove_transfer_btn.clicked.connect(self._remove_callback)
