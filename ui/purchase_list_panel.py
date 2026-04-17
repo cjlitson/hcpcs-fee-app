@@ -11,7 +11,6 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
-    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QToolButton,
@@ -43,7 +42,68 @@ QUICK_ADD_SUGGEST_DEBOUNCE_MS = 140
 SCORE_PREFIX_MATCH = 0
 SCORE_PREFIX_MISS_PENALTY = 10
 SCORE_CONTAINS_MISS_PENALTY = 5
-ROW_DELETE_BUTTON_SIZE = QSize(30, 26)
+ROW_DELETE_BUTTON_SIZE = QSize(30, 36)
+PURCHASE_ROW_HEIGHT = 56
+
+
+class QtyStepWidget(QWidget):
+    """Compact − N + stepper used in the purchase table Qty column."""
+
+    valueChanged = pyqtSignal(int)
+    _MIN = 1
+    _MAX = 9999
+
+    def __init__(self, value=1, parent=None):
+        super().__init__(parent)
+        self._value = max(self._MIN, min(self._MAX, int(value)))
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(4, 0, 4, 0)
+        lay.setSpacing(3)
+
+        self._minus = QPushButton("\u2212")   # −
+        self._val_label = QLabel(str(self._value))
+        self._val_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._val_label.setMinimumWidth(26)
+        f = self._val_label.font()
+        f.setBold(True)
+        self._val_label.setFont(f)
+        self._plus = QPushButton("\u002B")    # +
+
+        for btn in (self._minus, self._plus):
+            btn.setProperty("role", "stepper")
+            btn.setFixedSize(QSize(26, 26))
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        lay.addStretch()
+        lay.addWidget(self._minus)
+        lay.addWidget(self._val_label)
+        lay.addWidget(self._plus)
+        lay.addStretch()
+
+        self._minus.clicked.connect(self._decrement)
+        self._plus.clicked.connect(self._increment)
+
+    # ------------------------------------------------------------------
+    def _decrement(self):
+        if self._value > self._MIN:
+            self._value -= 1
+            self._val_label.setText(str(self._value))
+            self.valueChanged.emit(self._value)
+
+    def _increment(self):
+        if self._value < self._MAX:
+            self._value += 1
+            self._val_label.setText(str(self._value))
+            self.valueChanged.emit(self._value)
+
+    # Public API (matches QSpinBox subset used by this panel)
+    def value(self) -> int:
+        return self._value
+
+    def setValue(self, v: int) -> None:
+        self._value = max(self._MIN, min(self._MAX, int(v)))
+        self._val_label.setText(str(self._value))
 
 
 class PurchaseListPanel(QWidget):
@@ -168,6 +228,9 @@ class PurchaseListPanel(QWidget):
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.horizontalHeader().sectionMoved.connect(self._save_table_layout_preferences)
         self.table.horizontalHeader().sectionResized.connect(self._save_table_layout_preferences)
+        self.table.setWordWrap(True)
+        self.table.verticalHeader().setDefaultSectionSize(PURCHASE_ROW_HEIGHT)
+        self.table.verticalHeader().hide()
         root.addWidget(self.table, 1)
 
         totals_card = QFrame()
@@ -285,7 +348,7 @@ class PurchaseListPanel(QWidget):
             existing = self.table.item(row, PURCHASE_COL_HCPCS)
             if existing and existing.text().upper() == code:
                 spin = self.table.cellWidget(row, PURCHASE_COL_QTY)
-                if isinstance(spin, QSpinBox):
+                if isinstance(spin, QtyStepWidget):
                     spin.setValue(spin.value() + 1)
                 return
         row = self.table.rowCount()
@@ -296,10 +359,7 @@ class PurchaseListPanel(QWidget):
         if not description_text:
             description_text = self._lookup_description(code)
         self.table.setItem(row, PURCHASE_COL_DESCRIPTION, QTableWidgetItem(description_text))
-        qty_spin = QSpinBox()
-        qty_spin.setMinimum(1)
-        qty_spin.setMaximum(9999)
-        qty_spin.setValue(1)
+        qty_spin = QtyStepWidget()
         qty_spin.valueChanged.connect(self.refresh_prices)
         self.table.setCellWidget(row, PURCHASE_COL_QTY, qty_spin)
         self.table.setItem(row, PURCHASE_COL_UNIT_PRICE, QTableWidgetItem("—"))
@@ -473,7 +533,7 @@ class PurchaseListPanel(QWidget):
             code = code_item.text().strip().upper()
             price = self._lookup_price(code)
             qty_widget = self.table.cellWidget(row, PURCHASE_COL_QTY)
-            qty = qty_widget.value() if isinstance(qty_widget, QSpinBox) else 1
+            qty = qty_widget.value() if isinstance(qty_widget, QtyStepWidget) else 1
             line_total = None if price is None else float(price) * qty
             unit_txt = "—" if price is None else f"${float(price):,.2f}"
             line_txt = "—" if line_total is None else f"${line_total:,.2f}"
@@ -504,7 +564,7 @@ class PurchaseListPanel(QWidget):
             if not code_item:
                 continue
             code = code_item.text().strip().upper()
-            qty = qty_widget.value() if isinstance(qty_widget, QSpinBox) else 1
+            qty = qty_widget.value() if isinstance(qty_widget, QtyStepWidget) else 1
             price = self._lookup_price(code)
             line = None if price is None else float(price) * qty
             items.append(
@@ -573,10 +633,7 @@ class PurchaseListPanel(QWidget):
             self.table.setItem(row, PURCHASE_COL_CHECK, self._checkbox_item(False))
             self.table.setItem(row, PURCHASE_COL_HCPCS, QTableWidgetItem(code))
             self.table.setItem(row, PURCHASE_COL_DESCRIPTION, QTableWidgetItem(description_text))
-            qty_spin = QSpinBox()
-            qty_spin.setMinimum(1)
-            qty_spin.setMaximum(9999)
-            qty_spin.setValue(max(1, int(item.get("quantity", 1) or 1)))
+            qty_spin = QtyStepWidget(value=max(1, int(item.get("quantity", 1) or 1)))
             qty_spin.valueChanged.connect(self.refresh_prices)
             self.table.setCellWidget(row, PURCHASE_COL_QTY, qty_spin)
             self.table.setItem(row, PURCHASE_COL_UNIT_PRICE, QTableWidgetItem("—"))
