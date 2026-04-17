@@ -113,7 +113,7 @@ class PurchaseListPanel(QWidget):
 
         instructions = QLabel(
             "Type an HCPCS code in Quick Add and press Enter. "
-            "Use row 🗑 buttons for quick removal, or checkboxes with ◄ / ► for bulk actions."
+            "Use row \u2715 buttons for quick removal, or checkboxes with \u25c4 / \u25ba for bulk actions."
         )
         instructions.setWordWrap(True)
         context_card_layout.addWidget(instructions)
@@ -155,9 +155,10 @@ class PurchaseListPanel(QWidget):
             ["", "HCPCS Code", "Description", "Qty", "Unit Price", "Line Total", ""]
         )
         # Set default mode first, then override specific columns below.
+        # CHECK and DELETE use Fixed so setColumnWidth() is always honoured.
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.table.horizontalHeader().setSectionResizeMode(PURCHASE_COL_CHECK, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(PURCHASE_COL_DELETE, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(PURCHASE_COL_CHECK, QHeaderView.ResizeMode.Fixed)
+        self.table.horizontalHeader().setSectionResizeMode(PURCHASE_COL_DELETE, QHeaderView.ResizeMode.Fixed)
         self.table.horizontalHeader().setSectionResizeMode(PURCHASE_COL_DESCRIPTION, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionsMovable(True)
         self.table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
@@ -655,10 +656,10 @@ class PurchaseListPanel(QWidget):
         self.refresh_prices()
 
     def _table_layout_key(self):
-        return "purchase_list_table_layout_v3"
+        return "purchase_list_table_layout_v4"
 
     def _legacy_table_layout_key(self):
-        return "purchase_list_table_layout_v2"
+        return "purchase_list_table_layout_v3"
 
     def _restore_table_layout_preferences(self):
         header = self.table.horizontalHeader()
