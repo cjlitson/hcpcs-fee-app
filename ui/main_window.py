@@ -1386,11 +1386,14 @@ class MainWindow(QMainWindow):
         btn = getattr(self, "_add_selected_btn", None)
         if btn is None:
             return
+        selection_model = self.table.selectionModel()
+        if selection_model is None:
+            return
         visible = bool(getattr(self, "_purchase_list_panel_visible", False))
         btn.setVisible(visible)
         if not visible:
             return
-        selected_count = len({idx.row() for idx in self.table.selectionModel().selectedRows()})
+        selected_count = len({idx.row() for idx in selection_model.selectedRows()})
         if selected_count > 0:
             btn.setText(f"Add {selected_count} item(s) to List")
             btn.setEnabled(True)

@@ -51,7 +51,7 @@ _QUICK_ADD_TOOLTIP = (
     "\u2022 Autocomplete suggestions appear as you type\n"
     "\u2022 Arrow keys navigate suggestions; Enter confirms\n"
     "\u2022 Use the \u2715 button on each row to remove it\n"
-    "\u2022 Select rows in results, then use Add Selected to move them into this list"
+    "\u2022 Select rows in results, then use Add Selected (shown near Purchase List in the top toolbar)"
 )
 
 
