@@ -21,6 +21,7 @@ from core.database import (
     is_rural_zip, get_current_year_or_fallback,
 )
 from core.cms_downloader import download_cms_fees, SUPPORTED_YEARS
+from core.version import APP_VERSION
 from ui.import_dialog import ImportDialog
 from ui.main_export_dialog import MainExportDialog
 from ui.state_selector_dialog import StateSelectorDialog
@@ -28,18 +29,15 @@ from ui.purchase_list_panel import PurchaseListPanel
 
 PURCHASE_PANEL_LEFT_RATIO = 2 / 3
 PURCHASE_PANEL_MIN_WIDTH_PX = 480
-TRANSFER_RAIL_WIDTH_PX = 72
-TRANSFER_RAIL_BUTTON_SIZE = QSize(40, 34)
 PREFERRED_RESULTS_PANEL_MIN_WIDTH_PX = 420
 RESULTS_PANEL_MIN_WIDTH_PX = 300
-MAIN_COL_SELECT = 0
-MAIN_COL_HCPCS = 1
-MAIN_COL_DESC = 2
-MAIN_COL_STATE = 3
-MAIN_COL_YEAR = 4
-MAIN_COL_ALLOWABLE = 5
-MAIN_COL_MODIFIER = 6
-MAIN_COL_SOURCE = 7
+MAIN_COL_HCPCS = 0
+MAIN_COL_DESC = 1
+MAIN_COL_STATE = 2
+MAIN_COL_YEAR = 3
+MAIN_COL_ALLOWABLE = 4
+MAIN_COL_MODIFIER = 5
+MAIN_COL_SOURCE = 6
 STARTUP_LOG_FILENAME = "HCPCSFeeApp_startup.log"
 USER_GUIDE_DARK_LINK_COLOR = "#8CC8FF"
 ZIP_EDIT_MAX_WIDTH_PX = 96
@@ -188,11 +186,19 @@ class MainWindow(QMainWindow):
         self._light_theme_qss = (
             "QWidget { background: #FFFFFF; color: #202124; }"
             "QWidget#appShell { background: #F3F5F8; }"
-            "QFrame#updateBannerCard, QFrame#filterCard, QFrame#resultsCard, QFrame#footerStrip, QWidget#purchaseListPanel, QFrame#purchaseHeaderCard, QFrame#purchaseContextCard, QFrame#purchaseSummaryCard { background: #FFFFFF; border: 1px solid #D8DDE6; border-radius: 10px; }"
+            # App header bar
+            "QFrame#appHeader { background: #1A3A5C; border: none; border-radius: 10px; }"
+            "QLabel#appHeaderTitle { color: #FFFFFF; font-size: 15px; font-weight: 700; background: transparent; }"
+            "QLabel#appHeaderMeta { color: #A8C4E0; font-size: 11px; background: transparent; }"
+            "QLabel#quickAddInfoIcon { color: #4A7AB5; font-size: 13px; background: transparent; font-weight: 600; }"
+            "QFrame#updateBannerCard, QFrame#filterCard, QFrame#resultsCard, QFrame#footerStrip, QWidget#purchaseListPanel, QFrame#purchaseHeaderCard, QFrame#purchaseSummaryCard { background: #FFFFFF; border: 1px solid #D8DDE6; border-radius: 10px; }"
             "QFrame#updateBannerCard { background: #FFF8E1; border-color: #F2D8A7; }"
-            "QFrame#transferRail { background: #F3F6FB; border: 1px solid #D8DDE6; border-radius: 8px; }"
             "QFrame#footerStrip { border-radius: 8px; }"
             "QLineEdit, QComboBox { border: 1px solid #C9CED6; border-radius: 6px; padding: 4px 8px; min-height: 24px; background: #FFFFFF; color: #202124; }"
+            "QComboBox { padding-right: 24px; }"
+            "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 22px; border-left: 1px solid #C9CED6; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background: #F0F4F8; }"
+            "QComboBox::down-arrow { width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #555E6B; margin-right: 3px; }"
+            "QComboBox QAbstractItemView { background: #FFFFFF; color: #202124; selection-background-color: #0D6EFD; selection-color: #FFFFFF; border: 1px solid #C9CED6; outline: none; }"
             "QDateEdit { border: 1px solid #C9CED6; border-radius: 6px; padding: 4px 8px; min-height: 24px; background: #FFFFFF; color: #202124; }"
             "QPushButton { min-height: 28px; border-radius: 6px; padding: 4px 12px; border: 1px solid #AAB2BF; background: #F8F9FB; color: #202124; font-weight: 600; }"
             "QPushButton:hover { background-color: #EAF0F8; }"
@@ -209,7 +215,7 @@ class MainWindow(QMainWindow):
             "QToolButton { min-height: 28px; border-radius: 6px; padding: 4px 12px; border: 1px solid #AAB2BF; background: #F8F9FB; color: #202124; font-weight: 600; }"
             "QToolButton:hover { background-color: #EAF0F8; }"
             "QToolButton[role='ghost'] { background: #FFFFFF; color: #2E3A48; border: 1px solid #C9CED6; }"
-            "QPushButton[role='rail'] { background: #003366; color: #FFFFFF; border: 1px solid #002244; min-width: 40px; min-height: 34px; padding: 0; border-radius: 8px; font-size: 14px; font-weight: 700; }"
+            "QPushButton[role='rail'] { background: #003366; color: #FFFFFF; border: 1px solid #002244; min-width: 36px; min-height: 30px; padding: 0; border-radius: 8px; font-size: 14px; font-weight: 700; }"
             "QPushButton[role='toggle'][active='true'] { background: #003366; color: #FFFFFF; border: 1px solid #002244; }"
             "QPushButton[role='toggle'][active='false'] { background: #005A9C; color: #FFFFFF; border: 1px solid #004B82; }"
             "QLabel#ruralPill { border: 1px solid #C9CED6; border-radius: 11px; background: #F2F4F7; color: #344054; padding: 2px 10px; font-size: 11px; font-weight: 600; }"
@@ -218,9 +224,13 @@ class MainWindow(QMainWindow):
             "QLabel#ruralPill[ruralState='invalid'] { background: #F5F5F5; border-color: #D0D5DD; color: #667085; }"
             "QLabel[subtle='true'] { color: #667085; font-size: 11px; }"
             "QLabel { background: transparent; }"
-            "QMenuBar { background: #FFFFFF; color: #202124; border-bottom: 1px solid #D8DDE6; }"
-            "QMenu { background: #FFFFFF; color: #202124; border: 1px solid #D8DDE6; }"
+            "QMenuBar { background: #FFFFFF; color: #202124; border-bottom: 1px solid #D8DDE6; padding: 2px 4px; }"
+            "QMenuBar::item { padding: 4px 10px; border-radius: 4px; }"
+            "QMenuBar::item:selected { background: #EAF0F8; color: #003366; }"
+            "QMenu { background: #FFFFFF; color: #202124; border: 1px solid #D8DDE6; border-radius: 6px; padding: 4px 0; }"
+            "QMenu::item { padding: 5px 20px; }"
             "QMenu::item:selected { background: #EAF0F8; color: #202124; }"
+            "QMenu::separator { height: 1px; background: #E8EDF3; margin: 4px 8px; }"
             "QHeaderView::section { background: #EEF2F7; color: #202124; padding: 6px; border: none; border-bottom: 1px solid #D8DDE6; font-weight: 600; }"
             "QAbstractItemView { selection-background-color: #0D6EFD; selection-color: #FFFFFF; }"
             "QAbstractItemView::item:selected { background-color: #0D6EFD; color: #FFFFFF; }"
@@ -243,10 +253,18 @@ class MainWindow(QMainWindow):
         self._dark_theme_qss = (
             "QWidget { background: #1E1E1E; color: #D4D4D4; }"
             "QWidget#appShell { background: #181B20; }"
-            "QFrame#updateBannerCard, QFrame#filterCard, QFrame#resultsCard, QFrame#footerStrip, QWidget#purchaseListPanel, QFrame#purchaseHeaderCard, QFrame#purchaseContextCard, QFrame#purchaseSummaryCard { background: #22262C; border: 1px solid #353C46; border-radius: 10px; }"
+            # App header bar
+            "QFrame#appHeader { background: #0D2540; border: none; border-radius: 10px; }"
+            "QLabel#appHeaderTitle { color: #E8F4FF; font-size: 15px; font-weight: 700; background: transparent; }"
+            "QLabel#appHeaderMeta { color: #7AACDA; font-size: 11px; background: transparent; }"
+            "QLabel#quickAddInfoIcon { color: #7AACDA; font-size: 13px; background: transparent; font-weight: 600; }"
+            "QFrame#updateBannerCard, QFrame#filterCard, QFrame#resultsCard, QFrame#footerStrip, QWidget#purchaseListPanel, QFrame#purchaseHeaderCard, QFrame#purchaseSummaryCard { background: #22262C; border: 1px solid #353C46; border-radius: 10px; }"
             "QFrame#updateBannerCard { background: #3A2F1B; border-color: #6B5632; }"
-            "QFrame#transferRail { background: #1C2128; border: 1px solid #353C46; border-radius: 8px; }"
             "QLineEdit, QComboBox { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 6px; padding: 4px 8px; min-height: 24px; selection-background-color: #264F78; selection-color: #FFFFFF; }"
+            "QComboBox { padding-right: 24px; }"
+            "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 22px; border-left: 1px solid #3E3E3E; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background: #383838; }"
+            "QComboBox::down-arrow { width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #A0A0A0; margin-right: 3px; }"
+            "QComboBox QAbstractItemView { background: #2D2D2D; color: #D4D4D4; selection-background-color: #264F78; selection-color: #FFFFFF; border: 1px solid #3E3E3E; }"
             "QDateEdit { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 6px; padding: 4px 8px; min-height: 24px; }"
             "QTextEdit { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 3px; padding: 4px 6px; selection-background-color: #264F78; selection-color: #FFFFFF; }"
             "QPushButton { min-height: 28px; border-radius: 6px; padding: 4px 12px; border: 1px solid #3E3E3E; background: #2D2D2D; color: #D4D4D4; font-weight: 600; }"
@@ -266,7 +284,7 @@ class MainWindow(QMainWindow):
             "QToolButton { min-height: 28px; border-radius: 6px; padding: 4px 12px; border: 1px solid #3E3E3E; background: #2D2D2D; color: #D4D4D4; font-weight: 600; }"
             "QToolButton:hover { background-color: #383838; border-color: #505050; }"
             "QToolButton[role='ghost'] { background: #232830; color: #D4D4D4; border: 1px solid #434B57; }"
-            "QPushButton[role='rail'] { background: #0B5A8C; color: #FFFFFF; border: 1px solid #083E61; min-width: 40px; min-height: 34px; padding: 0; border-radius: 8px; font-size: 14px; font-weight: 700; }"
+            "QPushButton[role='rail'] { background: #0B5A8C; color: #FFFFFF; border: 1px solid #083E61; min-width: 36px; min-height: 30px; padding: 0; border-radius: 8px; font-size: 14px; font-weight: 700; }"
             "QPushButton[role='toggle'][active='true'] { background: #0A4D77; color: #FFFFFF; border: 1px solid #083E61; }"
             "QPushButton[role='toggle'][active='false'] { background: #0B5A8C; color: #FFFFFF; border: 1px solid #0A4D77; }"
             "QLabel#ruralPill { border: 1px solid #434B57; border-radius: 11px; background: #232830; color: #C5CED8; padding: 2px 10px; font-size: 11px; font-weight: 600; }"
@@ -275,9 +293,13 @@ class MainWindow(QMainWindow):
             "QLabel#ruralPill[ruralState='invalid'] { background: #2A2D33; border-color: #3A414D; color: #9BA8B7; }"
             "QLabel[subtle='true'] { color: #9BA8B7; font-size: 11px; }"
             "QLabel { background: transparent; color: #D4D4D4; }"
-            "QMenuBar { background: #1E1E1E; color: #D4D4D4; border-bottom: 1px solid #3E3E3E; }"
-            "QMenu { background: #252525; color: #D4D4D4; border: 1px solid #3E3E3E; }"
+            "QMenuBar { background: #1A1D22; color: #D4D4D4; border-bottom: 1px solid #2E3340; padding: 2px 4px; }"
+            "QMenuBar::item { padding: 4px 10px; border-radius: 4px; }"
+            "QMenuBar::item:selected { background: #2A3240; color: #A7C7FF; }"
+            "QMenu { background: #252525; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 6px; padding: 4px 0; }"
+            "QMenu::item { padding: 5px 20px; }"
             "QMenu::item:selected { background: #37373D; color: #FFFFFF; }"
+            "QMenu::separator { height: 1px; background: #3A3A3A; margin: 4px 8px; }"
             "QStatusBar { background: #1E1E1E; color: #D4D4D4; border-top: 1px solid #3E3E3E; }"
             "QHeaderView::section { background: #2D2D2D; color: #D4D4D4; border: none; border-bottom: 1px solid #3E3E3E; padding: 6px; font-weight: 600; }"
             "QAbstractItemView { selection-background-color: #2A7FD4; selection-color: #FFFFFF; }"
@@ -289,10 +311,6 @@ class MainWindow(QMainWindow):
             "QTableWidget::item:selected { background: #2A7FD4; color: #FFFFFF; }"
             "QTableWidget::item:selected:!active { background-color: #335A8A; color: #FFFFFF; }"
             "QTableWidget::item:hover { background-color: #2A2A2A; color: #E6E6E6; }"
-            # Combo box dropdown button and popup
-            "QComboBox::drop-down { border-left: 1px solid #3E3E3E; width: 18px; background: #2D2D2D; }"
-            "QComboBox::down-arrow { border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #A0A0A0; width: 0px; height: 0px; margin-right: 4px; }"
-            "QComboBox QAbstractItemView { background: #2D2D2D; color: #D4D4D4; selection-background-color: #264F78; selection-color: #FFFFFF; border: 1px solid #3E3E3E; }"
             "QSpinBox { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 3px; padding: 3px; height: 22px; }"
             "QSpinBox::up-button, QSpinBox::down-button { background: #3A3A3A; border: 1px solid #3E3E3E; width: 14px; }"
             # Checkbox indicators inside item views (tables)
@@ -316,6 +334,7 @@ class MainWindow(QMainWindow):
             "QGroupBox { border: 1px solid #3E3E3E; border-radius: 4px; color: #D4D4D4; }"
         )
 
+        self._build_app_header(root)
         self._build_update_banner(root)
         self._build_filter_panel(root)
         self._build_results_region(root)
@@ -343,6 +362,38 @@ class MainWindow(QMainWindow):
         btn = QPushButton(text)
         btn.setProperty("role", role)
         return btn
+
+    def _build_app_header(self, root_layout):
+        """Branded application identity header bar."""
+        header = QFrame()
+        header.setObjectName("appHeader")
+        layout = QHBoxLayout(header)
+        layout.setContentsMargins(14, 7, 14, 7)
+        layout.setSpacing(10)
+
+        icon_path = _asset("wsnc_map.png")
+        if icon_path.exists():
+            icon_label = QLabel()
+            pm = QPixmap(str(icon_path)).scaled(
+                28, 28,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            icon_label.setPixmap(pm)
+            icon_label.setFixedSize(28, 28)
+            layout.addWidget(icon_label)
+
+        name_label = QLabel("VA HCPCS Fee Schedule Manager")
+        name_label.setObjectName("appHeaderTitle")
+        layout.addWidget(name_label)
+
+        layout.addStretch()
+
+        meta_label = QLabel(f"v{APP_VERSION}  \u00b7  WSNC IMPACT Team")
+        meta_label.setObjectName("appHeaderMeta")
+        layout.addWidget(meta_label)
+
+        root_layout.addWidget(header)
 
     def _build_update_banner(self, root_layout):
         self._update_bar_widget = QFrame()
@@ -379,7 +430,7 @@ class MainWindow(QMainWindow):
         row1 = QHBoxLayout()
         row1.setSpacing(10)
 
-        sync_btn = self._styled_button("⚌  Sync from CMS", "primary")
+        sync_btn = self._styled_button("\u21bb  Sync from CMS", "primary")
         sync_btn.setToolTip("Download latest CMS DMEPOS fee schedules for your tracked states")
         sync_btn.clicked.connect(self._sync_cms)
         sync_btn.setMinimumWidth(148)
@@ -398,7 +449,8 @@ class MainWindow(QMainWindow):
 
         row1.addWidget(QLabel("State:"))
         self.state_combo = QComboBox()
-        self.state_combo.setMinimumWidth(280)
+        self.state_combo.setMinimumWidth(140)
+        self.state_combo.setMaximumWidth(200)
         self.state_combo.currentIndexChanged.connect(self._apply_filters)
         self.state_combo.currentIndexChanged.connect(self._save_filter_preferences)
         row1.addWidget(self.state_combo, 1)
@@ -485,15 +537,15 @@ class MainWindow(QMainWindow):
         heading = QLabel("Fee Schedule Results")
         heading.setStyleSheet("font-size: 14px; font-weight: 700;")
         heading_row.addWidget(heading)
-        hint = QLabel("Click HCPCS for history, or right-click for copy actions")
+        hint = QLabel("Click HCPCS for history  \u00b7  Select rows then \u25ba to add  \u00b7  Right-click for copy actions")
         hint.setProperty("subtle", True)
         heading_row.addStretch()
         heading_row.addWidget(hint)
         results_layout.addLayout(heading_row)
 
-        self.table = QTableWidget(0, 8)
+        self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels([
-            "", "HCPCS Code", "Description", "State", "Year",
+            "HCPCS Code", "Description", "State", "Year",
             "Allowable ($)", "Modifier", "Source",
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
@@ -501,6 +553,7 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().setDefaultSectionSize(110)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
         self.table.cellClicked.connect(self._on_cell_clicked)
@@ -517,31 +570,6 @@ class MainWindow(QMainWindow):
         self.splitter.setHandleWidth(8)
         self.splitter.addWidget(self.table)
         self.table.setMinimumWidth(520)
-        middle_controls = QFrame()
-        middle_controls.setObjectName("transferRail")
-        middle_controls.setFixedWidth(TRANSFER_RAIL_WIDTH_PX)
-        middle_layout = QVBoxLayout(middle_controls)
-        middle_layout.setContentsMargins(6, 10, 6, 10)
-        middle_layout.setSpacing(8)
-        middle_layout.addStretch()
-
-        add_btn = self._styled_button("►", "rail")
-        add_btn.setToolTip("Add selected items to Purchase List (Ctrl+Right)")
-        add_btn.setFixedSize(TRANSFER_RAIL_BUTTON_SIZE)
-        add_btn.clicked.connect(self._add_checked_from_main)
-        middle_layout.addWidget(add_btn)
-
-        remove_btn = self._styled_button("◄", "rail")
-        remove_btn.setToolTip("Remove selected items from Purchase List (Ctrl+Left)")
-        remove_btn.setFixedSize(TRANSFER_RAIL_BUTTON_SIZE)
-        remove_btn.clicked.connect(self._remove_checked_from_purchase)
-        middle_layout.addWidget(remove_btn)
-        self._add_btn = add_btn
-        self._remove_btn = remove_btn
-        self._add_btn.hide()
-        self._remove_btn.hide()
-        middle_layout.addStretch()
-        self.splitter.addWidget(middle_controls)
 
         self._write_startup_breadcrumb("MainWindow._init_ui: creating PurchaseListPanel")
         try:
@@ -550,6 +578,8 @@ class MainWindow(QMainWindow):
                 year_combo=self.year_combo,
                 state_combo=self.state_combo,
                 zip_edit=self.zip_edit,
+                add_callback=self._add_selected_from_main,
+                remove_callback=self._remove_selected_from_purchase,
             )
             self._purchase_list_panel.setObjectName("purchaseListPanel")
         except Exception as e:
@@ -561,9 +591,8 @@ class MainWindow(QMainWindow):
         self._purchase_list_panel.hide()
         self.splitter.addWidget(self._purchase_list_panel)
         self.splitter.setStretchFactor(0, 4)
-        self.splitter.setStretchFactor(1, 0)
-        self.splitter.setStretchFactor(2, 2)
-        self.splitter.setSizes([900, TRANSFER_RAIL_WIDTH_PX, 0])
+        self.splitter.setStretchFactor(1, 2)
+        self.splitter.setSizes([900, 0])
         results_layout.addWidget(self.splitter, 1)
         root_layout.addWidget(results_card, 1)
 
@@ -571,13 +600,41 @@ class MainWindow(QMainWindow):
         footer = QFrame()
         footer.setObjectName("footerStrip")
         footer_layout = QHBoxLayout(footer)
-        footer_layout.setContentsMargins(10, 6, 10, 6)
+        footer_layout.setContentsMargins(10, 5, 10, 5)
         footer_layout.setSpacing(8)
-        footer_label = QLabel("Shortcuts: Ctrl+P toggle purchase list • Ctrl+Right add • Ctrl+Left remove")
-        footer_label.setProperty("subtle", True)
-        footer_layout.addWidget(footer_label)
+
+        self._footer_record_label = QLabel("0 records")
+        self._footer_record_label.setProperty("subtle", True)
+        footer_layout.addWidget(self._footer_record_label)
+
         footer_layout.addStretch()
+
+        last_sync = get_preference("last_sync_timestamp", "")
+        sync_text = (
+            f"\u21bb  Synced: {last_sync}  \u00b7  Data: CMS DMEPOS"
+            if last_sync
+            else "Not yet synced  \u00b7  Data: CMS DMEPOS"
+        )
+        self._footer_sync_label = QLabel(sync_text)
+        self._footer_sync_label.setProperty("subtle", True)
+        footer_layout.addWidget(self._footer_sync_label)
+
         root_layout.addWidget(footer)
+
+    def _update_footer_record_count(self):
+        count = len(getattr(self, "_records", []))
+        if hasattr(self, "_footer_record_label"):
+            self._footer_record_label.setText(f"{count:,} records")
+
+    def _update_footer_sync_time(self, timestamp: str):
+        if hasattr(self, "_footer_sync_label"):
+            self._footer_sync_label.setText(
+                f"\u21bb  Synced: {timestamp}  \u00b7  Data: CMS DMEPOS"
+            )
+        try:
+            set_preference("last_sync_timestamp", timestamp)
+        except Exception:
+            pass
 
     def _init_menu(self):
         menubar = self.menuBar()
@@ -1004,11 +1061,10 @@ class MainWindow(QMainWindow):
                 r.get("description", ""),
                 r.get("state_abbr", ""),
                 str(r.get("year", "")),
-                "—" if chosen is None else f"{chosen:,.2f}",
+                "\u2014" if chosen is None else f"{chosen:,.2f}",
                 r.get("modifier", "") or "",
                 r.get("data_source", "") or "",
             ]
-            self.table.setItem(row_i, MAIN_COL_SELECT, self._checkbox_item(False))
             for col_i, v in enumerate(values):
                 item = QTableWidgetItem(str(v))
                 if col_i == 0:
@@ -1019,8 +1075,9 @@ class MainWindow(QMainWindow):
                     item.setData(Qt.ItemDataRole.UserRole, row_i)
                 if col_i == 4 and chosen is None:
                     item.setForeground(Qt.GlobalColor.darkGray)
-                self.table.setItem(row_i, col_i + 1, item)
+                self.table.setItem(row_i, col_i, item)
         self.table.setSortingEnabled(True)
+        self._update_footer_record_count()
 
     def _on_cell_clicked(self, row, col):
         """Open history dialog when the HCPCS code cell (column 0) is clicked."""
@@ -1044,7 +1101,6 @@ class MainWindow(QMainWindow):
         record = self._records[rec_idx]
         dlg = _HcpcsHistoryDialog(record, self)
         dlg.exec()
-
     # ---------------------------------------------------- Context menu ------
 
     def _on_table_context_menu(self, pos):
@@ -1065,7 +1121,7 @@ class MainWindow(QMainWindow):
 
         def copy_row_csv():
             vals = []
-            for c in range(1, self.table.columnCount()):
+            for c in range(self.table.columnCount()):
                 item = self.table.item(row, c)
                 v = item.text() if item else ""
                 vals.append(f'"{v}"')
@@ -1089,6 +1145,8 @@ class MainWindow(QMainWindow):
     def _on_import_done(self, count):
         self._refresh_filters()
         self._apply_filters()
+        ts = datetime.now().strftime("%b %d, %Y %I:%M %p")
+        self._update_footer_sync_time(ts)
         self._set_status(f"Imported {count:,} records.")
 
     def _export(self):
@@ -1175,28 +1233,13 @@ class MainWindow(QMainWindow):
                 return
             self._purchase_list_panel.add_code(initial_code)
 
-    @staticmethod
-    def _checkbox_item(checked=False):
-        item = QTableWidgetItem("")
-        item.setFlags(
-            Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-        )
-        item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
-        return item
-
     def _select_all_main_rows(self):
-        for row in range(self.table.rowCount()):
-            item = self.table.item(row, MAIN_COL_SELECT)
-            if item:
-                item.setCheckState(Qt.CheckState.Checked)
+        self.table.selectAll()
 
     def _deselect_all_main_rows(self):
-        for row in range(self.table.rowCount()):
-            item = self.table.item(row, MAIN_COL_SELECT)
-            if item:
-                item.setCheckState(Qt.CheckState.Unchecked)
+        self.table.clearSelection()
 
-    def _add_checked_from_main(self):
+    def _add_selected_from_main(self):
         if not self._purchase_list_panel.is_context_ready():
             QMessageBox.information(
                 self,
@@ -1204,36 +1247,47 @@ class MainWindow(QMainWindow):
                 self._purchase_list_panel.context_requirement_message(),
             )
             return
-        added = 0
-        for row in range(self.table.rowCount()):
-            check_item = self.table.item(row, MAIN_COL_SELECT)
-            code_item = self.table.item(row, MAIN_COL_HCPCS)
-            desc_item = self.table.item(row, MAIN_COL_DESC)
-            if not check_item or check_item.checkState() != Qt.CheckState.Checked or not code_item:
-                continue
-            self._purchase_list_panel.add_code(code_item.text(), desc_item.text() if desc_item else "")
-            check_item.setCheckState(Qt.CheckState.Unchecked)
-            added += 1
-        if added:
-            self._set_purchase_list_panel_visible(True)
-            self._set_status(f"Added {added} item(s) to purchase list.")
-        else:
+        selected_rows = list({idx.row() for idx in self.table.selectionModel().selectedRows()})
+        if not selected_rows:
             QMessageBox.information(
                 self,
                 "No Selection",
-                "Select at least one item using the checkboxes before adding.",
+                "Select at least one row before adding to the purchase list.",
             )
+            return
+        added = 0
+        for row in sorted(selected_rows):
+            code_item = self.table.item(row, MAIN_COL_HCPCS)
+            desc_item = self.table.item(row, MAIN_COL_DESC)
+            if not code_item:
+                continue
+            self._purchase_list_panel.add_code(
+                code_item.text(), desc_item.text() if desc_item else ""
+            )
+            added += 1
+        if added:
+            self.table.clearSelection()
+            self._set_purchase_list_panel_visible(True)
+            self._set_status(f"Added {added} item(s) to purchase list.")
 
-    def _remove_checked_from_purchase(self):
-        removed = self._purchase_list_panel.remove_checked_items()
+    # Keep old name as alias for backward compatibility
+    def _add_checked_from_main(self):
+        self._add_selected_from_main()
+
+    def _remove_selected_from_purchase(self):
+        removed = self._purchase_list_panel.remove_selected_items()
         if removed:
             self._set_status(f"Removed {removed} item(s) from purchase list.")
         else:
             QMessageBox.information(
                 self,
                 "No Selection",
-                "Select at least one item using the checkboxes before removing.",
+                "Select at least one row before removing.",
             )
+
+    # Keep old name as alias for backward compatibility
+    def _remove_checked_from_purchase(self):
+        self._remove_selected_from_purchase()
 
     def _toggle_purchase_list_panel(self, checked):
         self._set_purchase_list_panel_visible(bool(checked))
@@ -1241,25 +1295,18 @@ class MainWindow(QMainWindow):
     def _set_purchase_list_panel_visible(self, visible):
         if visible:
             self._purchase_list_panel.show()
-            usable_width = max(1, self.splitter.width() - TRANSFER_RAIL_WIDTH_PX)
+            usable_width = max(1, self.splitter.width())
             left = max(PREFERRED_RESULTS_PANEL_MIN_WIDTH_PX, int(usable_width * PURCHASE_PANEL_LEFT_RATIO))
             right = max(PURCHASE_PANEL_MIN_WIDTH_PX, usable_width - left)
-            # Guard for tight/non-maximized windows where minimums plus integer
-            # rounding can overrun usable width.
             if right >= usable_width:
                 right = max(1, usable_width - RESULTS_PANEL_MIN_WIDTH_PX)
             if left + right > usable_width:
                 left = max(RESULTS_PANEL_MIN_WIDTH_PX, usable_width - right)
-            self.splitter.setSizes([left, TRANSFER_RAIL_WIDTH_PX, right])
+            self.splitter.setSizes([left, right])
             self._purchase_list_panel.refresh_context_state()
         else:
-            # Completely hide the purchase list and middle controls
             self._purchase_list_panel.hide()
-            self.splitter.setSizes([self.splitter.width(), 0, 0])
-        if getattr(self, "_add_btn", None):
-            self._add_btn.setVisible(visible)
-        if getattr(self, "_remove_btn", None):
-            self._remove_btn.setVisible(visible)
+            self.splitter.setSizes([self.splitter.width(), 0])
         self._purchase_list_panel_visible = visible
         if getattr(self, "_purchase_btn", None):
             self._purchase_btn.blockSignals(True)
@@ -1287,12 +1334,11 @@ class MainWindow(QMainWindow):
             self._dark_mode_action.blockSignals(False)
 
     def _main_table_layout_key(self):
-        return "main_table_layout_v1"
+        return "main_table_layout_v2"
 
     def _restore_main_table_layout_preferences(self):
         state = get_config_value(self._main_table_layout_key(), "")
         if not state:
-            self.table.setColumnWidth(MAIN_COL_SELECT, 36)
             self.table.setColumnWidth(MAIN_COL_HCPCS, 110)
             self.table.setColumnWidth(MAIN_COL_DESC, 420)
             self.table.setColumnWidth(MAIN_COL_STATE, 90)
@@ -1446,6 +1492,8 @@ class MainWindow(QMainWindow):
             self._progress_dlg = None
         self._refresh_filters()
         self._apply_filters()
+        ts = datetime.now().strftime("%b %d, %Y %I:%M %p")
+        self._update_footer_sync_time(ts)
         self._set_status(f"CMS sync complete — {count:,} records imported.")
         QMessageBox.information(
             self, "Sync Complete",
@@ -1738,7 +1786,7 @@ class MainWindow(QMainWindow):
                             <li>Downloads the new exe next to the current one.</li>
                             <li>Launches a detached helper script and exits the app.</li>
                             <li>The helper waits for the app to fully close, removes the old exe, renames the new one into place, and relaunches it.</li>
-                            <li>Each step is logged to <span class="shortcut">%TEMP%\HCPCSFeeApp_update.log</span> for diagnostics.</li>
+                            <li>Each step is logged to <span class="shortcut">%TEMP%\\HCPCSFeeApp_update.log</span> for diagnostics.</li>
                             <li>If replacement fails, the log contains step-by-step manual recovery instructions.</li>
                         </ol>
                     </li>
@@ -1826,7 +1874,7 @@ class MainWindow(QMainWindow):
 
                 <h3>Update Now Did Not Complete</h3>
                 <ul>
-                    <li>Open <span class="shortcut">%TEMP%\HCPCSFeeApp_update.log</span> for a step-by-step log of what happened</li>
+                    <li>Open <span class="shortcut">%TEMP%\\HCPCSFeeApp_update.log</span> for a step-by-step log of what happened</li>
                     <li>If the log contains a failure message, follow the MANUAL RECOVERY INSTRUCTIONS section in the log</li>
                     <li>You can always update manually: download the latest <b>HCPCSFeeApp-Setup.zip</b> and run <b>Install.bat</b></li>
                 </ul>

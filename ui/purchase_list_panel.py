@@ -30,20 +30,30 @@ from core.database import (
 )
 from ui.purchase_list_dialog import BundlePickerDialog
 
-PURCHASE_COL_CHECK = 0
-PURCHASE_COL_HCPCS = 1
-PURCHASE_COL_DESCRIPTION = 2
-PURCHASE_COL_QTY = 3
-PURCHASE_COL_UNIT_PRICE = 4
-PURCHASE_COL_LINE_TOTAL = 5
-PURCHASE_COL_DELETE = 6
-PURCHASE_TABLE_COLUMN_COUNT = 7
+PURCHASE_COL_HCPCS = 0
+PURCHASE_COL_DESCRIPTION = 1
+PURCHASE_COL_QTY = 2
+PURCHASE_COL_UNIT_PRICE = 3
+PURCHASE_COL_LINE_TOTAL = 4
+PURCHASE_COL_DELETE = 5
+PURCHASE_TABLE_COLUMN_COUNT = 6
 QUICK_ADD_SUGGEST_DEBOUNCE_MS = 140
 SCORE_PREFIX_MATCH = 0
 SCORE_PREFIX_MISS_PENALTY = 10
 SCORE_CONTAINS_MISS_PENALTY = 5
 ROW_DELETE_BUTTON_SIZE = QSize(30, 36)
-PURCHASE_ROW_HEIGHT = 56
+PURCHASE_ROW_HEIGHT = 52
+TRANSFER_BTN_SIZE = QSize(36, 30)
+
+_QUICK_ADD_TOOLTIP = (
+    "Quick Add HCPCS\n"
+    "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+    "\u2022 Type a code and press Enter to add it to the list\n"
+    "\u2022 Autocomplete suggestions appear as you type\n"
+    "\u2022 Arrow keys navigate suggestions; Enter confirms\n"
+    "\u2022 Use the \u2715 button on each row to remove it\n"
+    "\u2022 Select rows then use \u25c4 / \u25ba to bulk-add or remove"
+)
 
 
 class QtyStepWidget(QWidget):
@@ -109,16 +119,21 @@ class QtyStepWidget(QWidget):
 class PurchaseListPanel(QWidget):
     count_changed = pyqtSignal(int)
 
-    def __init__(self, parent=None, year_combo=None, state_combo=None, zip_edit=None):
+    def __init__(self, parent=None, year_combo=None, state_combo=None, zip_edit=None,
+                 add_callback=None, remove_callback=None):
         super().__init__(parent)
         self._main_year_combo = year_combo  # Main window's year combo (for reference)
         self._state_combo = state_combo
         self._zip_edit = zip_edit
+        self._add_callback = add_callback
+        self._remove_callback = remove_callback
         self._bundle_name = None
         self._quick_add_btn = None
         self._bundles_btn = None
         self._generate_btn = None
         self._clear_btn = None
+        self._add_transfer_btn = None
+        self._remove_transfer_btn = None
         self._quick_add_suggestions = {}
         self._quick_add_model = QStringListModel(self)
         self._quick_add_completer = None
@@ -140,15 +155,40 @@ class PurchaseListPanel(QWidget):
         header_card.setObjectName("purchaseHeaderCard")
         header_card_layout = QVBoxLayout(header_card)
         header_card_layout.setContentsMargins(10, 8, 10, 8)
-        header_card_layout.setSpacing(6)
+        header_card_layout.setSpacing(4)
 
         header = QHBoxLayout()
+        header.setSpacing(6)
+
+        # Transfer buttons (add from results / remove from list) embedded in panel header
+        if self._remove_callback is not None:
+            self._remove_transfer_btn = QPushButton("\u25c4")  # ◄
+            self._remove_transfer_btn.setToolTip("Remove selected rows from purchase list (Ctrl+Left)")
+            self._remove_transfer_btn.setProperty("role", "rail")
+            self._remove_transfer_btn.setFixedSize(TRANSFER_BTN_SIZE)
+            self._remove_transfer_btn.clicked.connect(self._remove_callback)
+            header.addWidget(self._remove_transfer_btn)
+        if self._add_callback is not None:
+            self._add_transfer_btn = QPushButton("\u25ba")  # ►
+            self._add_transfer_btn.setToolTip("Add selected results to purchase list (Ctrl+Right)")
+            self._add_transfer_btn.setProperty("role", "rail")
+            self._add_transfer_btn.setFixedSize(TRANSFER_BTN_SIZE)
+            self._add_transfer_btn.clicked.connect(self._add_callback)
+            header.addWidget(self._add_transfer_btn)
+
+        if self._add_callback is not None or self._remove_callback is not None:
+            sep = QFrame()
+            sep.setFrameShape(QFrame.Shape.VLine)
+            sep.setFixedHeight(20)
+            header.addWidget(sep)
+            header.addSpacing(2)
+
         self.title_label = QLabel("Purchase List (0)")
         self.title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         header.addWidget(self.title_label)
         header.addStretch()
 
-        self.bundle_label = QLabel("Bundle: —")
+        self.bundle_label = QLabel("Bundle: \u2014")
         header.addWidget(self.bundle_label)
         header_card_layout.addLayout(header)
 
@@ -158,30 +198,21 @@ class PurchaseListPanel(QWidget):
         context.addWidget(self.pricing_context_label)
         context.addStretch()
         header_card_layout.addLayout(context)
-        root.addWidget(header_card)
-
-        context_card = QFrame()
-        context_card.setObjectName("purchaseContextCard")
-        context_card_layout = QVBoxLayout(context_card)
-        context_card_layout.setContentsMargins(10, 8, 10, 8)
-        context_card_layout.setSpacing(6)
 
         self.selection_requirement_label = QLabel("")
         self.selection_requirement_label.setWordWrap(True)
         self.selection_requirement_label.setStyleSheet("font-size: 11px; font-weight: 600; color: #cc0000;")
-        context_card_layout.addWidget(self.selection_requirement_label)
-
-        instructions = QLabel(
-            "Type an HCPCS code in Quick Add and press Enter. "
-            "Use row \u2715 buttons for quick removal, or checkboxes with \u25c4 / \u25ba for bulk actions."
-        )
-        instructions.setWordWrap(True)
-        context_card_layout.addWidget(instructions)
-        root.addWidget(context_card)
+        header_card_layout.addWidget(self.selection_requirement_label)
+        root.addWidget(header_card)
 
         controls = QHBoxLayout()
         controls.setSpacing(6)
         controls.addWidget(QLabel("Quick Add:"))
+        # Info icon with instructional tooltip (replaces inline instructions block)
+        info_lbl = QLabel("\u24d8")  # ⓘ
+        info_lbl.setObjectName("quickAddInfoIcon")
+        info_lbl.setToolTip(_QUICK_ADD_TOOLTIP)
+        controls.addWidget(info_lbl)
         self.quick_add_edit = QLineEdit()
         self.quick_add_edit.setPlaceholderText("e.g. L5301")
         self.quick_add_edit.returnPressed.connect(self._quick_add_from_input)
@@ -197,33 +228,20 @@ class PurchaseListPanel(QWidget):
         self._quick_add_btn.setMinimumWidth(72)
         self._quick_add_btn.clicked.connect(self._quick_add_from_input)
         controls.addWidget(self._quick_add_btn)
-        select_all_btn = QPushButton("\u2713 All")
-        deselect_all_btn = QPushButton("\u2717 All")
-        select_all_btn.setToolTip("Select all purchase list rows")
-        deselect_all_btn.setToolTip("Deselect all purchase list rows")
-        select_all_btn.setProperty("role", "ghost")
-        deselect_all_btn.setProperty("role", "ghost")
-        select_all_btn.clicked.connect(self.select_all_items)
-        deselect_all_btn.clicked.connect(self.deselect_all_items)
-        controls.addStretch()
-        controls.addWidget(select_all_btn)
-        controls.addWidget(deselect_all_btn)
         root.addLayout(controls)
 
         self.table = QTableWidget(0, PURCHASE_TABLE_COLUMN_COUNT)
         self.table.setHorizontalHeaderLabels(
-            ["", "HCPCS Code", "Description", "Qty", "Unit Price", "Line Total", ""]
+            ["HCPCS Code", "Description", "Qty", "Unit Price", "Line Total", ""]
         )
-        # Set default mode first, then override specific columns below.
-        # CHECK and DELETE use Fixed so setColumnWidth() is always honoured.
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.table.horizontalHeader().setSectionResizeMode(PURCHASE_COL_CHECK, QHeaderView.ResizeMode.Fixed)
         self.table.horizontalHeader().setSectionResizeMode(PURCHASE_COL_DELETE, QHeaderView.ResizeMode.Fixed)
         self.table.horizontalHeader().setSectionResizeMode(PURCHASE_COL_DESCRIPTION, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionsMovable(True)
         self.table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.horizontalHeader().sectionMoved.connect(self._save_table_layout_preferences)
@@ -279,15 +297,6 @@ class PurchaseListPanel(QWidget):
         if self._zip_edit:
             self._zip_edit.textChanged.connect(self.refresh_prices)
         self._restore_table_layout_preferences()
-
-    @staticmethod
-    def _checkbox_item(checked=False):
-        item = QTableWidgetItem("")
-        item.setFlags(
-            Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-        )
-        item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
-        return item
 
     def _effective_year(self):
         """Return the main toolbar's explicitly selected year for purchase-list pricing."""
@@ -353,7 +362,6 @@ class PurchaseListPanel(QWidget):
                 return
         row = self.table.rowCount()
         self.table.insertRow(row)
-        self.table.setItem(row, PURCHASE_COL_CHECK, self._checkbox_item(False))
         self.table.setItem(row, PURCHASE_COL_HCPCS, QTableWidgetItem(code))
         description_text = (description_hint or "").strip()
         if not description_text:
@@ -362,8 +370,8 @@ class PurchaseListPanel(QWidget):
         qty_spin = QtyStepWidget()
         qty_spin.valueChanged.connect(self.refresh_prices)
         self.table.setCellWidget(row, PURCHASE_COL_QTY, qty_spin)
-        self.table.setItem(row, PURCHASE_COL_UNIT_PRICE, QTableWidgetItem("—"))
-        self.table.setItem(row, PURCHASE_COL_LINE_TOTAL, QTableWidgetItem("—"))
+        self.table.setItem(row, PURCHASE_COL_UNIT_PRICE, QTableWidgetItem("\u2014"))
+        self.table.setItem(row, PURCHASE_COL_LINE_TOTAL, QTableWidgetItem("\u2014"))
         self.table.setCellWidget(row, PURCHASE_COL_DELETE, self._make_row_delete_button())
         self.refresh_prices()
 
@@ -630,14 +638,13 @@ class PurchaseListPanel(QWidget):
                 description_text = desc_cache[code]
             row = self.table.rowCount()
             self.table.insertRow(row)
-            self.table.setItem(row, PURCHASE_COL_CHECK, self._checkbox_item(False))
             self.table.setItem(row, PURCHASE_COL_HCPCS, QTableWidgetItem(code))
             self.table.setItem(row, PURCHASE_COL_DESCRIPTION, QTableWidgetItem(description_text))
             qty_spin = QtyStepWidget(value=max(1, int(item.get("quantity", 1) or 1)))
             qty_spin.valueChanged.connect(self.refresh_prices)
             self.table.setCellWidget(row, PURCHASE_COL_QTY, qty_spin)
-            self.table.setItem(row, PURCHASE_COL_UNIT_PRICE, QTableWidgetItem("—"))
-            self.table.setItem(row, PURCHASE_COL_LINE_TOTAL, QTableWidgetItem("—"))
+            self.table.setItem(row, PURCHASE_COL_UNIT_PRICE, QTableWidgetItem("\u2014"))
+            self.table.setItem(row, PURCHASE_COL_LINE_TOTAL, QTableWidgetItem("\u2014"))
             self.table.setCellWidget(row, PURCHASE_COL_DELETE, self._make_row_delete_button())
         self.refresh_prices()
 
@@ -673,28 +680,27 @@ class PurchaseListPanel(QWidget):
         QApplication.clipboard().setText("\n".join(lines))
         QMessageBox.information(self, "Copied", "Purchase list copied to clipboard.")
 
-    def remove_checked_items(self):
-        removed = 0
-        for row in reversed(range(self.table.rowCount())):
-            check_item = self.table.item(row, PURCHASE_COL_CHECK)
-            if check_item and check_item.checkState() == Qt.CheckState.Checked:
-                self.table.removeRow(row)
-                removed += 1
-        if removed:
+    def remove_selected_items(self):
+        """Remove all currently selected rows from the purchase list."""
+        selected_rows = sorted(
+            {idx.row() for idx in self.table.selectionModel().selectedRows()},
+            reverse=True,
+        )
+        for row in selected_rows:
+            self.table.removeRow(row)
+        if selected_rows:
             self.refresh_prices()
-        return removed
+        return len(selected_rows)
+
+    # Keep for backward compatibility with any external callers
+    def remove_checked_items(self):
+        return self.remove_selected_items()
 
     def select_all_items(self):
-        for row in range(self.table.rowCount()):
-            item = self.table.item(row, PURCHASE_COL_CHECK)
-            if item:
-                item.setCheckState(Qt.CheckState.Checked)
+        self.table.selectAll()
 
     def deselect_all_items(self):
-        for row in range(self.table.rowCount()):
-            item = self.table.item(row, PURCHASE_COL_CHECK)
-            if item:
-                item.setCheckState(Qt.CheckState.Unchecked)
+        self.table.clearSelection()
 
     def _clear_list(self, confirm=True):
         if confirm and self.table.rowCount() > 0:
@@ -709,14 +715,14 @@ class PurchaseListPanel(QWidget):
                 return
         self.table.setRowCount(0)
         self._bundle_name = None
-        self.bundle_label.setText("Bundle: —")
+        self.bundle_label.setText("Bundle: \u2014")
         self.refresh_prices()
 
     def _table_layout_key(self):
-        return "purchase_list_table_layout_v4"
+        return "purchase_list_table_layout_v5"
 
     def _legacy_table_layout_key(self):
-        return "purchase_list_table_layout_v3"
+        return "purchase_list_table_layout_v4"
 
     def _restore_table_layout_preferences(self):
         header = self.table.horizontalHeader()
@@ -729,10 +735,10 @@ class PurchaseListPanel(QWidget):
         if not state:
             self.table.setColumnWidth(PURCHASE_COL_HCPCS, 100)
             self.table.setColumnWidth(PURCHASE_COL_DESCRIPTION, 200)
-            self.table.setColumnWidth(PURCHASE_COL_QTY, 54)
+            self.table.setColumnWidth(PURCHASE_COL_QTY, 90)
             self.table.setColumnWidth(PURCHASE_COL_UNIT_PRICE, 88)
             self.table.setColumnWidth(PURCHASE_COL_LINE_TOTAL, 88)
-            self.table.setColumnWidth(PURCHASE_COL_DELETE, 36)
+            self.table.setColumnWidth(PURCHASE_COL_DELETE, 38)
             return
         try:
             import base64

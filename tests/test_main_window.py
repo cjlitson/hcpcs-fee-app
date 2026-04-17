@@ -234,7 +234,7 @@ class TestRestorePreferencesSignals:
 
 
 class TestUiAdjustments:
-    def test_state_dropdown_is_wider_and_arrows_hidden_when_purchase_panel_hidden(self, qapp, tmp_db):
+    def test_state_dropdown_sized_and_transfer_btns_in_purchase_panel(self, qapp, tmp_db):
         from ui.main_window import MainWindow
 
         with patch("core.database.get_fees", return_value=[]):
@@ -242,14 +242,22 @@ class TestUiAdjustments:
         window.show()
         qapp.processEvents()
 
-        assert window.state_combo.minimumWidth() >= 280
-        assert not window._add_btn.isVisible()
-        assert not window._remove_btn.isVisible()
+        # State combo should be reasonably sized (not oversized at 280+)
+        assert window.state_combo.minimumWidth() >= 100
+        assert window.state_combo.maximumWidth() <= 220
+
+        # Transfer buttons live inside the purchase panel, not main window
+        panel = window._purchase_list_panel
+        assert panel._add_transfer_btn is not None
+        assert panel._remove_transfer_btn is not None
+        # Panel is hidden, so its buttons are not visible
+        assert not panel.isVisible()
 
         window._set_purchase_list_panel_visible(True)
         qapp.processEvents()
-        assert window._add_btn.isVisible()
-        assert window._remove_btn.isVisible()
+        assert panel.isVisible()
+        assert panel._add_transfer_btn.isVisible()
+        assert panel._remove_transfer_btn.isVisible()
         window.close()
 
     def test_modernized_sections_exist_and_purchase_toggle_property_tracks_visibility(self, qapp, tmp_db):
@@ -295,10 +303,9 @@ class TestUiAdjustments:
         menu = panel._bundles_btn.menu()
         actions = [a.text() for a in menu.actions()]
 
-        assert panel.table.columnCount() == 7
+        assert panel.table.columnCount() == 6
         assert actions == ["Save Current Bundle", "Load / Manage Bundles…"]
         window.close()
-
 
 class TestPurchaseListPanelStartup:
     def test_refresh_does_not_run_before_required_widgets_exist(self, qapp, tmp_db, monkeypatch):
