@@ -200,6 +200,7 @@ class MainWindow(QMainWindow):
             "QPushButton { height: 24px; border-radius: 3px; padding: 3px 10px; border: 1px solid #3E3E3E; background: #2D2D2D; color: #D4D4D4; }"
             "QPushButton:hover { background-color: #383838; border-color: #505050; }"
             "QPushButton:pressed { background-color: #252525; }"
+            "QPushButton:disabled { background: #252525; color: #5A5A5A; border-color: #333333; }"
             "QLabel { background: transparent; color: #D4D4D4; }"
             "QMenuBar { background: #1E1E1E; color: #D4D4D4; border-bottom: 1px solid #3E3E3E; }"
             "QMenu { background: #252525; color: #D4D4D4; border: 1px solid #3E3E3E; }"
@@ -212,8 +213,31 @@ class MainWindow(QMainWindow):
             "QTableWidget::item:selected { background: #264F78; color: #FFFFFF; }"
             "QTableWidget::item:selected:!active { background-color: #335A8A; color: #FFFFFF; }"
             "QTableWidget::item:hover { background-color: #2A2A2A; color: #E6E6E6; }"
-            "QComboBox QAbstractItemView { background: #2D2D2D; color: #D4D4D4; selection-background-color: #264F78; selection-color: #FFFFFF; }"
+            # Combo box dropdown button and popup
+            "QComboBox::drop-down { border-left: 1px solid #3E3E3E; width: 18px; background: #2D2D2D; }"
+            "QComboBox::down-arrow { border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #A0A0A0; width: 0px; height: 0px; margin-right: 4px; }"
+            "QComboBox QAbstractItemView { background: #2D2D2D; color: #D4D4D4; selection-background-color: #264F78; selection-color: #FFFFFF; border: 1px solid #3E3E3E; }"
             "QSpinBox { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 3px; padding: 3px; height: 22px; }"
+            "QSpinBox::up-button, QSpinBox::down-button { background: #3A3A3A; border: 1px solid #3E3E3E; width: 14px; }"
+            # Checkbox indicators inside item views (tables)
+            "QAbstractItemView::indicator { width: 14px; height: 14px; border-radius: 2px; }"
+            "QAbstractItemView::indicator:unchecked { background: #2D2D2D; border: 1px solid #606060; }"
+            "QAbstractItemView::indicator:checked { background: #264F78; border: 1px solid #4A9EFF; }"
+            "QAbstractItemView::indicator:indeterminate { background: #3A3A3A; border: 1px solid #606060; }"
+            # Scrollbars
+            "QScrollBar:vertical { background: #1E1E1E; width: 12px; border: none; margin: 0px; }"
+            "QScrollBar::handle:vertical { background: #3E3E3E; border-radius: 4px; min-height: 20px; margin: 2px; }"
+            "QScrollBar::handle:vertical:hover { background: #555555; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { background: none; height: 0px; }"
+            "QScrollBar:horizontal { background: #1E1E1E; height: 12px; border: none; margin: 0px; }"
+            "QScrollBar::handle:horizontal { background: #3E3E3E; border-radius: 4px; min-width: 20px; margin: 2px; }"
+            "QScrollBar::handle:horizontal:hover { background: #555555; }"
+            "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { background: none; width: 0px; }"
+            # Splitter handle
+            "QSplitter::handle { background: #3E3E3E; }"
+            # Frame/groupbox borders
+            "QFrame { border-color: #3E3E3E; }"
+            "QGroupBox { border: 1px solid #3E3E3E; border-radius: 4px; color: #D4D4D4; }"
         )
 
         # ---- Update notification bar (hidden by default) ----
@@ -255,6 +279,7 @@ class MainWindow(QMainWindow):
 
         # ---- Toolbar (two rows) ----
         toolbar_card = QWidget()
+        self._toolbar_card = toolbar_card
         toolbar_card.setObjectName("toolbarCard")
         toolbar_card.setStyleSheet(
             "#toolbarCard { background-color: #F5F6F8; border: 1px solid #D8DDE6; border-radius: 6px; }"
@@ -1185,6 +1210,19 @@ class MainWindow(QMainWindow):
             self._dark_mode_action.blockSignals(True)
             self._dark_mode_action.setChecked(bool(dark_enabled))
             self._dark_mode_action.blockSignals(False)
+        # The toolbar card has a widget-level stylesheet that overrides the
+        # global QSS, so update it explicitly whenever the theme changes.
+        if getattr(self, "_toolbar_card", None):
+            if dark_enabled:
+                self._toolbar_card.setStyleSheet(
+                    "#toolbarCard { background-color: #252525; border: 1px solid #3E3E3E; border-radius: 6px; }"
+                    "#toolbarCard QLabel { background: transparent; color: #D4D4D4; font-size: 12px; }"
+                )
+            else:
+                self._toolbar_card.setStyleSheet(
+                    "#toolbarCard { background-color: #F5F6F8; border: 1px solid #D8DDE6; border-radius: 6px; }"
+                    "#toolbarCard QLabel { background: transparent; color: #202124; font-size: 12px; }"
+                )
 
     def _main_table_layout_key(self):
         return "main_table_layout_v1"
@@ -2007,9 +2045,16 @@ class _HcpcsHistoryDialog(QDialog):
         # ---- Summary card ----
         card = QFrame()
         card.setFrameShape(QFrame.Shape.StyledPanel)
-        card.setStyleSheet(
-            "QFrame { background: #eef2f7; border: 1px solid #c0c8d8; border-radius: 6px; }"
-        )
+        from core.config import get_config_value as _get_cfg
+        _dark = bool(_get_cfg("dark_mode_enabled", False))
+        if _dark:
+            card.setStyleSheet(
+                "QFrame { background: #252525; border: 1px solid #3E3E3E; border-radius: 6px; }"
+            )
+        else:
+            card.setStyleSheet(
+                "QFrame { background: #eef2f7; border: 1px solid #c0c8d8; border-radius: 6px; }"
+            )
         card_layout = QGridLayout(card)
         card_layout.setContentsMargins(12, 8, 12, 8)
         card_layout.setHorizontalSpacing(16)
@@ -2220,8 +2265,10 @@ class _HcpcsHistoryDialog(QDialog):
         hist_comp.sort(key=lambda r: r.get("year", 0), reverse=True)
 
         section_label = QLabel(f"<b>Comparison — State: {comp_state}</b>")
+        from core.config import get_config_value as _get_cfg
+        _label_color = "#6699CC" if bool(_get_cfg("dark_mode_enabled", False)) else "#003366"
         section_label.setStyleSheet(
-            "font-size: 13px; color: #003366; padding-top: 6px;"
+            f"font-size: 13px; color: {_label_color}; padding-top: 6px;"
         )
         self._comp_layout.addWidget(section_label)
 

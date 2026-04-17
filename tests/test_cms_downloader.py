@@ -647,3 +647,127 @@ class TestNewerCmsCheck:
     @patch("core.cms_downloader._probe_latest_cms_zip_url", side_effect=Exception("offline"))
     def test_offline_check_is_quiet(self, _probe):
         assert has_newer_cms_file_available(2026) is False
+
+    @patch("core.cms_downloader._probe_latest_cms_zip_url", return_value="https://www.cms.gov/files/zip/dme26-a.zip")
+    @patch("core.cms_downloader.get_preference", return_value="https://www.cms.gov/files/zip/dme26-a.zip")
+    def test_no_popup_when_synced_url_matches_probe(self, _pref, _probe):
+        """After storing the probed-latest URL, the startup check must return False.
+
+        Regression: previously, syncing with dme26.zip (rank 0) and then probing
+        dme26-a.zip (rank 1) would incorrectly report a newer file every startup.
+        The fix stores the probed-latest URL after sync, so both sides agree.
+        """
+        assert has_newer_cms_file_available(2026) is False
+
+    @patch("core.cms_downloader._probe_latest_cms_zip_url", return_value="https://www.cms.gov/files/zip/dme26.zip")
+    @patch("core.cms_downloader.get_preference", return_value="https://www.cms.gov/files/zip/dme26.zip")
+    def test_no_popup_when_no_quarter_url_matches_probe(self, _pref, _probe):
+        """dme26.zip stored and probed → no popup (rank 0 == rank 0)."""
+        assert has_newer_cms_file_available(2026) is False
+
+
+class TestDownloadCmsFeesStoresProbeLatest:
+    """Regression: download_cms_fees must store the probed-latest URL, not the
+    raw download URL.  Without this, the startup check falsely reports a newer
+    file on every reopening when CMS serves the same content at a different URL.
+    """
+
+    def _make_single_state_zip(self):
+        """Minimal ZIP with a DMEPOS CSV for state parsing."""
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, mode="w") as zf:
+            csv_content = "HCPCS,Description,State,Year,NR,R\nA0001,Test,AL,2026,10.00,11.00\n"
+            zf.writestr("DMEPOS26_Q1.csv", csv_content.encode())
+        return buf.getvalue()
+
+    @patch("core.cms_downloader.add_import_log")
+    @patch("core.cms_downloader.insert_fees")
+    @patch("core.cms_downloader.delete_fees_by_year_state_source")
+    @patch("core.cms_downloader.insert_rural_zips")
+    @patch("core.cms_downloader.delete_rural_zips_by_year")
+    @patch("core.cms_downloader.set_preference")
+    @patch("core.cms_downloader.get_preference", return_value="")
+    @patch("core.cms_downloader._probe_latest_cms_zip_url",
+           return_value="https://www.cms.gov/files/zip/dme26-a.zip")
+    @patch("core.cms_downloader._try_download_zip")
+    @patch("core.cms_downloader.parse_cms_csv")
+    def test_stores_probed_latest_url_not_download_url(
+        self,
+        mock_parse,
+        mock_download,
+        mock_probe,
+        mock_get_pref,
+        mock_set_pref,
+        mock_del_rural,
+        mock_ins_rural,
+        mock_del_fees,
+        mock_ins_fees,
+        mock_add_log,
+    ):
+        """After a successful sync, set_preference must be called with the URL
+        returned by _probe_latest_cms_zip_url, not the original download URL.
+        """
+        from core.cms_downloader import download_cms_fees
+
+        # Simulate: download returned dme26.zip (no quarter), probe finds dme26-a.zip
+        download_url = "https://www.cms.gov/files/zip/dme26.zip"
+        mock_download.return_value = (self._make_single_state_zip(), download_url)
+        mock_parse.return_value = [{"hcpcs_code": "A0001", "state_abbr": "AL"}]
+
+        download_cms_fees(2026, ["AL"])
+
+        # The preference must be set to the probed URL (dme26-a.zip), not dme26.zip
+        pref_calls = [
+            c for c in mock_set_pref.call_args_list
+            if c[0][0] == "cms_synced_source_url_2026"
+        ]
+        assert pref_calls, "cms_synced_source_url_2026 preference was never set"
+        stored_url = pref_calls[-1][0][1]
+        assert stored_url == "https://www.cms.gov/files/zip/dme26-a.zip", (
+            f"Expected probed URL to be stored, got: {stored_url}"
+        )
+
+    @patch("core.cms_downloader.add_import_log")
+    @patch("core.cms_downloader.insert_fees")
+    @patch("core.cms_downloader.delete_fees_by_year_state_source")
+    @patch("core.cms_downloader.insert_rural_zips")
+    @patch("core.cms_downloader.delete_rural_zips_by_year")
+    @patch("core.cms_downloader.set_preference")
+    @patch("core.cms_downloader.get_preference", return_value="")
+    @patch("core.cms_downloader._probe_latest_cms_zip_url", return_value=None)
+    @patch("core.cms_downloader._try_download_zip")
+    @patch("core.cms_downloader.parse_cms_csv")
+    def test_falls_back_to_download_url_when_probe_fails(
+        self,
+        mock_parse,
+        mock_download,
+        mock_probe,
+        mock_get_pref,
+        mock_set_pref,
+        mock_del_rural,
+        mock_ins_rural,
+        mock_del_fees,
+        mock_ins_fees,
+        mock_add_log,
+    ):
+        """When the post-sync probe returns None (offline/error), fall back to
+        storing the original download URL so the preference is still set.
+        """
+        from core.cms_downloader import download_cms_fees
+
+        download_url = "https://www.cms.gov/files/zip/dme26.zip"
+        mock_download.return_value = (self._make_single_state_zip(), download_url)
+        mock_parse.return_value = [{"hcpcs_code": "A0001", "state_abbr": "AL"}]
+
+        download_cms_fees(2026, ["AL"])
+
+        pref_calls = [
+            c for c in mock_set_pref.call_args_list
+            if c[0][0] == "cms_synced_source_url_2026"
+        ]
+        assert pref_calls, "cms_synced_source_url_2026 preference was never set"
+        stored_url = pref_calls[-1][0][1]
+        assert stored_url == download_url, (
+            f"Expected fallback to download URL, got: {stored_url}"
+        )
+

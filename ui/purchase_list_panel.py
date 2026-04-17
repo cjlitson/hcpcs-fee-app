@@ -125,9 +125,7 @@ class PurchaseListPanel(QWidget):
         self._clear_btn = QPushButton("Clear")
         for btn in (self._save_bundle_btn, self._load_bundle_btn, self._generate_btn, self._clear_btn):
             btn.setStyleSheet(
-                "QPushButton { background-color: #F1F3F6; border: 1px solid #AEB6C2; "
-                "padding: 6px 10px; border-radius: 4px; font-weight: 600; }"
-                "QPushButton:hover { background-color: #E5EBF4; }"
+                "QPushButton { padding: 6px 10px; border-radius: 4px; font-weight: 600; }"
             )
         self._save_bundle_btn.clicked.connect(self._save_bundle)
         self._load_bundle_btn.clicked.connect(self._load_bundle)
