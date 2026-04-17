@@ -1,4 +1,4 @@
-from PyQt6.QtCore import Qt, pyqtSignal, QStringListModel
+from PyQt6.QtCore import Qt, pyqtSignal, QStringListModel, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QCompleter,
@@ -31,6 +31,19 @@ from core.database import (
 )
 from ui.purchase_list_dialog import BundlePickerDialog
 
+PURCHASE_COL_CHECK = 0
+PURCHASE_COL_HCPCS = 1
+PURCHASE_COL_DESCRIPTION = 2
+PURCHASE_COL_QTY = 3
+PURCHASE_COL_UNIT_PRICE = 4
+PURCHASE_COL_LINE_TOTAL = 5
+PURCHASE_COL_DELETE = 6
+PURCHASE_TABLE_COLUMN_COUNT = 7
+QUICK_ADD_SUGGEST_DEBOUNCE_MS = 140
+SCORE_PREFIX_MATCH = 0
+SCORE_PREFIX_MISS_PENALTY = 10
+SCORE_CONTAINS_MISS_PENALTY = 5
+
 
 class PurchaseListPanel(QWidget):
     count_changed = pyqtSignal(int)
@@ -48,6 +61,11 @@ class PurchaseListPanel(QWidget):
         self._quick_add_suggestions = {}
         self._quick_add_model = QStringListModel(self)
         self._quick_add_completer = None
+        self._quick_add_suggest_timer = QTimer(self)
+        self._quick_add_suggest_timer.setSingleShot(True)
+        self._quick_add_suggest_timer.setInterval(QUICK_ADD_SUGGEST_DEBOUNCE_MS)
+        self._quick_add_suggest_timer.timeout.connect(self._update_quick_add_suggestions)
+        self._pending_quick_add_text = ""
         self._init_ui()
         self.refresh_context_state()
 
@@ -105,7 +123,7 @@ class PurchaseListPanel(QWidget):
         self.quick_add_edit = QLineEdit()
         self.quick_add_edit.setPlaceholderText("e.g. L5301")
         self.quick_add_edit.returnPressed.connect(self._quick_add_from_input)
-        self.quick_add_edit.textChanged.connect(self._update_quick_add_suggestions)
+        self.quick_add_edit.textChanged.connect(self._queue_quick_add_suggestions)
         self._quick_add_completer = QCompleter(self._quick_add_model, self.quick_add_edit)
         self._quick_add_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self._quick_add_completer.setFilterMode(Qt.MatchFlag.MatchContains)
@@ -127,12 +145,12 @@ class PurchaseListPanel(QWidget):
         controls.addWidget(deselect_all_btn)
         root.addLayout(controls)
 
-        self.table = QTableWidget(0, 7)
+        self.table = QTableWidget(0, PURCHASE_TABLE_COLUMN_COUNT)
         self.table.setHorizontalHeaderLabels(
             ["", "HCPCS Code", "Description", "Qty", "Unit Price", "Line Total", ""]
         )
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(PURCHASE_COL_CHECK, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(PURCHASE_COL_DELETE, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setSectionsMovable(True)
         self.table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
@@ -255,29 +273,29 @@ class PurchaseListPanel(QWidget):
         if not code:
             return
         for row in range(self.table.rowCount()):
-            existing = self.table.item(row, 1)
+            existing = self.table.item(row, PURCHASE_COL_HCPCS)
             if existing and existing.text().upper() == code:
-                spin = self.table.cellWidget(row, 3)
+                spin = self.table.cellWidget(row, PURCHASE_COL_QTY)
                 if isinstance(spin, QSpinBox):
                     spin.setValue(spin.value() + 1)
                 return
         row = self.table.rowCount()
         self.table.insertRow(row)
-        self.table.setItem(row, 0, self._checkbox_item(False))
-        self.table.setItem(row, 1, QTableWidgetItem(code))
+        self.table.setItem(row, PURCHASE_COL_CHECK, self._checkbox_item(False))
+        self.table.setItem(row, PURCHASE_COL_HCPCS, QTableWidgetItem(code))
         description_text = (description_hint or "").strip()
         if not description_text:
             description_text = self._lookup_description(code)
-        self.table.setItem(row, 2, QTableWidgetItem(description_text))
+        self.table.setItem(row, PURCHASE_COL_DESCRIPTION, QTableWidgetItem(description_text))
         qty_spin = QSpinBox()
         qty_spin.setMinimum(1)
         qty_spin.setMaximum(9999)
         qty_spin.setValue(1)
         qty_spin.valueChanged.connect(self.refresh_prices)
-        self.table.setCellWidget(row, 3, qty_spin)
-        self.table.setItem(row, 4, QTableWidgetItem("—"))
-        self.table.setItem(row, 5, QTableWidgetItem("—"))
-        self.table.setCellWidget(row, 6, self._make_row_delete_button(row))
+        self.table.setCellWidget(row, PURCHASE_COL_QTY, qty_spin)
+        self.table.setItem(row, PURCHASE_COL_UNIT_PRICE, QTableWidgetItem("—"))
+        self.table.setItem(row, PURCHASE_COL_LINE_TOTAL, QTableWidgetItem("—"))
+        self.table.setCellWidget(row, PURCHASE_COL_DELETE, self._make_row_delete_button())
         self.refresh_prices()
 
     def _quick_add_from_input(self):
@@ -297,16 +315,25 @@ class PurchaseListPanel(QWidget):
         self.quick_add_edit.clear()
 
     def _resolve_quick_add_code(self):
+        def normalize(raw):
+            return self._quick_add_suggestions.get(raw, raw).upper()
+
         typed = (self.quick_add_edit.text() or "").strip()
         popup = self._quick_add_completer.popup() if self._quick_add_completer else None
         if popup is not None and popup.isVisible():
             idx = popup.currentIndex()
             if idx.isValid():
                 label = str(idx.data() or "")
-                return self._quick_add_suggestions.get(label, typed).upper()
-        return self._quick_add_suggestions.get(typed, typed).upper()
+                return normalize(label)
+        return normalize(typed)
 
-    def _update_quick_add_suggestions(self, text):
+    def _queue_quick_add_suggestions(self, text):
+        self._pending_quick_add_text = text or ""
+        self._quick_add_suggest_timer.start()
+
+    def _update_quick_add_suggestions(self, text=None):
+        if text is None:
+            text = self._pending_quick_add_text
         term = (text or "").strip()
         if not term:
             self._quick_add_suggestions = {}
@@ -329,8 +356,8 @@ class PurchaseListPanel(QWidget):
                 continue
             seen.add(code)
             desc = (rec.get("description") or "").strip()
-            starts = 0 if code.startswith(normalized) else 1
-            contains = 0 if normalized in code else 1
+            starts = SCORE_PREFIX_MATCH if code.startswith(normalized) else SCORE_PREFIX_MISS_PENALTY
+            contains = SCORE_PREFIX_MATCH if normalized in code else SCORE_CONTAINS_MISS_PENALTY
             scored.append(((starts, contains, code), code, desc))
         scored.sort(key=lambda entry: entry[0])
         suggestions = []
@@ -342,31 +369,29 @@ class PurchaseListPanel(QWidget):
         self._quick_add_suggestions = mapping
         self._quick_add_model.setStringList(suggestions)
 
-    def _make_row_delete_button(self, row):
+    def _make_row_delete_button(self):
         btn = QPushButton("🗑")
         btn.setToolTip("Remove this line item")
+        btn.setAccessibleName("Delete purchase list row")
         btn.setProperty("role", "ghost")
         btn.setMaximumWidth(36)
-        btn.clicked.connect(lambda _=False, r=row: self._remove_row(r))
+        btn.clicked.connect(self._remove_row_for_sender)
         return btn
+
+    def _remove_row_for_sender(self):
+        btn = self.sender()
+        if not isinstance(btn, QPushButton):
+            return
+        for row in range(self.table.rowCount()):
+            if self.table.cellWidget(row, PURCHASE_COL_DELETE) is btn:
+                self._remove_row(row)
+                return
 
     def _remove_row(self, row):
         if row < 0 or row >= self.table.rowCount():
             return
         self.table.removeRow(row)
-        self._rebind_remove_buttons()
         self.refresh_prices()
-
-    def _rebind_remove_buttons(self):
-        for row in range(self.table.rowCount()):
-            btn = self.table.cellWidget(row, 6)
-            if not isinstance(btn, QPushButton):
-                continue
-            try:
-                btn.clicked.disconnect()
-            except Exception:
-                pass
-            btn.clicked.connect(lambda _=False, r=row: self._remove_row(r))
 
     def _lookup_description(self, code):
         records = get_fees(
@@ -406,19 +431,19 @@ class PurchaseListPanel(QWidget):
                 line_item = QTableWidgetItem("—")
                 unit_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 line_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                self.table.setItem(row, 4, unit_item)
-                self.table.setItem(row, 5, line_item)
+                self.table.setItem(row, PURCHASE_COL_UNIT_PRICE, unit_item)
+                self.table.setItem(row, PURCHASE_COL_LINE_TOTAL, line_item)
             self.grand_total_label.setText("$0.00")
             self._update_header()
             return
         total = 0.0
         for row in range(self.table.rowCount()):
-            code_item = self.table.item(row, 1)
+            code_item = self.table.item(row, PURCHASE_COL_HCPCS)
             if not code_item:
                 continue
             code = code_item.text().strip().upper()
             price = self._lookup_price(code)
-            qty_widget = self.table.cellWidget(row, 3)
+            qty_widget = self.table.cellWidget(row, PURCHASE_COL_QTY)
             qty = qty_widget.value() if isinstance(qty_widget, QSpinBox) else 1
             line_total = None if price is None else float(price) * qty
             unit_txt = "—" if price is None else f"${float(price):,.2f}"
@@ -429,8 +454,8 @@ class PurchaseListPanel(QWidget):
             line_item = QTableWidgetItem(line_txt)
             unit_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             line_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.table.setItem(row, 4, unit_item)
-            self.table.setItem(row, 5, line_item)
+            self.table.setItem(row, PURCHASE_COL_UNIT_PRICE, unit_item)
+            self.table.setItem(row, PURCHASE_COL_LINE_TOTAL, line_item)
         self.grand_total_label.setText(f"${total:,.2f}")
         self._update_header()
 
@@ -444,9 +469,9 @@ class PurchaseListPanel(QWidget):
     def _collect_items(self):
         items = []
         for row in range(self.table.rowCount()):
-            code_item = self.table.item(row, 1)
-            desc_item = self.table.item(row, 2)
-            qty_widget = self.table.cellWidget(row, 3)
+            code_item = self.table.item(row, PURCHASE_COL_HCPCS)
+            desc_item = self.table.item(row, PURCHASE_COL_DESCRIPTION)
+            qty_widget = self.table.cellWidget(row, PURCHASE_COL_QTY)
             if not code_item:
                 continue
             code = code_item.text().strip().upper()
@@ -516,19 +541,18 @@ class PurchaseListPanel(QWidget):
                 description_text = desc_cache[code]
             row = self.table.rowCount()
             self.table.insertRow(row)
-            self.table.setItem(row, 0, self._checkbox_item(False))
-            self.table.setItem(row, 1, QTableWidgetItem(code))
-            self.table.setItem(row, 2, QTableWidgetItem(description_text))
+            self.table.setItem(row, PURCHASE_COL_CHECK, self._checkbox_item(False))
+            self.table.setItem(row, PURCHASE_COL_HCPCS, QTableWidgetItem(code))
+            self.table.setItem(row, PURCHASE_COL_DESCRIPTION, QTableWidgetItem(description_text))
             qty_spin = QSpinBox()
             qty_spin.setMinimum(1)
             qty_spin.setMaximum(9999)
             qty_spin.setValue(max(1, int(item.get("quantity", 1) or 1)))
             qty_spin.valueChanged.connect(self.refresh_prices)
-            self.table.setCellWidget(row, 3, qty_spin)
-            self.table.setItem(row, 4, QTableWidgetItem("—"))
-            self.table.setItem(row, 5, QTableWidgetItem("—"))
-            self.table.setCellWidget(row, 6, self._make_row_delete_button(row))
-        self._rebind_remove_buttons()
+            self.table.setCellWidget(row, PURCHASE_COL_QTY, qty_spin)
+            self.table.setItem(row, PURCHASE_COL_UNIT_PRICE, QTableWidgetItem("—"))
+            self.table.setItem(row, PURCHASE_COL_LINE_TOTAL, QTableWidgetItem("—"))
+            self.table.setCellWidget(row, PURCHASE_COL_DELETE, self._make_row_delete_button())
         self.refresh_prices()
 
     def _generate_document(self):
@@ -566,24 +590,23 @@ class PurchaseListPanel(QWidget):
     def remove_checked_items(self):
         removed = 0
         for row in reversed(range(self.table.rowCount())):
-            check_item = self.table.item(row, 0)
+            check_item = self.table.item(row, PURCHASE_COL_CHECK)
             if check_item and check_item.checkState() == Qt.CheckState.Checked:
                 self.table.removeRow(row)
                 removed += 1
         if removed:
-            self._rebind_remove_buttons()
             self.refresh_prices()
         return removed
 
     def select_all_items(self):
         for row in range(self.table.rowCount()):
-            item = self.table.item(row, 0)
+            item = self.table.item(row, PURCHASE_COL_CHECK)
             if item:
                 item.setCheckState(Qt.CheckState.Checked)
 
     def deselect_all_items(self):
         for row in range(self.table.rowCount()):
-            item = self.table.item(row, 0)
+            item = self.table.item(row, PURCHASE_COL_CHECK)
             if item:
                 item.setCheckState(Qt.CheckState.Unchecked)
 
@@ -606,16 +629,24 @@ class PurchaseListPanel(QWidget):
     def _table_layout_key(self):
         return "purchase_list_table_layout_v2"
 
+    def _legacy_table_layout_key(self):
+        return "purchase_list_table_layout_v1"
+
     def _restore_table_layout_preferences(self):
         header = self.table.horizontalHeader()
         state = get_config_value(self._table_layout_key(), "")
         if not state:
-            self.table.setColumnWidth(1, 110)
-            self.table.setColumnWidth(2, 320)
-            self.table.setColumnWidth(3, 70)
-            self.table.setColumnWidth(4, 110)
-            self.table.setColumnWidth(5, 110)
-            self.table.setColumnWidth(6, 42)
+            legacy_state = get_config_value(self._legacy_table_layout_key(), "")
+            if legacy_state:
+                state = legacy_state
+                set_config_value(self._table_layout_key(), legacy_state)
+        if not state:
+            self.table.setColumnWidth(PURCHASE_COL_HCPCS, 110)
+            self.table.setColumnWidth(PURCHASE_COL_DESCRIPTION, 320)
+            self.table.setColumnWidth(PURCHASE_COL_QTY, 70)
+            self.table.setColumnWidth(PURCHASE_COL_UNIT_PRICE, 110)
+            self.table.setColumnWidth(PURCHASE_COL_LINE_TOTAL, 110)
+            self.table.setColumnWidth(PURCHASE_COL_DELETE, 42)
             return
         try:
             import base64

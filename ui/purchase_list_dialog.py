@@ -55,6 +55,7 @@ class BundlePickerDialog(QDialog):
         self.setWindowTitle("Load Bundle")
         self.setMinimumSize(620, 360)
         self.selected_bundle_id = None
+        self._bundle_payload_cache = {}
         self._init_ui()
         self._refresh()
 
@@ -116,6 +117,7 @@ class BundlePickerDialog(QDialog):
     def _refresh(self):
         current_bundle_id = self._current_bundle_id()
         self.bundle_tree.clear()
+        self._bundle_payload_cache = {}
         categories = list_bundle_categories()
         bundles = list_bundles()
         cat_nodes = {}
@@ -251,7 +253,9 @@ class BundlePickerDialog(QDialog):
             bundle_id = data.get("id")
             if term in (item.text(0) or "").lower():
                 return True
-            payload = load_bundle(bundle_id)
+            if bundle_id not in self._bundle_payload_cache:
+                self._bundle_payload_cache[bundle_id] = load_bundle(bundle_id) or {}
+            payload = self._bundle_payload_cache[bundle_id]
             for entry in (payload or {}).get("items", []):
                 code = (entry.get("hcpcs_code") or "").lower()
                 desc = (entry.get("description") or "").lower()
@@ -342,7 +346,9 @@ class BundlePickerDialog(QDialog):
         self._refresh()
 
     def _populate_preview(self, bundle_id):
-        payload = load_bundle(bundle_id)
+        if bundle_id not in self._bundle_payload_cache:
+            self._bundle_payload_cache[bundle_id] = load_bundle(bundle_id) or {}
+        payload = self._bundle_payload_cache[bundle_id]
         items = payload.get("items", []) if payload else []
         bundle_name = (payload or {}).get("name") or ""
         self.preview_label.setText(f"Bundle Preview — {bundle_name} ({len(items)} item{'s' if len(items) != 1 else ''})")

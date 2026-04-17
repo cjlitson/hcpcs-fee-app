@@ -367,7 +367,11 @@ class TestPurchaseListPanelStartup:
 
         suggestions = panel._quick_add_model.stringList()
         assert suggestions
-        assert suggestions[0].startswith("L5301")
+        l5301_index = next((i for i, value in enumerate(suggestions) if value.startswith("L5301")), None)
+        l1234_index = next((i for i, value in enumerate(suggestions) if value.startswith("L1234")), None)
+        assert l5301_index is not None, suggestions
+        assert l1234_index is not None, suggestions
+        assert l5301_index < l1234_index
         panel.close()
 
 

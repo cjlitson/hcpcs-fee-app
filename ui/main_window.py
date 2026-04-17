@@ -37,6 +37,7 @@ MAIN_COL_MODIFIER = 6
 MAIN_COL_SOURCE = 7
 STARTUP_LOG_FILENAME = "HCPCSFeeApp_startup.log"
 USER_GUIDE_DARK_LINK_COLOR = "#8CC8FF"
+ZIP_EDIT_MAX_WIDTH_PX = 96
 
 
 def _asset(name: str) -> Path:
@@ -374,7 +375,7 @@ class MainWindow(QMainWindow):
         row1.addWidget(QLabel("ZIP:"))
         self.zip_edit = QLineEdit()
         self.zip_edit.setPlaceholderText("5-digit ZIP")
-        self.zip_edit.setMaximumWidth(96)
+        self.zip_edit.setMaximumWidth(ZIP_EDIT_MAX_WIDTH_PX)
         self.zip_edit.setToolTip(
             "Enter a 5-digit ZIP code to automatically select rural (R) or non-rural (NR) allowable.\n"
             "Leave blank to default to non-rural (NR)."
@@ -433,8 +434,7 @@ class MainWindow(QMainWindow):
         export_btn.clicked.connect(self._export)
         row2.addWidget(export_btn)
 
-        purchase_btn = self._styled_button("Purchase List (0)", "accent")
-        purchase_btn.setProperty("role", "toggle")
+        purchase_btn = self._styled_button("Purchase List (0)", "toggle")
         purchase_btn.setProperty("active", "false")
         purchase_btn.setCheckable(True)
         purchase_btn.toggled.connect(self._toggle_purchase_list_panel)
