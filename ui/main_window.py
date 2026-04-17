@@ -183,6 +183,7 @@ class MainWindow(QMainWindow):
             "QWidget { background: #FFFFFF; color: #202124; }"
             "QWidget#appShell { background: #F3F5F8; }"
             "QFrame#updateBannerCard, QFrame#filterCard, QFrame#resultsCard, QFrame#footerStrip, QWidget#purchaseListPanel, QFrame#purchaseHeaderCard, QFrame#purchaseContextCard { background: #FFFFFF; border: 1px solid #D8DDE6; border-radius: 10px; }"
+            "QFrame#updateBannerCard { background: #FFF8E1; border-color: #F2D8A7; }"
             "QFrame#transferRail { background: #EDF1F7; border: 1px solid #D8DDE6; border-radius: 8px; }"
             "QFrame#footerStrip { border-radius: 8px; }"
             "QLineEdit, QComboBox { border: 1px solid #C9CED6; border-radius: 6px; padding: 4px 8px; min-height: 24px; background: #FFFFFF; color: #202124; }"
@@ -208,12 +209,12 @@ class MainWindow(QMainWindow):
             "QTableWidget::item:selected:!active { background-color: #4A7AB5; color: white; }"
             "QTableWidget::item:hover { background-color: #E8F0F8; }"
             "QStatusBar { background: #F3F5F8; color: #2E3A48; border-top: 1px solid #D8DDE6; }"
-            "QFrame#updateBannerCard { background: #FFF8E1; border-color: #F2D8A7; }"
         )
         self._dark_theme_qss = (
             "QWidget { background: #1E1E1E; color: #D4D4D4; }"
             "QWidget#appShell { background: #181B20; }"
             "QFrame#updateBannerCard, QFrame#filterCard, QFrame#resultsCard, QFrame#footerStrip, QWidget#purchaseListPanel, QFrame#purchaseHeaderCard, QFrame#purchaseContextCard { background: #22262C; border: 1px solid #353C46; border-radius: 10px; }"
+            "QFrame#updateBannerCard { background: #3A2F1B; border-color: #6B5632; }"
             "QFrame#transferRail { background: #1E232A; border: 1px solid #353C46; border-radius: 8px; }"
             "QLineEdit, QComboBox { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 6px; padding: 4px 8px; min-height: 24px; selection-background-color: #264F78; selection-color: #FFFFFF; }"
             "QDateEdit { background: #2D2D2D; color: #D4D4D4; border: 1px solid #3E3E3E; border-radius: 6px; padding: 4px 8px; min-height: 24px; }"
@@ -268,7 +269,6 @@ class MainWindow(QMainWindow):
             # Frame/groupbox borders
             "QFrame { border-color: #3E3E3E; }"
             "QGroupBox { border: 1px solid #3E3E3E; border-radius: 4px; color: #D4D4D4; }"
-            "QFrame#updateBannerCard { background: #3A2F1B; border-color: #6B5632; }"
         )
 
         self._build_update_banner(root)
@@ -294,7 +294,7 @@ class MainWindow(QMainWindow):
         self._set_status("Ready.")
 
     @staticmethod
-    def _styled_button(text: str, role: str = "secondary") -> QPushButton:
+    def _styled_button(text: str, role: str = "ghost") -> QPushButton:
         btn = QPushButton(text)
         btn.setProperty("role", role)
         return btn
@@ -428,7 +428,7 @@ class MainWindow(QMainWindow):
         row2.addWidget(export_btn)
 
         purchase_btn = self._styled_button("Purchase List (0)", "toggle")
-        purchase_btn.setProperty("active", False)
+        purchase_btn.setProperty("active", "false")
         purchase_btn.setCheckable(True)
         purchase_btn.toggled.connect(self._toggle_purchase_list_panel)
         self._purchase_btn = purchase_btn
@@ -448,7 +448,7 @@ class MainWindow(QMainWindow):
         heading = QLabel("Fee Schedule Results")
         heading.setStyleSheet("font-size: 14px; font-weight: 700;")
         heading_row.addWidget(heading)
-        hint = QLabel("Click HCPCS for history • Right-click for copy actions")
+        hint = QLabel("Click HCPCS for history, or right-click for copy actions")
         hint.setProperty("subtle", True)
         heading_row.addStretch()
         heading_row.addWidget(hint)
@@ -486,12 +486,12 @@ class MainWindow(QMainWindow):
         middle_layout.setSpacing(8)
         middle_layout.addStretch()
 
-        add_btn = self._styled_button("► Add", "rail")
+        add_btn = self._styled_button("►", "rail")
         add_btn.setToolTip("Add selected items to Purchase List (Ctrl+Right)")
         add_btn.clicked.connect(self._add_checked_from_main)
         middle_layout.addWidget(add_btn)
 
-        remove_btn = self._styled_button("◄ Remove", "rail")
+        remove_btn = self._styled_button("◄", "rail")
         remove_btn.setToolTip("Remove selected items from Purchase List (Ctrl+Left)")
         remove_btn.clicked.connect(self._remove_checked_from_purchase)
         middle_layout.addWidget(remove_btn)
@@ -1212,7 +1212,7 @@ class MainWindow(QMainWindow):
         if getattr(self, "_purchase_btn", None):
             self._purchase_btn.blockSignals(True)
             self._purchase_btn.setChecked(visible)
-            self._purchase_btn.setProperty("active", bool(visible))
+            self._purchase_btn.setProperty("active", "true" if visible else "false")
             self._purchase_btn.style().unpolish(self._purchase_btn)
             self._purchase_btn.style().polish(self._purchase_btn)
             self._purchase_btn.blockSignals(False)

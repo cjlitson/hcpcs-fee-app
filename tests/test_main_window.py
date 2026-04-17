@@ -264,11 +264,11 @@ class TestUiAdjustments:
         assert window._update_bar_widget.objectName() == "updateBannerCard"
         assert window._toolbar_card.objectName() == "filterCard"
         assert window._purchase_btn.property("role") == "toggle"
-        assert window._purchase_btn.property("active") is False
+        assert window._purchase_btn.property("active") == "false"
 
         window._set_purchase_list_panel_visible(True)
         qapp.processEvents()
-        assert window._purchase_btn.property("active") is True
+        assert window._purchase_btn.property("active") == "true"
         window.close()
 
 

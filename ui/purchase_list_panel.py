@@ -2,6 +2,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QDialog,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -51,7 +52,7 @@ class PurchaseListPanel(QWidget):
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(8)
 
-        header_card = QWidget()
+        header_card = QFrame()
         header_card.setObjectName("purchaseHeaderCard")
         header_card_layout = QVBoxLayout(header_card)
         header_card_layout.setContentsMargins(10, 8, 10, 8)
@@ -75,7 +76,7 @@ class PurchaseListPanel(QWidget):
         header_card_layout.addLayout(context)
         root.addWidget(header_card)
 
-        context_card = QWidget()
+        context_card = QFrame()
         context_card.setObjectName("purchaseContextCard")
         context_card_layout = QVBoxLayout(context_card)
         context_card_layout.setContentsMargins(10, 8, 10, 8)
