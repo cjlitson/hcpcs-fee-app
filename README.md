@@ -197,7 +197,7 @@ hcpcs-fee-app/
 │   ├── state_selector_dialog.py     # State management dialog
 │   ├── year_selector_dialog.py      # Year management dialog
 │   ├── import_dialog.py             # CSV import wizard
-│   ├── export_dialog.py             # Main-grid export options dialog
+│   ├── main_export_dialog.py        # Main-grid export options dialog
 │   ├── generate_document_dialog.py  # Worksheet-style Generate Document dialog
 │   └── dev_tools_dialog.py          # Developer Tools / SQL Publisher
 ├── core/

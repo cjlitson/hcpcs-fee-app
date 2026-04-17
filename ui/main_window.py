@@ -22,6 +22,7 @@ from core.database import (
 )
 from core.cms_downloader import download_cms_fees, SUPPORTED_YEARS
 from ui.import_dialog import ImportDialog
+from ui.main_export_dialog import MainExportDialog
 from ui.state_selector_dialog import StateSelectorDialog
 from ui.purchase_list_panel import PurchaseListPanel
 
@@ -1020,13 +1021,8 @@ class MainWindow(QMainWindow):
         if not self._records:
             QMessageBox.information(self, "No Data", "No records to export. Apply filters first.")
             return
-        try:
-            from ui.export_dialog import ExportDialog
-        except ImportError as exc:
-            QMessageBox.critical(self, "Export Error", f"Unable to open export dialog:\n{str(exc)}")
-            return
         zip_code = self.zip_edit.text().strip()
-        dlg = ExportDialog(self._records, self, is_rural=self._is_rural(), zip_code=zip_code)
+        dlg = MainExportDialog(self._records, self, is_rural=self._is_rural(), zip_code=zip_code)
         dlg.exec()
 
     def _manage_states(self):

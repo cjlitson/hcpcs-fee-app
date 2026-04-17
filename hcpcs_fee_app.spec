@@ -21,7 +21,7 @@ HIDDENIMPORTS = sorted(
             # Explicit entries as belt-and-suspenders for modules imported
             # lazily inside functions (collect_submodules may miss them if
             # sys.path was not set up before spec execution).
-            "ui.export_dialog",
+            "ui.main_export_dialog",
             "ui.generate_document_dialog",
             "ui.purchase_list_dialog",
             "ui.purchase_list_panel",

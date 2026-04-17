@@ -356,23 +356,16 @@ class TestPurchaseListContextRules:
         assert not panel.quick_add_edit.isEnabled()
         window.close()
 
-    def test_export_gracefully_handles_dialog_import_failure(self, qapp, tmp_db):
+    def test_export_uses_main_export_dialog(self, qapp, tmp_db):
         from ui.main_window import MainWindow
 
         with patch("core.database.get_fees", return_value=[]):
             window = MainWindow()
 
         window._records = [{"hcpcs_code": "L5301"}]
-        real_import = __import__
-
-        def _fake_import(name, *args, **kwargs):
-            if name == "ui.export_dialog":
-                raise ImportError("print backend missing")
-            return real_import(name, *args, **kwargs)
-
-        with patch("builtins.__import__", side_effect=_fake_import):
-            with patch("ui.main_window.QMessageBox.critical") as mock_critical:
-                window._export()
-
-        assert mock_critical.called
+        with patch("ui.main_window.MainExportDialog") as mock_dlg:
+            instance = mock_dlg.return_value
+            window._export()
+        mock_dlg.assert_called_once()
+        instance.exec.assert_called_once()
         window.close()
