@@ -2045,9 +2045,7 @@ class _HcpcsHistoryDialog(QDialog):
         # ---- Summary card ----
         card = QFrame()
         card.setFrameShape(QFrame.Shape.StyledPanel)
-        from core.config import get_config_value as _get_cfg
-        _dark = bool(_get_cfg("dark_mode_enabled", False))
-        if _dark:
+        if bool(get_config_value("dark_mode_enabled", False)):
             card.setStyleSheet(
                 "QFrame { background: #252525; border: 1px solid #3E3E3E; border-radius: 6px; }"
             )
@@ -2265,10 +2263,9 @@ class _HcpcsHistoryDialog(QDialog):
         hist_comp.sort(key=lambda r: r.get("year", 0), reverse=True)
 
         section_label = QLabel(f"<b>Comparison — State: {comp_state}</b>")
-        from core.config import get_config_value as _get_cfg
-        _label_color = "#6699CC" if bool(_get_cfg("dark_mode_enabled", False)) else "#003366"
+        label_color = "#6699CC" if bool(get_config_value("dark_mode_enabled", False)) else "#003366"
         section_label.setStyleSheet(
-            f"font-size: 13px; color: {_label_color}; padding-top: 6px;"
+            f"font-size: 13px; color: {label_color}; padding-top: 6px;"
         )
         self._comp_layout.addWidget(section_label)
 
