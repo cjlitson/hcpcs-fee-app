@@ -1459,23 +1459,23 @@ class MainWindow(QMainWindow):
                 {guide_style}
             </style>
 
-            <h1>VA HCPCS Fee Schedule Manager - Comprehensive User Guide</h1>
+            <h1>VA HCPCS Fee Schedule Manager — User Guide</h1>
 
             <div class="section">
                 <h2>1. Getting Started</h2>
                 <h3>First-Time Setup</h3>
-                <p>When you first launch the app, a Setup Wizard will guide you through:</p>
+                <p>When you first launch the app, a Setup Wizard guides you through:</p>
                 <ul>
                     <li><b>State Selection:</b> Choose which states you need to track (e.g., CA, TX, FL)</li>
-                    <li><b>Data Sync:</b> Option to download the latest CMS DMEPOS fee schedules</li>
+                    <li><b>Data Sync:</b> Option to download the latest CMS DMEPOS fee schedules immediately</li>
                 </ul>
 
                 <h3>Application Layout</h3>
                 <ul>
                     <li><b>Top Toolbar (Row 1):</b> Sync from CMS, Year filter, State filter, ZIP code entry</li>
                     <li><b>Top Toolbar (Row 2):</b> HCPCS Group filter, HCPCS code search, Keyword search, Export button, Purchase List button</li>
-                    <li><b>Main Table:</b> Displays fee schedule records with columns for HCPCS code, description, state, year, allowable amount, modifier, and source</li>
-                    <li><b>Status Bar:</b> Shows record counts and operation status</li>
+                    <li><b>Main Table:</b> HCPCS code, description, state, year, allowable amount, modifier, and source</li>
+                    <li><b>Status Bar:</b> Record count and operation status</li>
                 </ul>
             </div>
 
@@ -1483,192 +1483,214 @@ class MainWindow(QMainWindow):
                 <h2>2. Searching and Filtering Data</h2>
 
                 <h3>Year Filter</h3>
-                <p>Select a specific year or "All Years" to view data. The app shows the most current year by default.</p>
+                <p>Select a specific year or "All Years". The most recent year with data is selected by default.</p>
 
                 <h3>State Filter</h3>
-                <p>Filter by state abbreviation (e.g., CA, TX). Only states you've selected in Settings → Manage States will appear.</p>
+                <p>Filter by state abbreviation (e.g., CA, TX). Only states enabled in Settings → Manage States appear here.</p>
 
                 <h3>ZIP Code Lookup</h3>
                 <p>Enter a 5-digit ZIP code to automatically determine rural (R) or non-rural (NR) allowable amounts:</p>
                 <ul>
-                    <li>The app uses CMS's rural ZIP designation files</li>
-                    <li>Rural status is year-specific and updates based on selected year</li>
-                    <li>Displayed allowable amounts automatically reflect the appropriate rural/non-rural value</li>
+                    <li>Uses CMS rural ZIP designation files bundled with the app</li>
+                    <li>Rural status is year-specific and updates when you change the year filter</li>
+                    <li>The main table automatically shows the correct allowable for your ZIP context</li>
                 </ul>
                 <div class="tip">
-                    <b>Tip:</b> This mimics the PDAC fee lookup behavior - just enter the ZIP and see the correct allowable amount.
+                    <b>Tip:</b> This mirrors PDAC fee lookup behavior — enter the ZIP and the correct allowable displays immediately.
                 </div>
 
                 <h3>HCPCS Group Filter</h3>
-                <p>Filter by equipment category (e.g., "A4 - Surgical Supplies", "E0 - Durable Medical Equipment").
-                Only groups with data in your database will appear.</p>
+                <p>Narrow results to an equipment category (e.g., "E0 - Durable Medical Equipment"). Only groups with local data appear.</p>
 
                 <h3>HCPCS Code Search</h3>
-                <p>Type a partial or complete HCPCS code (e.g., "E0601" or "E06") to find specific items.
-                Search is debounced for smooth typing.</p>
+                <p>Type a partial or complete HCPCS code (e.g., "E0601" or "E06"). Search is debounced for smooth typing.</p>
 
                 <h3>Keyword Search</h3>
-                <p>Search by description keywords (e.g., "wheelchair", "oxygen", "prosthetic"). Searches are case-insensitive.</p>
+                <p>Search description text (e.g., "wheelchair", "oxygen"). Case-insensitive.</p>
 
                 <h3>Clearing Filters</h3>
-                <p>Click the <b>Clear</b> button to reset all filters to defaults.</p>
+                <p>Click <b>Clear</b> to reset all filters to defaults.</p>
             </div>
 
             <div class="section">
                 <h2>3. Viewing Historical Data</h2>
-                <p>Click any HCPCS code (blue hyperlink) in the main table to open the History dialog showing:</p>
+                <p>Click any HCPCS code (blue link) in the main table to open the History dialog:</p>
                 <ul>
                     <li>All years of data for that code and state</li>
                     <li>Non-rural (NR) and Rural (R) allowable amounts</li>
                     <li>Effective allowable based on your entered ZIP code</li>
                     <li>HCPCS group classification</li>
-                    <li>Option to compare with another state side-by-side</li>
+                    <li>Side-by-side state comparison option</li>
                 </ul>
             </div>
 
             <div class="section">
-                <h2>4. Purchase List Feature</h2>
-                <p>The Purchase List lets you build a shopping cart of HCPCS codes for procurement or documentation.</p>
+                <h2>4. Purchase List</h2>
+                <p>The Purchase List lets you build a working list of HCPCS codes with quantities and pricing for procurement or documentation.</p>
 
-                <h3>Opening the Purchase List</h3>
+                <h3>Opening</h3>
                 <ul>
                     <li>Click the <b>Purchase List (0)</b> button in the toolbar</li>
-                    <li>Press <span class="shortcut">Ctrl+P</span> keyboard shortcut</li>
-                    <li>Select View → Purchase List from the menu</li>
+                    <li>Press <span class="shortcut">Ctrl+P</span></li>
+                    <li>View → Purchase List</li>
                 </ul>
+
+                <h3>Year and State Context</h3>
+                <p>The Purchase List prices items against a specific CMS year and state. The selected year is shown in the panel header.
+                If the year does not match the current CMS release year, the header label is displayed in <b style="color: #C0392B;">red</b> as a reminder to verify your pricing context before generating documents.</p>
 
                 <h3>Adding Items</h3>
                 <ul>
-                    <li><b>From Main Table:</b> Check the boxes next to items, then click the <b>►</b> button or press <span class="shortcut">Ctrl+Right</span></li>
-                    <li><b>Quick Add:</b> Type an HCPCS code directly in the Purchase List's input field and press Enter</li>
-                    <li><b>Right-Click Menu:</b> Right-click any row in the main table and select "Add to Purchase List"</li>
+                    <li><b>From Main Table:</b> Check items, then click <b>►</b> or press <span class="shortcut">Ctrl+Right</span></li>
+                    <li><b>Quick Add:</b> Type an HCPCS code directly in the Purchase List input field and press Enter</li>
+                    <li><b>Right-Click Menu:</b> Right-click any row in the main table → "Add to Purchase List"</li>
                 </ul>
 
                 <h3>Removing Items</h3>
                 <ul>
-                    <li>Check items in the Purchase List panel</li>
-                    <li>Click the <b>◄</b> button or press <span class="shortcut">Ctrl+Left</span></li>
+                    <li>Check items in the Purchase List, then click <b>◄</b> or press <span class="shortcut">Ctrl+Left</span></li>
                 </ul>
 
-                <h3>Saving & Loading Bundles</h3>
+                <h3>Saving and Loading Bundles</h3>
                 <ul>
-                    <li><b>Save Bundle:</b> Save your current purchase list with a name for reuse</li>
-                    <li><b>Load Bundle:</b> Restore a previously saved bundle. Hover over bundles to see preview</li>
-                    <li><b>Categories:</b> Organize bundles into categories (right-click to manage)</li>
-                    <li><b>Rename/Delete:</b> Right-click bundles or categories to rename or delete</li>
+                    <li><b>Save Bundle:</b> Save your current list with a name for reuse</li>
+                    <li><b>Load Bundle:</b> Restore a saved bundle (hover to preview contents)</li>
+                    <li><b>Categories:</b> Organize bundles — right-click to manage</li>
+                    <li><b>Rename/Delete:</b> Right-click bundles or categories</li>
                 </ul>
 
-                <h3>Generating Documents</h3>
-                <p>Click <b>Generate Document</b> to create a procurement worksheet:</p>
+                <h3>Generating Worksheet Documents</h3>
+                <p>Click <b>Generate Document</b> to open the procurement worksheet builder:</p>
                 <ul>
-                    <li>Opens a form showing all items with quantities and prices</li>
-                    <li>Add vendor information and contact details</li>
-                    <li>Copy data to clipboard for pasting into emails or forms</li>
-                    <li>Generate and attach to email directly from the app</li>
-                    <li>Export to Word document (.docx)</li>
+                    <li>Shows all items with quantities and CMS allowable prices</li>
+                    <li>Enter vendor information, contact details, and delivery destination</li>
+                    <li><b>Deliver To:</b> Choose from standard delivery options or select <b>Other</b> and type a custom destination</li>
+                    <li>Copy the completed table to clipboard for pasting into emails or procurement forms</li>
+                    <li>Export to Word document (.docx) for a formatted printable worksheet</li>
+                    <li>Attach to email directly from the dialog</li>
                 </ul>
 
-                <h3>Exporting Purchase Lists</h3>
+                <h3>Exporting the Purchase List</h3>
                 <ul>
                     <li><b>CSV:</b> For Excel or database import</li>
-                    <li><b>Excel:</b> Formatted .xlsx file with proper columns</li>
-                    <li><b>PDF:</b> Professional printable document</li>
+                    <li><b>Excel (.xlsx):</b> Formatted spreadsheet</li>
+                    <li><b>PDF:</b> Printable document</li>
                 </ul>
-                <p>Press <span class="shortcut">Ctrl+Shift+C</span> to copy the purchase list table to clipboard.</p>
+                <p>Press <span class="shortcut">Ctrl+Shift+C</span> to copy the Purchase List table to clipboard.</p>
             </div>
 
             <div class="section">
                 <h2>5. Syncing CMS Data</h2>
-                <p>Keep your fee schedules up to date by syncing from CMS.gov:</p>
+                <p>Keep fee schedules current by syncing directly from CMS.gov:</p>
 
                 <h3>Manual Sync</h3>
                 <ol>
-                    <li>Click <b>⚌ Sync from CMS</b> button in the toolbar</li>
-                    <li>Review the year selection (current year + previous 2 years by default)</li>
-                    <li>Click <b>Sync</b> to download</li>
-                    <li>Progress dialog shows download and import status</li>
+                    <li>Click <b>⚌ Sync from CMS</b> in the toolbar</li>
+                    <li>Review the year selection (current year + previous years)</li>
+                    <li>Click <b>Sync</b> to download and import</li>
+                    <li>A progress dialog shows download and import status</li>
                 </ol>
 
-                <h3>Automatic Notifications</h3>
-                <p>On startup, the app checks if newer CMS files are available and prompts you to sync (shown once per session).</p>
+                <h3>Startup Check</h3>
+                <p>On startup the app checks whether newer CMS files may be available and shows a one-time prompt per session if an update is detected.
+                The check is non-blocking — the app loads normally regardless of the result.</p>
 
                 <div class="tip">
-                    <b>Note:</b> CMS typically publishes quarterly updates. Sync regularly to ensure accurate allowable amounts.
+                    <b>Note:</b> CMS typically publishes quarterly updates (January, April, July, October). Sync regularly to ensure accurate allowable amounts.
                 </div>
             </div>
 
             <div class="section">
-                <h2>6. Importing Custom Data</h2>
-                <p>Import fee schedules from CSV files (File → Import CSV):</p>
+                <h2>6. Importing CSV Data</h2>
+                <p>Import fee schedules from CSV files via File → Import CSV:</p>
                 <ul>
-                    <li>Supports CMS format and custom CSV formats</li>
-                    <li>Auto-detects columns for HCPCS, description, state, year, and allowables</li>
+                    <li>Supports CMS DMEPOS format and custom CSV layouts</li>
+                    <li>Auto-detects columns for HCPCS code, description, state, year, and allowables</li>
                     <li>Can import rural ZIP designation files</li>
                     <li>View import history in File → View Import Log</li>
                 </ul>
             </div>
 
             <div class="section">
-                <h2>7. Exporting Data</h2>
-                <p>Export current search results (must have data visible first):</p>
+                <h2>7. Exporting Search Results</h2>
+                <p>Export what is currently visible in the main results table:</p>
                 <ul>
-                    <li><b>CSV:</b> For Excel or database import</li>
+                    <li><b>CSV:</b> For spreadsheet or database import</li>
                     <li><b>Excel (.xlsx):</b> Formatted spreadsheet with proper columns</li>
-                    <li><b>PDF:</b> Professional printable report with metadata</li>
+                    <li><b>PDF:</b> Printable report with filter metadata</li>
                 </ul>
-                <p>Exports include your current ZIP code and rural status if specified.</p>
+                <p>Exports include your current ZIP code and rural status context when specified.</p>
+                <div class="tip">
+                    <b>Tip:</b> Apply your filters first — exports capture exactly what is shown in the table.
+                </div>
             </div>
 
             <div class="section">
-                <h2>8. Backup & Restore</h2>
+                <h2>8. Backup and Restore</h2>
 
                 <h3>Creating Backups</h3>
-                <p>File → Create Backup creates a .zip file containing:</p>
+                <p>File → Create Backup produces a .zip file containing:</p>
                 <ul>
                     <li>All fee schedule records</li>
-                    <li>Purchase list bundles and categories</li>
+                    <li>Purchase List bundles and categories</li>
                     <li>Selected states and preferences</li>
                     <li>Import history</li>
                 </ul>
 
                 <h3>Restoring Backups</h3>
-                <p>File → Restore from Backup:</p>
                 <ol>
+                    <li>File → Restore from Backup</li>
                     <li>Select a .zip backup file</li>
-                    <li>Preview shows what will be restored</li>
+                    <li>Preview what will be restored</li>
                     <li>Confirm to overwrite current data</li>
-                    <li>Restart the app after restore</li>
+                    <li>Restart the app after restore completes</li>
                 </ol>
             </div>
 
             <div class="section">
-                <h2>9. Settings & Configuration</h2>
+                <h2>9. Settings and Configuration</h2>
 
                 <h3>Manage States</h3>
-                <p>Settings → Manage States:</p>
-                <ul>
-                    <li>Check states you need to track</li>
-                    <li>Only selected states appear in filters and sync operations</li>
-                    <li>Changes refresh immediately</li>
-                </ul>
+                <p>Settings → Manage States: check the states you need. Only selected states appear in filters and sync operations.</p>
 
                 <h3>Database Location</h3>
-                <p>Settings → Change Database Path to store data in a different location (e.g., network drive, different folder).</p>
+                <p>Settings → Change Database Path to store data in a different location (e.g., network drive).</p>
 
                 <h3>Dark Mode</h3>
-                <p>View → Dark Mode switches between light and dark themes. Preference is saved automatically.</p>
+                <p>View → Dark Mode toggles light/dark themes. Preference is saved automatically.</p>
 
                 <h3>Desktop Shortcut</h3>
-                <p>Settings → Create Desktop Shortcut (Windows .exe only) adds a shortcut to your desktop.</p>
+                <p>Settings → Create Desktop Shortcut (Windows .exe only) adds or refreshes the desktop shortcut.</p>
             </div>
 
             <div class="section">
-                <h2>10. Developer Tools</h2>
-                <p>Developer Tools → SQL Publisher allows publishing data to SQL Server or Databricks databases for enterprise integration.</p>
+                <h2>10. App Updates</h2>
+                <p>When a new release is available, an update banner appears at the top of the main window.</p>
+                <ul>
+                    <li><b>Download now</b> link opens the GitHub release page in your browser.</li>
+                    <li><b>Update Now</b> button (visible when running the installed .exe) starts the automatic in-place update:
+                        <ol>
+                            <li>Downloads the new exe next to the current one.</li>
+                            <li>Launches a detached helper script and exits the app.</li>
+                            <li>The helper waits for the app to fully close, removes the old exe, renames the new one into place, and relaunches it.</li>
+                            <li>Each step is logged to <span class="shortcut">%TEMP%\HCPCSFeeApp_update.log</span> for diagnostics.</li>
+                            <li>If replacement fails, the log contains step-by-step manual recovery instructions.</li>
+                        </ol>
+                    </li>
+                </ul>
+                <div class="tip">
+                    <b>Manual update fallback:</b> download the latest <b>HCPCSFeeApp-Setup.zip</b> from the GitHub releases page and run <b>Install.bat</b>.
+                </div>
             </div>
 
             <div class="section">
-                <h2>11. Keyboard Shortcuts</h2>
+                <h2>11. Developer Tools</h2>
+                <p>Developer Tools → SQL Publisher allows publishing data to SQL Server or Databricks databases for enterprise integration.
+                Requires additional drivers, credentials, and environment access.</p>
+            </div>
+
+            <div class="section">
+                <h2>12. Keyboard Shortcuts</h2>
                 <table class="shortcut-table">
                     <tr>
                         <th>Shortcut</th>
@@ -1706,44 +1728,48 @@ class MainWindow(QMainWindow):
             </div>
 
             <div class="section">
-                <h2>12. Tips & Best Practices</h2>
+                <h2>13. Tips and Best Practices</h2>
                 <ul>
                     <li><b>Regular Syncs:</b> Check for CMS updates quarterly (January, April, July, October)</li>
                     <li><b>Use ZIP Codes:</b> Always enter a ZIP when looking up allowables for accurate rural/non-rural pricing</li>
+                    <li><b>Check the Year Context:</b> The Purchase List year label turns red when the selected year may not be the current CMS year — verify before generating documents</li>
                     <li><b>Save Bundles:</b> Create bundles for frequently ordered equipment combinations</li>
                     <li><b>Browse Groups:</b> View → Browse HCPCS Groups to explore available equipment categories</li>
-                    <li><b>Right-Click Menus:</b> Right-click rows for quick actions like copying data or adding to Purchase List</li>
-                    <li><b>Create Backups:</b> Back up before major changes or before upgrading the app</li>
-                    <li><b>Column Customization:</b> Drag column headers to reorder, resize columns by dragging edges</li>
-                    <li><b>Sorting:</b> Click column headers to sort data ascending/descending</li>
+                    <li><b>Right-Click Menus:</b> Right-click rows for quick actions (copy, add to Purchase List, etc.)</li>
+                    <li><b>Create Backups:</b> Back up before major data changes or before updating the app</li>
+                    <li><b>Column Customization:</b> Drag column headers to reorder; drag edges to resize</li>
+                    <li><b>Sorting:</b> Click any column header to sort ascending/descending</li>
                 </ul>
             </div>
 
             <div class="section">
-                <h2>13. Troubleshooting</h2>
+                <h2>14. Troubleshooting</h2>
 
                 <h3>No Data Appears</h3>
                 <ul>
-                    <li>Check if you've selected states in Settings → Manage States</li>
+                    <li>Confirm states are enabled in Settings → Manage States</li>
                     <li>Run Sync from CMS to download fee schedules</li>
-                    <li>Verify year filter includes data years</li>
+                    <li>Check the year filter includes years with data</li>
                 </ul>
 
                 <h3>Sync Fails</h3>
                 <ul>
-                    <li>Check internet connection</li>
-                    <li>CMS website may be temporarily unavailable - try again later</li>
+                    <li>Verify your internet connection</li>
+                    <li>The CMS website may be temporarily unavailable — try again later</li>
                     <li>Check File → View Import Log for error details</li>
                 </ul>
 
-                <h3>App Updates</h3>
-                <p>When updates are available, a notification bar appears at the top with download link.
-                Click "Update Now" for automatic installation (when running as .exe).</p>
+                <h3>Update Now Did Not Complete</h3>
+                <ul>
+                    <li>Open <span class="shortcut">%TEMP%\HCPCSFeeApp_update.log</span> for a step-by-step log of what happened</li>
+                    <li>If the log contains a failure message, follow the MANUAL RECOVERY INSTRUCTIONS section in the log</li>
+                    <li>You can always update manually: download the latest <b>HCPCSFeeApp-Setup.zip</b> and run <b>Install.bat</b></li>
+                </ul>
             </div>
 
             <div class="section footer-note">
                 <p><b>Data Source:</b> CMS DMEPOS Fee Schedule (<a href="https://www.cms.gov/medicare/payment/fee-schedules/dmepos">cms.gov</a>)</p>
-                <p><b>Developed by:</b> WSNC Impact Team</p>
+                <p><b>Developed by:</b> WSNC IMPACT Team</p>
                 <p><b>Support:</b> For questions or issues, contact your VA IT support team.</p>
             </div>
         """)

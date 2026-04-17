@@ -66,7 +66,7 @@ class PurchaseListPanel(QWidget):
 
         self.selection_requirement_label = QLabel("")
         self.selection_requirement_label.setWordWrap(True)
-        self.selection_requirement_label.setStyleSheet("font-size: 11px; font-weight: 600;")
+        self.selection_requirement_label.setStyleSheet("font-size: 11px; font-weight: 600; color: #cc0000;")
         root.addWidget(self.selection_requirement_label)
 
         instructions = QLabel(

@@ -53,7 +53,7 @@ It is designed for day-to-day fee lookup and procurement workflows while keeping
 Install target: `Documents\HCPCSFeeApp\` (per-user install). No administrator rights are required.
 
 ### Update behavior
-- **In-app update:** when a newer release is detected, the app can show an update banner with **Update Now** (installed/frozen executable workflow).
+- **In-app update:** when a newer release is detected, the app shows an update banner with **Update Now**. Clicking it downloads the new exe, launches a detached helper script, and exits. The helper waits for the app to fully exit, removes the old exe, renames the new one into place, verifies it, and relaunches — logging every step to `%TEMP%\HCPCSFeeApp_update.log`.
 - **Manual update:** download the latest `HCPCSFeeApp-Setup.zip` and run `Install.bat` again.
 - Always launch from the desktop shortcut after updating.
 
@@ -101,5 +101,6 @@ https://www.cms.gov/medicare/payment/fee-schedules/dmepos
 
 ## Release notes
 
+- [v1.1.2 — Updater Reliability and Release-Prep Polish](docs/releases/v1.1.2.md)
 - [v1.1.1 — Reliability, Export, Purchase List, and Dark Mode refresh](docs/releases/v1.1.1.md)
 - [v1.0.0 — Initial Release](docs/releases/v1.0.0.md)
