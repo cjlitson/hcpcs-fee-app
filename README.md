@@ -4,7 +4,7 @@ VA HCPCS Fee Schedule Manager is a Windows desktop application for VA teams to s
 
 It is designed for day-to-day fee lookup and procurement workflows while keeping data local to each user profile.
 
-Current release: **v1.2.1**
+Current release: **v1.2.2**
 
 ---
 
@@ -104,6 +104,7 @@ https://www.cms.gov/medicare/payment/fee-schedules/dmepos
 
 ## Release notes
 
+- [v1.2.2 — Updater Handoff Reliability + Clear-Filter UX Refinement](docs/releases/v1.2.2.md)
 - [v1.2.1 — Updater Flow Validation and UI Refinement Alignment](docs/releases/v1.2.1.md)
 - [v1.2.0 — UI Workflow Refinement and Documentation Refresh](docs/releases/v1.2.0.md)
 - [v1.1.3 — Public Release for Updater Validation](docs/releases/v1.1.3.md)

@@ -41,3 +41,17 @@ def test_user_guide_shortcuts_table_uses_dark_mode_aware_style_class():
     assert ".shortcut-table th { background-color: #2F3E53; color: #E6E6E6; }" in source
     assert '<table class="shortcut-table">' in source
     assert '<tr style="background-color: #EEF2F7;">' not in source
+
+
+def test_clear_filters_preserves_year_and_state_selection():
+    source = (REPO_ROOT / "ui" / "main_window.py").read_text(encoding="utf-8")
+    section = source.split("def _clear_filters(self):", 1)[1].split(
+        "\n    # ------------------------------------------------- Filter persistence ---",
+        1,
+    )[0]
+    assert "self.year_combo.setCurrentIndex(0)" not in section
+    assert "self.state_combo.setCurrentIndex(0)" not in section
+    assert "self.group_combo.setCurrentIndex(0)" in section
+    assert "self.code_edit.clear()" in section
+    assert "self.keyword_edit.clear()" in section
+    assert "self.zip_edit.clear()" in section
