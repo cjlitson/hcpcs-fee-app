@@ -57,7 +57,7 @@ Current release: **v1.2.2**
 Install target: `Documents\HCPCSFeeApp\` (per-user install). No administrator rights are required.
 
 ### Update behavior
-- **In-app update:** when a newer release is detected, the app shows an update banner with **Update Now**. Clicking it downloads `HCPCSFeeApp_new.exe`, launches `HCPCSFeeAppUpdater.exe`, and exits. The updater waits for the app to fully exit, replaces the executable in place (with backup/retry fallback if needed), verifies it, and relaunches — logging every step to `%TEMP%\HCPCSFeeApp_update.log`.
+- **In-app update:** when a newer release is detected, the app shows an update banner with **Update Now**. Clicking it launches `HCPCSFeeAppUpdater.exe` and exits early. The updater then owns the workflow (download, wait-for-exit, replace, relaunch) and logs every step to `%TEMP%\HCPCSFeeApp_update.log`.
 - **Manual update:** download the latest `HCPCSFeeApp-Setup.zip` and run `Install.bat` again.
 - Always launch from the desktop shortcut after updating.
 

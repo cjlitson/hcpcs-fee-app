@@ -108,6 +108,49 @@ def test_apply_update_raises_if_helper_missing(tmp_path, monkeypatch):
         self_updater.apply_update(new_exe)
 
 
+def test_launch_updater_workflow_passes_asset_context_and_exits(tmp_path, monkeypatch):
+    self_updater, exe_path, _new_exe, helper_exe, popen_calls, temp_log_dir = _setup_apply_update(
+        tmp_path, monkeypatch
+    )
+    asset_url = "https://github.com/cjlitson/hcpcs-fee-app/releases/download/v1.2.3/HCPCSFeeApp.exe"
+    release_url = "https://github.com/cjlitson/hcpcs-fee-app/releases/tag/v1.2.3"
+
+    with pytest.raises(SystemExit) as exc_info:
+        self_updater.launch_updater_workflow(
+            asset_url,
+            version="1.2.3",
+            release_url=release_url,
+        )
+    assert exc_info.value.code == 0
+
+    pid = self_updater.os.getpid()
+    update_log_path = temp_log_dir / self_updater.UPDATE_LOG_FILENAME
+    launcher_log_path = exe_path.parent / self_updater.LAUNCHER_LOG_FILENAME
+
+    assert popen_calls["args"] == [
+        str(helper_exe),
+        "--current-exe",
+        str(exe_path),
+        "--pid",
+        str(pid),
+        "--log-path",
+        str(update_log_path),
+        "--asset-url",
+        asset_url,
+        "--version",
+        "1.2.3",
+        "--release-url",
+        release_url,
+    ]
+    assert popen_calls["kwargs"]["cwd"] == str(exe_path.parent)
+    assert popen_calls["kwargs"]["close_fds"] is False
+
+    log_content = launcher_log_path.read_text(encoding="utf-8")
+    assert "[UI] Updater handoff requested." in log_content
+    assert f"[UI] Updater asset URL: {asset_url}" in log_content
+    assert "[UI] Updater workflow launched successfully." in log_content
+
+
 def test_helper_launch_recorded_successfully_uses_pending_file_mtime(tmp_path, monkeypatch):
     from core import self_updater
 

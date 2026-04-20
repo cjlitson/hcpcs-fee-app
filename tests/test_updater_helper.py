@@ -111,7 +111,7 @@ def test_run_invokes_wait_replace_and_relaunch(tmp_path, monkeypatch):
     assert calls["replace_paths"] == (new_exe, current_exe)
     assert calls["popen_args"] == [str(current_exe)]
     assert calls["close_fds"] is True
-    assert "Helper started." in log_path.read_text(encoding="utf-8")
+    assert "Updater workflow started." in log_path.read_text(encoding="utf-8")
 
 
 def test_run_falls_back_to_backup_then_replace_when_in_place_replace_fails(tmp_path, monkeypatch):
@@ -275,3 +275,59 @@ def test_run_restores_backup_if_fallback_replace_fails(tmp_path, monkeypatch):
     ]
     assert current_exe.exists()
     assert current_exe.read_bytes() == b"old"
+
+
+def test_run_downloads_asset_then_replaces_and_relaunches(tmp_path, monkeypatch):
+    current_exe = tmp_path / "HCPCSFeeApp.exe"
+    log_path = tmp_path / "HCPCSFeeApp_update.log"
+    current_exe.write_bytes(b"old")
+    downloaded_exe = tmp_path / "HCPCSFeeApp_new.exe"
+
+    calls = {}
+
+    monkeypatch.setattr(updater_helper, "wait_for_process_exit", lambda _pid: True)
+    monkeypatch.setattr(updater_helper.time, "sleep", lambda _s: None)
+
+    def _download(*, asset_url, current_exe, log_path):
+        calls["download"] = (asset_url, current_exe, log_path)
+        downloaded_exe.write_bytes(b"new")
+        return downloaded_exe
+
+    def _replace(src, dst):
+        calls["replace_paths"] = (src, dst)
+        os.replace(src, dst)
+        return True
+
+    class _DummyPopen:
+        def __init__(self, args, close_fds):
+            calls["popen_args"] = args
+            calls["close_fds"] = close_fds
+
+    monkeypatch.setattr(updater_helper, "_download_release_asset", _download)
+    monkeypatch.setattr(updater_helper, "replace_file_with_retries", _replace)
+    monkeypatch.setattr(updater_helper.subprocess, "Popen", _DummyPopen)
+
+    code = updater_helper.run(
+        [
+            "--current-exe",
+            str(current_exe),
+            "--asset-url",
+            "https://example.invalid/HCPCSFeeApp.exe",
+            "--pid",
+            "4321",
+            "--log-path",
+            str(log_path),
+            "--version",
+            "1.2.3",
+            "--release-url",
+            "https://github.com/cjlitson/hcpcs-fee-app/releases/tag/v1.2.3",
+        ]
+    )
+
+    assert code == 0
+    assert calls["download"][0] == "https://example.invalid/HCPCSFeeApp.exe"
+    assert calls["download"][1] == current_exe
+    assert calls["download"][2] == log_path
+    assert calls["replace_paths"] == (downloaded_exe, current_exe)
+    assert calls["popen_args"] == [str(current_exe)]
+    assert calls["close_fds"] is True

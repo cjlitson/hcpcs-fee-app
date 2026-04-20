@@ -1867,13 +1867,13 @@ class MainWindow(QMainWindow):
                 <p>When a new release is available, an update banner appears at the top of the main window.</p>
                 <ul>
                     <li><b>Download now</b> link opens the GitHub release page in your browser.</li>
-                    <li><b>Update Now</b> button (visible when running the installed .exe) starts the automatic in-place update:
+                    <li><b>Update Now</b> button (visible when running the installed .exe) starts the standalone updater workflow:
                         <ol>
-                            <li>Downloads the new exe next to the current one.</li>
-                            <li>Launches the detached helper executable (<span class="shortcut">HCPCSFeeAppUpdater.exe</span>) and exits the app.</li>
-                            <li>The helper waits for the app to fully close, replaces the old exe in place, and relaunches it (with backup/retry fallback if needed).</li>
+                            <li>Launches the detached updater executable (<span class="shortcut">HCPCSFeeAppUpdater.exe</span>) and exits the app.</li>
+                            <li>The updater downloads the release asset and waits for the app to fully close.</li>
+                            <li>The updater replaces the old exe in place, and relaunches it (with backup/retry fallback if needed).</li>
                             <li>Each step is logged to <span class="shortcut">%TEMP%\\HCPCSFeeApp_update.log</span> for diagnostics.</li>
-                            <li>If replacement fails, the log contains step-by-step manual recovery instructions.</li>
+                            <li>If an updater step fails, the updater presents recovery guidance and logs details.</li>
                         </ol>
                     </li>
                 </ul>
@@ -2012,7 +2012,7 @@ class MainWindow(QMainWindow):
         self._update_bar_widget.show()
 
     def _on_update_now(self):
-        """Download and apply the update in-place, or fall back to browser."""
+        """Hand off update workflow to updater executable, or fall back to browser."""
         import webbrowser
         url = getattr(self, "_update_pending_url", None)
         version = getattr(self, "_update_pending_version", "?")
@@ -2032,35 +2032,9 @@ class MainWindow(QMainWindow):
                 webbrowser.open(url)
             return
 
-        # Show an indeterminate progress dialog while downloading
-        dlg = QProgressDialog(
-            f"Downloading version {version}…", "Cancel", 0, 0, self
-        )
-        dlg.setWindowTitle("Updating…")
-        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-        dlg.setMinimumDuration(0)
-        dlg.setValue(0)
-
-        cancelled = False
-
-        def _on_cancel():
-            nonlocal cancelled
-            cancelled = True
-
-        dlg.canceled.connect(_on_cancel)
-
-        def _progress(downloaded, total):
-            if cancelled:
-                return
-            if total and total > 0:
-                dlg.setMaximum(total)
-                dlg.setValue(downloaded)
-            QApplication.processEvents()
-
         try:
             from core.self_updater import (
-                apply_update,
-                download_update,
+                launch_updater_workflow,
                 write_launcher_log,
             )
 
@@ -2070,44 +2044,30 @@ class MainWindow(QMainWindow):
             _log_stage(
                 f"Update Now clicked. version={version!r}, pending_url={url!r}, asset_url={asset_url!r}"
             )
-            new_exe = download_update(asset_url, progress_callback=_progress)
-            _log_stage(f"Download completed: {new_exe} ({new_exe.stat().st_size:,} bytes)")
-            dlg.close()
-
-            if cancelled:
-                _log_stage("Download canceled by user; removing downloaded file.")
-                try:
-                    new_exe.unlink()
-                except Exception:
-                    pass
-                return
-
             reply = QMessageBox.question(
                 self,
-                "Apply Update",
-                f"Version {version} has been downloaded.\n\n"
-                "The app will restart to complete the update.\n\nContinue?",
+                "Start Update",
+                f"Version {version} is ready.\n\n"
+                "The updater will open in a separate process and this app will close.\n\nContinue?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
-                _log_stage("User confirmed update; entering apply_update().")
+                _log_stage("User confirmed handoff; launching updater workflow.")
                 try:
-                    apply_update(new_exe)  # does not return — calls sys.exit(0)
+                    launch_updater_workflow(
+                        asset_url,
+                        version=version,
+                        release_url=url,
+                    )
                 except Exception as exc:
                     _log_stage(
-                        f"apply_update raised {type(exc).__name__}: {exc!r}"
+                        f"launch_updater_workflow raised {type(exc).__name__}: {exc!r}"
                     )
                     raise
             else:
-                _log_stage("User declined update prompt; removing downloaded file.")
-                # User declined — clean up the downloaded file
-                try:
-                    new_exe.unlink()
-                except Exception:
-                    pass
+                _log_stage("User declined updater handoff prompt.")
 
         except Exception as exc:
-            dlg.close()
             details = f"{type(exc).__name__}: {exc!r}"
             try:
                 from core.self_updater import get_launcher_log_paths, write_launcher_log

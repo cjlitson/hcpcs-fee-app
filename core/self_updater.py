@@ -208,3 +208,78 @@ def apply_update(new_exe: Path) -> None:
         write_launcher_log(f"WARNING: QApplication quit failed: {exc!r}", exe=exe)
 
     sys.exit(0)
+
+
+def launch_updater_workflow(
+    asset_url: str,
+    *,
+    version: str | None = None,
+    release_url: str | None = None,
+) -> None:
+    """Launch the updater executable as the primary workflow owner and exit.
+
+    The updater process performs download/apply/relaunch after handoff.
+    """
+    import subprocess
+
+    exe = _current_exe()
+    pid = os.getpid()
+    log_path = Path(tempfile.gettempdir()) / UPDATE_LOG_FILENAME
+    helper_exe = exe.parent / UPDATER_HELPER_EXE_NAME
+
+    helper_args = [
+        str(helper_exe),
+        "--current-exe",
+        str(exe),
+        "--pid",
+        str(pid),
+        "--log-path",
+        str(log_path),
+        "--asset-url",
+        asset_url,
+    ]
+    if version:
+        helper_args.extend(["--version", version])
+    if release_url:
+        helper_args.extend(["--release-url", release_url])
+
+    write_launcher_log("[UI] Updater handoff requested.", exe=exe)
+    write_launcher_log(f"[UI] Current exe: {exe}", exe=exe)
+    write_launcher_log(f"[UI] Updater helper path: {helper_exe}", exe=exe)
+    write_launcher_log(f"[UI] Updater log path: {log_path}", exe=exe)
+    write_launcher_log(f"[UI] Updater asset URL: {asset_url}", exe=exe)
+    if release_url:
+        write_launcher_log(f"[UI] Updater release URL: {release_url}", exe=exe)
+    if version:
+        write_launcher_log(f"[UI] Updater target version: {version}", exe=exe)
+
+    if not helper_exe.exists():
+        write_launcher_log("ERROR: Updater helper executable not found.", exe=exe)
+        raise RuntimeError(f"Updater helper not found: {helper_exe}")
+    if not asset_url:
+        write_launcher_log("ERROR: Empty updater asset URL.", exe=exe)
+        raise RuntimeError("Updater asset URL is empty.")
+
+    try:
+        subprocess.Popen(
+            helper_args,
+            cwd=str(exe.parent),
+            close_fds=False,
+        )
+        write_launcher_log("[UI] Updater workflow launched successfully.", exe=exe)
+    except Exception as exc:
+        write_launcher_log(f"ERROR: Failed to launch updater workflow: {exc!r}", exe=exe)
+        raise RuntimeError(
+            f"Failed to launch updater workflow ({type(exc).__name__}): {exc}"
+        ) from exc
+
+    try:
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+    except Exception as exc:
+        write_launcher_log(f"WARNING: QApplication quit failed: {exc!r}", exe=exe)
+
+    sys.exit(0)
