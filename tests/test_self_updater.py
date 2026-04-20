@@ -155,7 +155,7 @@ def test_helper_launch_recorded_ignores_stale_success_for_different_exe(tmp_path
     # The launcher log still contains the stale v1 success marker but NOT a v2 marker
     # The mtime on exe_v2 is now > log mtime only if we touch the file after writing the log
     import time
-    time.sleep(0.01)  # ensure mtime ordering is stable
+    time.sleep(0.1)  # ensure mtime ordering is stable across filesystems
     exe_v2.touch()
 
     assert not self_updater.helper_launch_recorded_successfully(exe_v2), (
