@@ -231,7 +231,7 @@ def test_run_restores_backup_if_fallback_replace_fails(tmp_path, monkeypatch):
     current_exe.write_bytes(b"old")
     new_exe.write_bytes(b"new")
 
-    calls = {"replace_count": 0}
+    calls = {"replace_count": 0, "replace_attempts": []}
 
     monkeypatch.setattr(updater_helper, "wait_for_process_exit", lambda _pid: True)
     monkeypatch.setattr(updater_helper.time, "sleep", lambda _s: None)
@@ -239,6 +239,7 @@ def test_run_restores_backup_if_fallback_replace_fails(tmp_path, monkeypatch):
 
     def _replace(src, dst):
         calls["replace_count"] += 1
+        calls["replace_attempts"].append((src, dst))
         if calls["replace_count"] in (1, 3):
             return False
         os.replace(src, dst)
@@ -262,6 +263,12 @@ def test_run_restores_backup_if_fallback_replace_fails(tmp_path, monkeypatch):
 
     assert code == 6
     assert calls["replace_count"] == 4
+    assert calls["replace_attempts"] == [
+        (new_exe, current_exe),
+        (current_exe, backup_exe),
+        (new_exe, current_exe),
+        (backup_exe, current_exe),
+    ]
     assert calls["replace_paths"] == [
         (current_exe, backup_exe),
         (backup_exe, current_exe),
