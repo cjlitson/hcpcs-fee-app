@@ -114,19 +114,20 @@ def test_run_invokes_wait_replace_and_relaunch(tmp_path, monkeypatch):
     assert "Helper started." in log_path.read_text(encoding="utf-8")
 
 
-def test_run_falls_back_to_remove_then_replace_when_in_place_replace_fails(tmp_path, monkeypatch):
+def test_run_falls_back_to_backup_then_replace_when_in_place_replace_fails(tmp_path, monkeypatch):
     current_exe = tmp_path / "HCPCSFeeApp.exe"
     new_exe = tmp_path / "HCPCSFeeApp_new.exe"
     log_path = tmp_path / "HCPCSFeeApp_update.log"
     current_exe.write_bytes(b"old")
     new_exe.write_bytes(b"new")
 
-    calls = {"replace_count": 0}
+    backup_exe = tmp_path / "HCPCSFeeApp.exe.backup"
+    calls = {"replace_count": 0, "remove_paths": []}
 
     monkeypatch.setattr(updater_helper, "wait_for_process_exit", lambda _pid: True)
 
     def _remove(path):
-        calls["remove_path"] = path
+        calls["remove_paths"].append(path)
         if path.exists():
             path.unlink()
         return True
@@ -136,7 +137,7 @@ def test_run_falls_back_to_remove_then_replace_when_in_place_replace_fails(tmp_p
         if calls["replace_count"] == 1:
             return False
         os.replace(src, dst)
-        calls["replace_paths"] = (src, dst)
+        calls.setdefault("replace_paths", []).append((src, dst))
         return True
 
     class _DummyPopen:
@@ -163,9 +164,12 @@ def test_run_falls_back_to_remove_then_replace_when_in_place_replace_fails(tmp_p
     )
 
     assert code == 0
-    assert calls["replace_count"] == 2
-    assert calls["remove_path"] == current_exe
-    assert calls["replace_paths"] == (new_exe, current_exe)
+    assert calls["replace_count"] == 3
+    assert calls["replace_paths"] == [
+        (current_exe, backup_exe),
+        (new_exe, current_exe),
+    ]
+    assert calls["remove_paths"] == [backup_exe]
     assert calls["popen_args"] == [str(current_exe)]
     assert calls["close_fds"] is True
 
@@ -215,5 +219,52 @@ def test_run_does_not_remove_current_exe_if_update_file_disappears_before_fallba
     assert code == 4
     assert calls["replace_count"] == 1
     assert "remove_called" not in calls
+    assert current_exe.exists()
+    assert current_exe.read_bytes() == b"old"
+
+
+def test_run_restores_backup_if_fallback_replace_fails(tmp_path, monkeypatch):
+    current_exe = tmp_path / "HCPCSFeeApp.exe"
+    new_exe = tmp_path / "HCPCSFeeApp_new.exe"
+    log_path = tmp_path / "HCPCSFeeApp_update.log"
+    backup_exe = tmp_path / "HCPCSFeeApp.exe.backup"
+    current_exe.write_bytes(b"old")
+    new_exe.write_bytes(b"new")
+
+    calls = {"replace_count": 0}
+
+    monkeypatch.setattr(updater_helper, "wait_for_process_exit", lambda _pid: True)
+    monkeypatch.setattr(updater_helper.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(updater_helper, "remove_file_with_retries", lambda _path: True)
+
+    def _replace(src, dst):
+        calls["replace_count"] += 1
+        if calls["replace_count"] in (1, 3):
+            return False
+        os.replace(src, dst)
+        calls.setdefault("replace_paths", []).append((src, dst))
+        return True
+
+    monkeypatch.setattr(updater_helper, "replace_file_with_retries", _replace)
+
+    code = updater_helper.run(
+        [
+            "--current-exe",
+            str(current_exe),
+            "--new-exe",
+            str(new_exe),
+            "--pid",
+            "4321",
+            "--log-path",
+            str(log_path),
+        ]
+    )
+
+    assert code == 6
+    assert calls["replace_count"] == 4
+    assert calls["replace_paths"] == [
+        (current_exe, backup_exe),
+        (backup_exe, current_exe),
+    ]
     assert current_exe.exists()
     assert current_exe.read_bytes() == b"old"

@@ -111,6 +111,8 @@ def run(argv: list[str] | None = None) -> int:
         else Path(tempfile.gettempdir()) / "HCPCSFeeApp_update.log"
     )
 
+    backup_exe: Path | None = None
+
     try:
         _log_message(log_path, "Helper started.")
         _log_message(log_path, f"Current exe: {current_exe}")
@@ -144,19 +146,41 @@ def run(argv: list[str] | None = None) -> int:
                 )
                 return 4
 
-            _log_message(log_path, f"Removing existing executable: {current_exe}")
-            if not remove_file_with_retries(current_exe):
-                _log_message(log_path, "ERROR: Unable to remove old executable.")
+            backup_exe = current_exe.with_name(f"{current_exe.name}.backup")
+            if backup_exe.exists():
+                _log_message(log_path, f"Removing stale backup executable: {backup_exe}")
+                if not remove_file_with_retries(backup_exe):
+                    _log_message(log_path, "ERROR: Unable to remove stale backup executable.")
+                    return 5
+
+            _log_message(log_path, f"Backing up existing executable: {current_exe} -> {backup_exe}")
+            if not replace_file_with_retries(current_exe, backup_exe):
+                _log_message(log_path, "ERROR: Unable to back up old executable before fallback.")
                 return 5
 
             _log_message(log_path, f"Retrying replacement: {new_exe} -> {current_exe}")
             if not replace_file_with_retries(new_exe, current_exe):
                 _log_message(log_path, "ERROR: Unable to replace executable after fallback.")
+                if backup_exe.exists():
+                    _log_message(log_path, f"Restoring backup executable: {backup_exe} -> {current_exe}")
+                    if replace_file_with_retries(backup_exe, current_exe):
+                        _log_message(log_path, "Backup executable restored after fallback failure.")
+                    else:
+                        _log_message(log_path, "ERROR: Unable to restore backup executable.")
                 return 6
 
         if not current_exe.exists():
+            if backup_exe is not None and backup_exe.exists():
+                _log_message(log_path, f"Restoring backup after failed verification: {backup_exe} -> {current_exe}")
+                if replace_file_with_retries(backup_exe, current_exe):
+                    _log_message(log_path, "Backup executable restored after failed verification.")
             _log_message(log_path, "ERROR: Replacement verification failed.")
             return 7
+
+        if backup_exe is not None and backup_exe.exists():
+            _log_message(log_path, f"Removing backup executable: {backup_exe}")
+            if not remove_file_with_retries(backup_exe):
+                _log_message(log_path, "WARNING: Unable to remove backup executable.")
 
         _log_message(log_path, "Replacement verified. Relaunching application.")
         try:
