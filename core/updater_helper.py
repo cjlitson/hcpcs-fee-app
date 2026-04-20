@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 DOWNLOAD_PROGRESS_LOG_STEP_BYTES = 10 * 1024 * 1024
+ASSET_DOWNLOAD_TIMEOUT_SECONDS = 120
 
 
 def _log_message(log_path: Path, message: str) -> None:
@@ -156,7 +157,12 @@ def _download_release_asset(
     _log_message(log_path, f"Downloading update asset: {asset_url}")
 
     try:
-        resp = requests.get(asset_url, stream=True, timeout=30, verify=True)
+        resp = requests.get(
+            asset_url,
+            stream=True,
+            timeout=ASSET_DOWNLOAD_TIMEOUT_SECONDS,
+            verify=True,
+        )
         resp.raise_for_status()
     except Exception as exc:
         raise RuntimeError(
@@ -262,10 +268,6 @@ def run(argv: list[str] | None = None) -> int:
                     error=True,
                 )
                 return 12
-
-        if new_exe is None:
-            _log_message(log_path, "ERROR: No update payload is available.")
-            return 13
 
         if not new_exe.exists():
             _log_message(log_path, f"ERROR: Downloaded update file does not exist: {new_exe}")
