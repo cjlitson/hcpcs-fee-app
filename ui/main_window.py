@@ -181,15 +181,15 @@ class MainWindow(QMainWindow):
         central.setObjectName("appShell")
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setContentsMargins(12, 12, 12, 10)
-        root.setSpacing(10)
+        root.setContentsMargins(12, 10, 12, 10)
+        root.setSpacing(6)
         self._light_theme_qss = (
             "QWidget { background: #FFFFFF; color: #202124; }"
             "QWidget#appShell { background: #F3F5F8; }"
             # App header bar
-            "QFrame#appHeader { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1A3A5C, stop:1 #23507F); border: 1px solid #2A5B8B; border-radius: 10px; }"
-            "QLabel#appHeaderTitle { color: #FFFFFF; font-size: 15px; font-weight: 700; background: transparent; }"
-            "QLabel#appHeaderMeta { color: #A8C4E0; font-size: 11px; background: transparent; }"
+            "QFrame#appHeader { background: transparent; border: none; border-radius: 0; }"
+            "QLabel#appHeaderTitle { color: #1A3A5C; font-size: 14px; font-weight: 700; background: transparent; }"
+            "QLabel#appHeaderMeta { color: #4C6480; font-size: 11px; background: transparent; }"
             "QLabel#quickAddInfoIcon { color: #4A7AB5; font-size: 13px; background: transparent; font-weight: 600; }"
             "QFrame#updateBannerCard, QFrame#filterCard, QFrame#resultsCard, QFrame#footerStrip, QWidget#purchaseListPanel, QFrame#purchaseHeaderCard, QFrame#purchaseSummaryCard { background: #FFFFFF; border: 1px solid #D8DDE6; border-radius: 10px; }"
             "QFrame#filterCard { border-color: #C9D3E1; }"
@@ -224,9 +224,14 @@ class MainWindow(QMainWindow):
             "QToolButton:hover { background-color: #EAF0F8; }"
             "QToolButton:pressed { background-color: #DEE7F3; }"
             "QToolButton:focus { border-color: #0D6EFD; }"
+            "QToolButton[role='selector'] { min-height: 24px; min-width: 126px; padding: 4px 30px 4px 10px; border: 1px solid #C9CED6; border-radius: 6px; background: #FFFFFF; color: #202124; text-align: left; }"
+            "QToolButton[role='selector']:hover { background: #F7FAFF; border-color: #B9C3D2; }"
+            "QToolButton[role='selector']:pressed { background: #ECF3FF; border-color: #AEB8C7; }"
+            "QToolButton[role='selector']:focus { border-color: #0D6EFD; }"
             "QToolButton[role='ghost'] { background: #FFFFFF; color: #2E3A48; border: 1px solid #C9CED6; }"
             "QToolButton[role='ghost']:hover { background: #F3F7FC; border-color: #B9C3D2; }"
             "QToolButton[role='ghost']:pressed { background: #E8EEF7; border-color: #AEB8C7; }"
+            "QToolButton[role='selector']::menu-indicator { subcontrol-origin: padding; subcontrol-position: center right; right: 10px; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #555E6B; }"
             "QToolButton::menu-indicator { subcontrol-origin: padding; subcontrol-position: center right; right: 8px; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #555E6B; }"
             "QPushButton[role='rail'] { background: #003366; color: #FFFFFF; border: 1px solid #002244; min-width: 36px; min-height: 30px; padding: 0; border-radius: 8px; font-size: 14px; font-weight: 700; }"
             "QPushButton[role='toggle'][active='true'] { background: #003366; color: #FFFFFF; border: 1px solid #002244; }"
@@ -267,9 +272,9 @@ class MainWindow(QMainWindow):
             "QWidget { background: #1E1E1E; color: #D4D4D4; }"
             "QWidget#appShell { background: #181B20; }"
             # App header bar
-            "QFrame#appHeader { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0D2540, stop:1 #17385C); border: 1px solid #2B4E73; border-radius: 10px; }"
-            "QLabel#appHeaderTitle { color: #E8F4FF; font-size: 15px; font-weight: 700; background: transparent; }"
-            "QLabel#appHeaderMeta { color: #7AACDA; font-size: 11px; background: transparent; }"
+            "QFrame#appHeader { background: transparent; border: none; border-radius: 0; }"
+            "QLabel#appHeaderTitle { color: #D4E8FF; font-size: 14px; font-weight: 700; background: transparent; }"
+            "QLabel#appHeaderMeta { color: #9CB6D3; font-size: 11px; background: transparent; }"
             "QLabel#quickAddInfoIcon { color: #7AACDA; font-size: 13px; background: transparent; font-weight: 600; }"
             "QFrame#updateBannerCard, QFrame#filterCard, QFrame#resultsCard, QFrame#footerStrip, QWidget#purchaseListPanel, QFrame#purchaseHeaderCard, QFrame#purchaseSummaryCard { background: #22262C; border: 1px solid #353C46; border-radius: 10px; }"
             "QFrame#filterCard { border-color: #3F4957; }"
@@ -305,9 +310,14 @@ class MainWindow(QMainWindow):
             "QToolButton:hover { background-color: #383838; border-color: #505050; }"
             "QToolButton:pressed { background-color: #252525; border-color: #474747; }"
             "QToolButton:focus { border-color: #5C9AFF; }"
+            "QToolButton[role='selector'] { min-height: 24px; min-width: 126px; padding: 4px 30px 4px 10px; border: 1px solid #3E3E3E; border-radius: 6px; background: #2D2D2D; color: #D4D4D4; text-align: left; }"
+            "QToolButton[role='selector']:hover { background: #343A45; border-color: #566172; }"
+            "QToolButton[role='selector']:pressed { background: #272C35; border-color: #4A5565; }"
+            "QToolButton[role='selector']:focus { border-color: #5C9AFF; }"
             "QToolButton[role='ghost'] { background: #232830; color: #D4D4D4; border: 1px solid #434B57; }"
             "QToolButton[role='ghost']:hover { background: #2A303A; border-color: #566172; }"
             "QToolButton[role='ghost']:pressed { background: #1F242D; border-color: #4A5565; }"
+            "QToolButton[role='selector']::menu-indicator { subcontrol-origin: padding; subcontrol-position: center right; right: 10px; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #A0A0A0; }"
             "QToolButton::menu-indicator { subcontrol-origin: padding; subcontrol-position: center right; right: 8px; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #A0A0A0; }"
             "QPushButton[role='rail'] { background: #0B5A8C; color: #FFFFFF; border: 1px solid #083E61; min-width: 36px; min-height: 30px; padding: 0; border-radius: 8px; font-size: 14px; font-weight: 700; }"
             "QPushButton[role='toggle'][active='true'] { background: #0A4D77; color: #FFFFFF; border: 1px solid #083E61; }"
@@ -393,8 +403,8 @@ class MainWindow(QMainWindow):
         header = QFrame()
         header.setObjectName("appHeader")
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(14, 7, 14, 7)
-        layout.setSpacing(10)
+        layout.setContentsMargins(4, 2, 4, 0)
+        layout.setSpacing(8)
 
         icon_path = _asset("wsnc_map.png")
         if icon_path.exists():
