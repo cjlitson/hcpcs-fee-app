@@ -66,8 +66,10 @@ def test_run_invokes_wait_replace_and_relaunch(tmp_path, monkeypatch):
 
     calls = {}
 
-    def _wait(pid):
+    def _wait(pid, progress_callback=None):
         calls["wait_pid"] = pid
+        if progress_callback is not None:
+            progress_callback(0.5, 30.0)
         return True
 
     def _remove(path):
@@ -124,7 +126,9 @@ def test_run_falls_back_to_backup_then_replace_when_in_place_replace_fails(tmp_p
     backup_exe = tmp_path / "HCPCSFeeApp.exe.backup"
     calls = {"replace_count": 0, "remove_paths": []}
 
-    monkeypatch.setattr(updater_helper, "wait_for_process_exit", lambda _pid: True)
+    monkeypatch.setattr(
+        updater_helper, "wait_for_process_exit", lambda _pid, progress_callback=None: True
+    )
 
     def _remove(path):
         calls["remove_paths"].append(path)
@@ -185,7 +189,9 @@ def test_run_does_not_remove_current_exe_if_update_file_disappears_before_fallba
 
     calls = {"replace_count": 0}
 
-    monkeypatch.setattr(updater_helper, "wait_for_process_exit", lambda _pid: True)
+    monkeypatch.setattr(
+        updater_helper, "wait_for_process_exit", lambda _pid, progress_callback=None: True
+    )
     monkeypatch.setattr(updater_helper.time, "sleep", lambda _s: None)
 
     def _remove(_path):
@@ -233,7 +239,9 @@ def test_run_restores_backup_if_fallback_replace_fails(tmp_path, monkeypatch):
 
     calls = {"replace_count": 0, "replace_attempts": []}
 
-    monkeypatch.setattr(updater_helper, "wait_for_process_exit", lambda _pid: True)
+    monkeypatch.setattr(
+        updater_helper, "wait_for_process_exit", lambda _pid, progress_callback=None: True
+    )
     monkeypatch.setattr(updater_helper.time, "sleep", lambda _s: None)
     monkeypatch.setattr(updater_helper, "remove_file_with_retries", lambda _path: True)
 
@@ -285,12 +293,16 @@ def test_run_downloads_asset_then_replaces_and_relaunches(tmp_path, monkeypatch)
 
     calls = {}
 
-    monkeypatch.setattr(updater_helper, "wait_for_process_exit", lambda _pid: True)
+    monkeypatch.setattr(
+        updater_helper, "wait_for_process_exit", lambda _pid, progress_callback=None: True
+    )
     monkeypatch.setattr(updater_helper.time, "sleep", lambda _s: None)
 
-    def _download(*, asset_url, current_exe, log_path):
+    def _download(*, asset_url, current_exe, log_path, progress_callback=None):
         calls["download"] = (asset_url, current_exe, log_path)
         downloaded_exe.write_bytes(b"new")
+        if progress_callback is not None:
+            progress_callback(100, 200)
         return downloaded_exe
 
     def _replace(src, dst):
@@ -331,3 +343,89 @@ def test_run_downloads_asset_then_replaces_and_relaunches(tmp_path, monkeypatch)
     assert calls["replace_paths"] == (downloaded_exe, current_exe)
     assert calls["popen_args"] == [str(current_exe)]
     assert calls["close_fds"] is True
+
+
+def test_wait_for_process_exit_reports_progress(tmp_path):
+    calls = []
+
+    def _running(_pid):
+        return len(calls) < 2
+
+    assert updater_helper.wait_for_process_exit(
+        1234,
+        timeout_seconds=1.0,
+        poll_interval=0.0,
+        process_running=_running,
+        progress_callback=lambda elapsed, timeout: calls.append((elapsed, timeout)),
+    )
+    assert len(calls) == 2
+    assert all(timeout == 1.0 for _elapsed, timeout in calls)
+
+
+def test_run_updates_progress_ui_phases(tmp_path, monkeypatch):
+    current_exe = tmp_path / "HCPCSFeeApp.exe"
+    log_path = tmp_path / "HCPCSFeeApp_update.log"
+    current_exe.write_bytes(b"old")
+    downloaded_exe = tmp_path / "HCPCSFeeApp_new.exe"
+
+    events = []
+
+    class _DummyProgressUI:
+        def __init__(self, _log_path):
+            events.append(("init",))
+
+        def set_phase(self, phase, detail):
+            events.append(("phase", phase, detail))
+
+        def set_download_progress(self, downloaded, total):
+            events.append(("download", downloaded, total))
+
+        def close(self):
+            events.append(("close",))
+
+    monkeypatch.setattr(updater_helper, "_UpdaterProgressUI", _DummyProgressUI)
+    monkeypatch.setattr(updater_helper.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(
+        updater_helper,
+        "wait_for_process_exit",
+        lambda _pid, progress_callback=None: (
+            progress_callback(1.2, 30.0) if progress_callback else None
+        )
+        or True,
+    )
+
+    def _download(*, asset_url, current_exe, log_path, progress_callback=None):
+        downloaded_exe.write_bytes(b"new")
+        if progress_callback is not None:
+            progress_callback(50, 100)
+        return downloaded_exe
+
+    monkeypatch.setattr(updater_helper, "_download_release_asset", _download)
+    monkeypatch.setattr(updater_helper, "replace_file_with_retries", lambda src, dst: os.replace(src, dst) or True)
+    monkeypatch.setattr(
+        updater_helper.subprocess,
+        "Popen",
+        lambda args, close_fds: events.append(("popen", args, close_fds)),
+    )
+
+    code = updater_helper.run(
+        [
+            "--current-exe",
+            str(current_exe),
+            "--asset-url",
+            "https://example.invalid/HCPCSFeeApp.exe",
+            "--pid",
+            "4321",
+            "--log-path",
+            str(log_path),
+        ]
+    )
+
+    assert code == 0
+    phase_names = [entry[1] for entry in events if entry[0] == "phase"]
+    assert "Waiting for app to close" in phase_names
+    assert "Downloading release asset" in phase_names
+    assert "Applying update" in phase_names
+    assert "Relaunching app" in phase_names
+    assert ("download", 50, 100) in events
+    assert events[-1] == ("close",)

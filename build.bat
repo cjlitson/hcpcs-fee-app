@@ -12,7 +12,7 @@ python -c "from PIL import Image; img = Image.open('assets/wsnc_map.png').conver
 
 echo Building VA HCPCS Fee Schedule Manager...
 pyinstaller --clean --noconfirm hcpcs_fee_app.spec
-pyinstaller --clean --noconfirm --onefile --name HCPCSFeeAppUpdater updater_main.py
+pyinstaller --clean --noconfirm --onefile --noconsole --name HCPCSFeeAppUpdater updater_main.py
 
 echo Packaging ZIP...
 :: Create AppFiles subfolder and copy app files into it
