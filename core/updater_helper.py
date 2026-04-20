@@ -16,6 +16,9 @@ DOWNLOAD_PROGRESS_LOG_STEP_BYTES = 10 * 1024 * 1024
 ASSET_DOWNLOAD_TIMEOUT_SECONDS = 120
 MB_ICONERROR = 0x10
 MB_ICONINFORMATION = 0x40
+UPDATER_PROGRESS_WINDOW_GEOMETRY = "560x180"
+UPDATER_PROGRESS_BAR_LENGTH = 520
+UPDATER_PROGRESS_ANIMATION_INTERVAL_MS = 12
 
 
 def _log_message(log_path: Path, message: str) -> None:
@@ -53,11 +56,18 @@ def wait_for_process_exit(
     timeout_seconds: float = 30.0,
     poll_interval: float = 0.5,
     process_running=_is_process_running,
+    progress_callback=None,
 ) -> bool:
+    started = time.monotonic()
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         if not process_running(pid):
             return True
+        if progress_callback is not None:
+            try:
+                progress_callback(time.monotonic() - started, timeout_seconds)
+            except Exception:
+                pass
         time.sleep(poll_interval)
     return not process_running(pid)
 
@@ -148,11 +158,147 @@ def _build_manual_recovery_text(
     return "\n".join(lines)
 
 
+class _UpdaterProgressUI:
+    """Best-effort native progress window for the standalone updater workflow."""
+
+    def __init__(self, log_path: Path) -> None:
+        self._log_path = log_path
+        self._root = None
+        self._phase_var = None
+        self._detail_var = None
+        self._progress = None
+        self._indeterminate_running = False
+
+        if os.name != "nt":
+            return
+
+        try:
+            import tkinter as tk
+            from tkinter import ttk
+        except Exception as exc:
+            _log_message(log_path, f"WARNING: Progress UI unavailable: {exc!r}")
+            return
+
+        try:
+            self._root = tk.Tk()
+            self._root.title("HCPCS Fee App Update")
+            self._root.geometry(UPDATER_PROGRESS_WINDOW_GEOMETRY)
+            self._root.resizable(False, False)
+            self._root.attributes("-topmost", True)
+
+            container = ttk.Frame(self._root, padding=16)
+            container.pack(fill="both", expand=True)
+
+            title = ttk.Label(
+                container,
+                text="Installing update…",
+            )
+            title.pack(anchor="w")
+
+            self._phase_var = tk.StringVar(value="Initializing updater window…")
+            phase_label = ttk.Label(
+                container,
+                textvariable=self._phase_var,
+            )
+            phase_label.pack(anchor="w", pady=(10, 2))
+
+            self._detail_var = tk.StringVar(value="Preparing status updates…")
+            detail_label = ttk.Label(
+                container,
+                textvariable=self._detail_var,
+            )
+            detail_label.pack(anchor="w", pady=(0, 10))
+
+            self._progress = ttk.Progressbar(
+                container,
+                mode="indeterminate",
+                length=UPDATER_PROGRESS_BAR_LENGTH,
+            )
+            self._progress.pack(fill="x")
+            self._set_indeterminate()
+            self._pump()
+        except Exception as exc:
+            _log_message(log_path, f"WARNING: Failed to initialize progress UI: {exc!r}")
+            self.close()
+
+    def _pump(self) -> None:
+        if self._root is None:
+            return
+        try:
+            self._root.update_idletasks()
+            self._root.update()
+        except Exception:
+            self.close()
+
+    def _set_indeterminate(self) -> None:
+        if self._progress is None:
+            return
+        try:
+            self._progress.configure(mode="indeterminate")
+            if not self._indeterminate_running:
+                self._progress.start(UPDATER_PROGRESS_ANIMATION_INTERVAL_MS)
+                self._indeterminate_running = True
+        except Exception:
+            self.close()
+
+    def set_phase(self, phase: str, detail: str) -> None:
+        if self._phase_var is not None:
+            self._phase_var.set(f"Step: {phase}")
+        if self._detail_var is not None:
+            self._detail_var.set(detail)
+        self._set_indeterminate()
+        self._pump()
+
+    def set_download_progress(self, downloaded: int, total: int) -> None:
+        if self._phase_var is not None:
+            self._phase_var.set("Step: Downloading release asset")
+        if self._progress is not None:
+            try:
+                if total > 0:
+                    if self._indeterminate_running:
+                        self._progress.stop()
+                        self._indeterminate_running = False
+                    self._progress.configure(mode="determinate", maximum=total)
+                    self._progress["value"] = min(downloaded, total)
+                else:
+                    self._set_indeterminate()
+            except Exception:
+                self.close()
+                return
+        if self._detail_var is not None:
+            if total > 0:
+                pct = min(100.0, (downloaded / total) * 100)
+                self._detail_var.set(
+                    f"Downloaded {downloaded:,} of {total:,} bytes ({pct:.1f}%)…"
+                )
+            else:
+                self._detail_var.set(f"Downloaded {downloaded:,} bytes…")
+        self._pump()
+
+    def close(self) -> None:
+        if self._progress is not None and self._indeterminate_running:
+            try:
+                self._progress.stop()
+            except Exception:
+                pass
+        self._indeterminate_running = False
+        self._progress = None
+        self._phase_var = None
+        self._detail_var = None
+        if self._root is not None:
+            try:
+                self._root.destroy()
+            except Exception:
+                pass
+        self._root = None
+
+
 def _download_release_asset(
     *,
     asset_url: str,
     current_exe: Path,
     log_path: Path,
+    progress_callback=None,
 ) -> Path:
     import requests
 
@@ -183,6 +329,11 @@ def _download_release_asset(
                 continue
             fh.write(chunk)
             downloaded += len(chunk)
+            if progress_callback is not None:
+                try:
+                    progress_callback(downloaded, total)
+                except Exception:
+                    pass
             if downloaded >= next_log_bytes:
                 if total > 0:
                     pct = (downloaded / total) * 100
@@ -221,6 +372,7 @@ def run(argv: list[str] | None = None) -> int:
     new_exe = Path(args.new_exe) if args.new_exe else None
 
     backup_exe: Path | None = None
+    progress_ui = _UpdaterProgressUI(log_path)
 
     try:
         _log_message(log_path, "Updater workflow started.")
@@ -232,8 +384,18 @@ def run(argv: list[str] | None = None) -> int:
         if new_exe is not None:
             _log_message(log_path, f"New exe: {new_exe}")
         _log_message(log_path, f"Waiting for PID {args.pid} to exit.")
+        progress_ui.set_phase(
+            "Waiting for app to close",
+            "Waiting for the running app to exit…",
+        )
 
-        if not wait_for_process_exit(args.pid):
+        def _on_wait_progress(elapsed: float, _timeout: float) -> None:
+            progress_ui.set_phase(
+                "Waiting for app to close",
+                f"Waiting for the running app to exit… ({elapsed:.0f}s elapsed)",
+            )
+
+        if not wait_for_process_exit(args.pid, progress_callback=_on_wait_progress):
             _log_message(
                 log_path,
                 f"WARNING: PID {args.pid} still appears to be running after timeout.",
@@ -242,14 +404,23 @@ def run(argv: list[str] | None = None) -> int:
             _log_message(log_path, f"PID {args.pid} exited.")
 
         _log_message(log_path, "Waiting 2 seconds for file handles to release.")
+        progress_ui.set_phase(
+            "Waiting for app to close",
+            "App exited. Waiting for file handles to release…",
+        )
         time.sleep(2.0)
 
         if args.asset_url:
             try:
+                progress_ui.set_phase(
+                    "Downloading release asset",
+                    "Downloading update package…",
+                )
                 new_exe = _download_release_asset(
                     asset_url=args.asset_url,
                     current_exe=current_exe,
                     log_path=log_path,
+                    progress_callback=progress_ui.set_download_progress,
                 )
             except Exception as exc:
                 _log_message(log_path, f"ERROR: Failed to download update asset: {exc!r}")
@@ -281,6 +452,10 @@ def run(argv: list[str] | None = None) -> int:
             )
             return 3
 
+        progress_ui.set_phase(
+            "Applying update",
+            "Replacing application executable…",
+        )
         _log_message(log_path, f"Replacing executable in-place: {new_exe} -> {current_exe}")
         replaced = replace_file_with_retries(new_exe, current_exe)
         if not replaced:
@@ -354,6 +529,10 @@ def run(argv: list[str] | None = None) -> int:
             if not remove_file_with_retries(backup_exe):
                 _log_message(log_path, "WARNING: Unable to remove backup executable.")
 
+        progress_ui.set_phase(
+            "Relaunching app",
+            "Launching the updated HCPCS Fee App…",
+        )
         _log_message(log_path, "Replacement verified. Relaunching application.")
         try:
             subprocess.Popen([str(current_exe)], close_fds=True)
@@ -388,6 +567,8 @@ def run(argv: list[str] | None = None) -> int:
             error=True,
         )
         return 10
+    finally:
+        progress_ui.close()
 
 
 def main() -> None:

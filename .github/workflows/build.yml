@@ -41,7 +41,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           pyinstaller --clean --noconfirm hcpcs_fee_app.spec
-          pyinstaller --clean --noconfirm --onefile --name HCPCSFeeAppUpdater updater_main.py
+          pyinstaller --clean --noconfirm --onefile --noconsole --name HCPCSFeeAppUpdater updater_main.py
 
       - name: Package ZIP
         run: |
