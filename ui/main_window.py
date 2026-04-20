@@ -1024,8 +1024,6 @@ class MainWindow(QMainWindow):
         self._save_filter_preferences()
 
     def _clear_filters(self):
-        self.year_combo.setCurrentIndex(0)
-        self.state_combo.setCurrentIndex(0)
         self.group_combo.setCurrentIndex(0)
         self.code_edit.clear()
         self.keyword_edit.clear()
@@ -1709,7 +1707,7 @@ class MainWindow(QMainWindow):
                 <p>Search description text (e.g., "wheelchair", "oxygen"). Case-insensitive.</p>
 
                 <h3>Clearing Filters</h3>
-                <p>Click <b>Clear</b> to reset all filters to defaults.</p>
+                <p>Click <b>Clear</b> to clear HCPCS Group, HCPCS Code, Keyword, and ZIP while keeping your selected Year and State.</p>
             </div>
 
             <div class="section">
