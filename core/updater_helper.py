@@ -136,26 +136,34 @@ def run(argv: list[str] | None = None) -> int:
         replaced = replace_file_with_retries(new_exe, current_exe)
         if not replaced:
             _log_message(log_path, "WARNING: In-place replace failed; attempting remove+replace fallback.")
+
+            if not new_exe.exists():
+                _log_message(
+                    log_path,
+                    "ERROR: Update file missing before fallback; refusing to remove current executable.",
+                )
+                return 4
+
             _log_message(log_path, f"Removing existing executable: {current_exe}")
             if not remove_file_with_retries(current_exe):
                 _log_message(log_path, "ERROR: Unable to remove old executable.")
-                return 4
+                return 5
 
             _log_message(log_path, f"Retrying replacement: {new_exe} -> {current_exe}")
             if not replace_file_with_retries(new_exe, current_exe):
                 _log_message(log_path, "ERROR: Unable to replace executable after fallback.")
-                return 5
+                return 6
 
         if not current_exe.exists():
             _log_message(log_path, "ERROR: Replacement verification failed.")
-            return 6
+            return 7
 
         _log_message(log_path, "Replacement verified. Relaunching application.")
         try:
             subprocess.Popen([str(current_exe)], close_fds=True)
         except Exception as exc:
             _log_message(log_path, f"ERROR: Failed to relaunch application: {exc!r}")
-            return 7
+            return 8
         _log_message(log_path, "Relaunch command issued successfully.")
         _log_message(log_path, "Helper finished.")
         return 0
