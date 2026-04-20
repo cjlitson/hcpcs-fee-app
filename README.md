@@ -4,7 +4,7 @@ VA HCPCS Fee Schedule Manager is a Windows desktop application for VA teams to s
 
 It is designed for day-to-day fee lookup and procurement workflows while keeping data local to each user profile.
 
-Current release: **v1.2.0**
+Current release: **v1.2.1**
 
 ---
 
@@ -57,7 +57,7 @@ Current release: **v1.2.0**
 Install target: `Documents\HCPCSFeeApp\` (per-user install). No administrator rights are required.
 
 ### Update behavior
-- **In-app update:** when a newer release is detected, the app shows an update banner with **Update Now**. Clicking it downloads the new exe, launches a detached helper script, and exits. The helper waits for the app to fully exit, removes the old exe, renames the new one into place, verifies it, and relaunches — logging every step to `%TEMP%\HCPCSFeeApp_update.log`.
+- **In-app update:** when a newer release is detected, the app shows an update banner with **Update Now**. Clicking it downloads `HCPCSFeeApp_new.exe`, launches `HCPCSFeeAppUpdater.exe`, and exits. The updater waits for the app to fully exit, replaces the executable in place (with backup/retry fallback if needed), verifies it, and relaunches — logging every step to `%TEMP%\HCPCSFeeApp_update.log`.
 - **Manual update:** download the latest `HCPCSFeeApp-Setup.zip` and run `Install.bat` again.
 - Always launch from the desktop shortcut after updating.
 
@@ -66,8 +66,7 @@ Install target: `Documents\HCPCSFeeApp\` (per-user install). No administrator ri
 ## Basic workflow (screen summary)
 
 ### 1) Main window
-- Top controls: Sync from CMS, year/state filters, ZIP input.
-- Search row: HCPCS group, HCPCS code, keyword, Export, Purchase List.
+- Unified top bar: Sync from CMS, year/state filters, ZIP input, HCPCS group/code/keyword filters, Export, and Purchase List.
 - Results table: HCPCS code, description, state/year, allowables, modifiers, source.
 
 ### 2) History dialog
@@ -105,6 +104,7 @@ https://www.cms.gov/medicare/payment/fee-schedules/dmepos
 
 ## Release notes
 
+- [v1.2.1 — Updater Flow Validation and UI Refinement Alignment](docs/releases/v1.2.1.md)
 - [v1.2.0 — UI Workflow Refinement and Documentation Refresh](docs/releases/v1.2.0.md)
 - [v1.1.3 — Public Release for Updater Validation](docs/releases/v1.1.3.md)
 - [v1.1.2 — Updater Reliability and Release-Prep Polish](docs/releases/v1.1.2.md)
