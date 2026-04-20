@@ -12,6 +12,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+DOWNLOAD_PROGRESS_LOG_STEP_BYTES = 10 * 1024 * 1024
+ASSET_DOWNLOAD_TIMEOUT_SECONDS = 120
+MB_ICONERROR = 0x10
+MB_ICONINFORMATION = 0x40
+
 
 def _log_message(log_path: Path, message: str) -> None:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -95,28 +100,137 @@ def replace_file_with_retries(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="HCPCSFeeApp updater helper")
     parser.add_argument("--current-exe", required=True)
-    parser.add_argument("--new-exe", required=True)
+    payload_group = parser.add_mutually_exclusive_group(required=True)
+    payload_group.add_argument("--new-exe")
+    payload_group.add_argument("--asset-url")
     parser.add_argument("--pid", required=True, type=int)
     parser.add_argument("--log-path")
+    parser.add_argument("--version")
+    parser.add_argument("--release-url")
     return parser
+
+
+def _show_message_box(title: str, message: str, *, error: bool = False) -> None:
+    """Best-effort native message box for updater status/errors on Windows."""
+    if os.name != "nt":
+        return
+    try:
+        flags = MB_ICONERROR if error else MB_ICONINFORMATION
+        ctypes.windll.user32.MessageBoxW(None, message, title, flags)
+    except Exception:
+        pass
+
+
+def _build_manual_recovery_text(
+    *,
+    current_exe: Path,
+    new_exe: Path | None,
+    log_path: Path,
+    release_url: str | None,
+) -> str:
+    lines = [
+        f"Current exe: {current_exe}",
+        f"Update log: {log_path}",
+    ]
+    if new_exe is not None:
+        lines.append(f"Pending update file: {new_exe}")
+    if release_url:
+        lines.append(f"Release page: {release_url}")
+    lines.extend(
+        [
+            "",
+            "Manual recovery:",
+            "1) Close HCPCS Fee App if it is still running.",
+            "2) If HCPCSFeeApp_new.exe exists, rename it to HCPCSFeeApp.exe in the app folder.",
+            "3) If needed, run Install.bat from the latest setup ZIP.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _download_release_asset(
+    *,
+    asset_url: str,
+    current_exe: Path,
+    log_path: Path,
+) -> Path:
+    import requests
+
+    dest = current_exe.parent / "HCPCSFeeApp_new.exe"
+    _log_message(log_path, f"Downloading update asset: {asset_url}")
+
+    try:
+        resp = requests.get(
+            asset_url,
+            stream=True,
+            timeout=ASSET_DOWNLOAD_TIMEOUT_SECONDS,
+            verify=True,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        raise RuntimeError(
+            "Unable to download update asset. Check your internet connection and "
+            f"release URL: {asset_url}"
+        ) from exc
+
+    total = int(resp.headers.get("content-length", 0))
+    downloaded = 0
+    next_log_bytes = DOWNLOAD_PROGRESS_LOG_STEP_BYTES
+
+    with open(dest, "wb") as fh:
+        for chunk in resp.iter_content(chunk_size=65536):
+            if not chunk:
+                continue
+            fh.write(chunk)
+            downloaded += len(chunk)
+            if downloaded >= next_log_bytes:
+                if total > 0:
+                    pct = (downloaded / total) * 100
+                    _log_message(
+                        log_path,
+                        f"Download progress: {downloaded:,}/{total:,} bytes ({pct:.1f}%).",
+                    )
+                else:
+                    _log_message(log_path, f"Download progress: {downloaded:,} bytes.")
+                next_log_bytes += DOWNLOAD_PROGRESS_LOG_STEP_BYTES
+
+    if total > 0 and downloaded != total:
+        raise RuntimeError(
+            f"Downloaded {downloaded:,} bytes, expected {total:,} bytes."
+        )
+    min_size = 1 * 1024 * 1024
+    actual_size = dest.stat().st_size
+    if actual_size < min_size:
+        dest.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Downloaded file is only {actual_size:,} bytes — expected at least {min_size:,} bytes."
+        )
+
+    _log_message(log_path, f"Download completed: {dest} ({actual_size:,} bytes)")
+    return dest
 
 
 def run(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     current_exe = Path(args.current_exe)
-    new_exe = Path(args.new_exe)
     log_path = (
         Path(args.log_path)
         if args.log_path
         else Path(tempfile.gettempdir()) / "HCPCSFeeApp_update.log"
     )
+    new_exe = Path(args.new_exe) if args.new_exe else None
 
     backup_exe: Path | None = None
 
     try:
-        _log_message(log_path, "Helper started.")
+        _log_message(log_path, "Updater workflow started.")
         _log_message(log_path, f"Current exe: {current_exe}")
-        _log_message(log_path, f"New exe: {new_exe}")
+        if args.version:
+            _log_message(log_path, f"Target version: {args.version}")
+        if args.asset_url:
+            _log_message(log_path, f"Asset URL: {args.asset_url}")
+        if new_exe is not None:
+            _log_message(log_path, f"New exe: {new_exe}")
         _log_message(log_path, f"Waiting for PID {args.pid} to exit.")
 
         if not wait_for_process_exit(args.pid):
@@ -130,8 +244,41 @@ def run(argv: list[str] | None = None) -> int:
         _log_message(log_path, "Waiting 2 seconds for file handles to release.")
         time.sleep(2.0)
 
+        if args.asset_url:
+            try:
+                new_exe = _download_release_asset(
+                    asset_url=args.asset_url,
+                    current_exe=current_exe,
+                    log_path=log_path,
+                )
+            except Exception as exc:
+                _log_message(log_path, f"ERROR: Failed to download update asset: {exc!r}")
+                _show_message_box(
+                    "HCPCS Fee App Update Failed",
+                    "The updater could not download the new version.\n\n"
+                    + _build_manual_recovery_text(
+                        current_exe=current_exe,
+                        new_exe=None,
+                        log_path=log_path,
+                        release_url=args.release_url,
+                    ),
+                    error=True,
+                )
+                return 12
+
         if not new_exe.exists():
             _log_message(log_path, f"ERROR: Downloaded update file does not exist: {new_exe}")
+            _show_message_box(
+                "HCPCS Fee App Update Failed",
+                "The updater could not find the downloaded update file.\n\n"
+                + _build_manual_recovery_text(
+                    current_exe=current_exe,
+                    new_exe=new_exe,
+                    log_path=log_path,
+                    release_url=args.release_url,
+                ),
+                error=True,
+            )
             return 3
 
         _log_message(log_path, f"Replacing executable in-place: {new_exe} -> {current_exe}")
@@ -167,6 +314,17 @@ def run(argv: list[str] | None = None) -> int:
                         _log_message(log_path, "Backup executable restored after fallback failure.")
                     else:
                         _log_message(log_path, "ERROR: Unable to restore backup executable.")
+                _show_message_box(
+                    "HCPCS Fee App Update Failed",
+                    "The updater could not replace the application executable.\n\n"
+                    + _build_manual_recovery_text(
+                        current_exe=current_exe,
+                        new_exe=new_exe,
+                        log_path=log_path,
+                        release_url=args.release_url,
+                    ),
+                    error=True,
+                )
                 return 6
 
         if not current_exe.exists():
@@ -178,6 +336,17 @@ def run(argv: list[str] | None = None) -> int:
                     _log_message(log_path, "ERROR: Unable to restore backup after failed verification.")
             if not current_exe.exists():
                 _log_message(log_path, "ERROR: Replacement verification failed.")
+                _show_message_box(
+                    "HCPCS Fee App Update Failed",
+                    "Replacement verification failed.\n\n"
+                    + _build_manual_recovery_text(
+                        current_exe=current_exe,
+                        new_exe=new_exe,
+                        log_path=log_path,
+                        release_url=args.release_url,
+                    ),
+                    error=True,
+                )
                 return 7
 
         if backup_exe is not None and backup_exe.exists():
@@ -190,12 +359,34 @@ def run(argv: list[str] | None = None) -> int:
             subprocess.Popen([str(current_exe)], close_fds=True)
         except Exception as exc:
             _log_message(log_path, f"ERROR: Failed to relaunch application: {exc!r}")
+            _show_message_box(
+                "HCPCS Fee App Update Failed",
+                "The app was updated but could not be relaunched automatically.\n\n"
+                + _build_manual_recovery_text(
+                    current_exe=current_exe,
+                    new_exe=new_exe,
+                    log_path=log_path,
+                    release_url=args.release_url,
+                ),
+                error=True,
+            )
             return 8
         _log_message(log_path, "Relaunch command issued successfully.")
-        _log_message(log_path, "Helper finished.")
+        _log_message(log_path, "Updater workflow finished.")
         return 0
     except Exception as exc:
         _log_message(log_path, f"ERROR: Unexpected helper failure: {exc!r}")
+        _show_message_box(
+            "HCPCS Fee App Update Failed",
+            "Unexpected updater failure.\n\n"
+            + _build_manual_recovery_text(
+                current_exe=current_exe,
+                new_exe=new_exe,
+                log_path=log_path,
+                release_url=args.release_url,
+            ),
+            error=True,
+        )
         return 10
 
 
