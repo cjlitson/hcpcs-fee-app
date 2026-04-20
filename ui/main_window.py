@@ -549,7 +549,7 @@ class MainWindow(QMainWindow):
         selection_layout = QHBoxLayout(self._selection_action_bar)
         selection_layout.setContentsMargins(10, 6, 10, 6)
         selection_layout.setSpacing(8)
-        self._selection_count_label = QLabel("0 rows selected")
+        self._selection_count_label = QLabel("")
         self._selection_count_label.setProperty("subtle", True)
         selection_layout.addWidget(self._selection_count_label)
         self._add_selected_btn = self._styled_button("Add Selected", "accent")
@@ -1407,7 +1407,6 @@ class MainWindow(QMainWindow):
             return
         selected_count = len({idx.row() for idx in selection_model.selectedRows()})
         has_selection = selected_count > 0
-        bar.setVisible(has_selection)
         add_btn = getattr(self, "_add_selected_btn", None)
         clear_btn = getattr(self, "_clear_selection_btn", None)
         if add_btn is not None:
@@ -1416,8 +1415,12 @@ class MainWindow(QMainWindow):
             clear_btn.setEnabled(has_selection)
         label = getattr(self, "_selection_count_label", None)
         if label is not None:
-            noun = "row" if selected_count == 1 else "rows"
-            label.setText(f"{selected_count} {noun} selected")
+            if has_selection:
+                noun = "row" if selected_count == 1 else "rows"
+                label.setText(f"{selected_count} {noun} selected")
+            else:
+                label.setText("")
+        bar.setVisible(has_selection)
 
     def _create_backup(self):
         from core.backup import create_backup
