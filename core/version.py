@@ -4,7 +4,7 @@ import re
 import requests
 
 # ---- Bump this on every release ----
-APP_VERSION = "1.2.3"
+APP_VERSION = "1.2.4"
 
 GITHUB_REPO = "cjlitson/hcpcs-fee-app"
 RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
