@@ -2060,11 +2060,24 @@ class MainWindow(QMainWindow):
             QApplication.processEvents()
 
         try:
-            from core.self_updater import download_update, apply_update
+            from core.self_updater import (
+                apply_update,
+                download_update,
+                write_launcher_log,
+            )
+
+            def _log_stage(message: str) -> None:
+                write_launcher_log(f"[UI] {message}")
+
+            _log_stage(
+                f"Update Now clicked. version={version!r}, pending_url={url!r}, asset_url={asset_url!r}"
+            )
             new_exe = download_update(asset_url, progress_callback=_progress)
+            _log_stage(f"Download completed: {new_exe} ({new_exe.stat().st_size:,} bytes)")
             dlg.close()
 
             if cancelled:
+                _log_stage("Download canceled by user; removing downloaded file.")
                 try:
                     new_exe.unlink()
                 except Exception:
@@ -2079,8 +2092,16 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
-                apply_update(new_exe)  # does not return — calls sys.exit(0)
+                _log_stage("User confirmed update; entering apply_update().")
+                try:
+                    apply_update(new_exe)  # does not return — calls sys.exit(0)
+                except Exception as exc:
+                    _log_stage(
+                        f"apply_update raised {type(exc).__name__}: {exc!r}"
+                    )
+                    raise
             else:
+                _log_stage("User declined update prompt; removing downloaded file.")
                 # User declined — clean up the downloaded file
                 try:
                     new_exe.unlink()
@@ -2089,10 +2110,19 @@ class MainWindow(QMainWindow):
 
         except Exception as exc:
             dlg.close()
+            details = f"{type(exc).__name__}: {exc!r}"
+            try:
+                from core.self_updater import get_launcher_log_paths, write_launcher_log
+
+                write_launcher_log(f"[UI] Update flow failed: {details}")
+                log_locations = "\n".join(str(p) for p in get_launcher_log_paths())
+            except Exception:
+                log_locations = "(unavailable)"
             QMessageBox.warning(
                 self,
                 "Update Failed",
-                f"Automatic update failed:\n{exc}\n\n"
+                f"Automatic update failed:\n{details}\n\n"
+                f"Launcher logs:\n{log_locations}\n\n"
                 "Please download the update manually.",
             )
             if url:
@@ -2104,15 +2134,23 @@ class MainWindow(QMainWindow):
         pending = Path(sys.executable).parent / "HCPCSFeeApp_new.exe"
         if not pending.exists():
             return
-        from core.self_updater import UPDATE_LOG_FILENAME
+        from core.self_updater import (
+            UPDATE_LOG_FILENAME,
+            get_launcher_log_paths,
+            helper_launch_recorded_successfully,
+        )
+        if helper_launch_recorded_successfully(pending):
+            return
         log_path = Path(tempfile.gettempdir()) / UPDATE_LOG_FILENAME
+        launcher_logs = "\n".join(str(path) for path in get_launcher_log_paths())
         QMessageBox.warning(
             self,
             "Incomplete Update Detected",
-            "A previous update did not fully apply.\n\n"
+            "A downloaded update file exists, but no successful updater-helper launch was recorded.\n\n"
             "Please close the app and rename:\n"
             "HCPCSFeeApp_new.exe -> HCPCSFeeApp.exe\n"
             "in the application folder.\n\n"
+            f"Launcher logs:\n{launcher_logs}\n\n"
             f"Update log: {log_path}",
         )
 
