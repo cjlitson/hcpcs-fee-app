@@ -112,13 +112,13 @@ def test_launch_updater_workflow_passes_asset_context_and_exits(tmp_path, monkey
     self_updater, exe_path, _new_exe, helper_exe, popen_calls, temp_log_dir = _setup_apply_update(
         tmp_path, monkeypatch
     )
-    asset_url = "https://github.com/cjlitson/hcpcs-fee-app/releases/download/v1.2.3/HCPCSFeeApp.exe"
-    release_url = "https://github.com/cjlitson/hcpcs-fee-app/releases/tag/v1.2.3"
+    asset_url = "https://github.com/cjlitson/hcpcs-fee-app/releases/download/v2.0.0/HCPCSFeeApp.exe"
+    release_url = "https://github.com/cjlitson/hcpcs-fee-app/releases/tag/v2.0.0"
 
     with pytest.raises(SystemExit) as exc_info:
         self_updater.launch_updater_workflow(
             asset_url,
-            version="1.2.3",
+            version="2.0.0",
             release_url=release_url,
         )
     assert exc_info.value.code == 0
@@ -138,7 +138,7 @@ def test_launch_updater_workflow_passes_asset_context_and_exits(tmp_path, monkey
         "--asset-url",
         asset_url,
         "--version",
-        "1.2.3",
+        "2.0.0",
         "--release-url",
         release_url,
     ]

@@ -1,11 +1,10 @@
-"""In-app self-updater for VA HCPCS Fee Schedule Manager.
+"""In-app updater handoff utilities for VA HCPCS Fee Schedule Manager.
 
-Downloads the latest HCPCSFeeApp.exe from GitHub Releases, saves it next to
-the current executable as HCPCSFeeApp_new.exe, then launches a detached
-dedicated updater helper executable (HCPCSFeeAppUpdater.exe).
+Primary flow: launch the standalone updater helper executable
+(`HCPCSFeeAppUpdater.exe`) and let that process own download/apply/relaunch.
 
-Only works when running as a frozen PyInstaller .exe on Windows. All errors
-are surfaced as exceptions so the caller can fall back gracefully.
+Legacy helpers (`download_update` / `apply_update`) remain available for
+compatibility and tests.
 """
 
 import os
@@ -144,7 +143,7 @@ def helper_launch_recorded_successfully(pending_exe: Path) -> bool:
 
 
 def apply_update(new_exe: Path) -> None:
-    """Launch the updater helper executable and exit the current process.
+    """Legacy helper path: launch updater with a pre-downloaded EXE and exit.
 
     This function does not return on success — it calls ``sys.exit(0)`` after
     starting the helper process.

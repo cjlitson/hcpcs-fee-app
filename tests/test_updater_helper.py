@@ -332,9 +332,9 @@ def test_run_downloads_asset_then_replaces_and_relaunches(tmp_path, monkeypatch)
             "--log-path",
             str(log_path),
             "--version",
-            "1.2.3",
+            "2.0.0",
             "--release-url",
-            "https://github.com/cjlitson/hcpcs-fee-app/releases/tag/v1.2.3",
+            "https://github.com/cjlitson/hcpcs-fee-app/releases/tag/v2.0.0",
         ]
     )
 

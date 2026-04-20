@@ -1,6 +1,8 @@
 VA HCPCS Fee Schedule Manager — Installation
 =============================================
 
+Release line: v2.0.0 relaunch
+
 1. Extract this ZIP file to any temporary location
 2. Close any running "HCPCSFeeApp.exe" from older installs
 3. Double-click "Install.bat" at the root of the extracted folder to run the installer
@@ -15,6 +17,7 @@ To run the app later, double-click the desktop shortcut or navigate to:
   Documents\HCPCSFeeApp\HCPCSFeeApp.exe
 
 Update process:
+- In-app updates now hand off to HCPCSFeeAppUpdater.exe, which shows progress while it downloads/applies/relaunches.
 - Repeat these same steps with the latest ZIP package.
 - Always use the refreshed desktop shortcut after updating.
 - Do not run old EXE copies from previously extracted ZIP folders.
