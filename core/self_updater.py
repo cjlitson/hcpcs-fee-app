@@ -20,6 +20,16 @@ UPDATER_HELPER_EXE_NAME = "HCPCSFeeAppUpdater.exe"
 LAUNCH_SUCCESS_MESSAGE = "Updater helper launched successfully."
 
 
+def _launch_success_marker(new_exe: Path) -> str:
+    """Return a per-attempt success token that embeds the pending EXE path.
+
+    Embedding the path makes the success marker specific to one update attempt
+    so that a stale entry in a long-running launcher log cannot suppress the
+    incomplete-update warning for a different (later) pending file.
+    """
+    return f"{LAUNCH_SUCCESS_MESSAGE} new_exe={new_exe}"
+
+
 def _current_exe() -> Path:
     """Return the path to the running .exe.
 
@@ -118,6 +128,7 @@ def helper_launch_recorded_successfully(pending_exe: Path) -> bool:
         return False
 
     pending_mtime = pending_exe.stat().st_mtime
+    expected_marker = _launch_success_marker(pending_exe)
     for log_path in get_launcher_log_paths():
         try:
             if not log_path.exists():
@@ -125,7 +136,7 @@ def helper_launch_recorded_successfully(pending_exe: Path) -> bool:
             if log_path.stat().st_mtime < pending_mtime:
                 continue
             content = log_path.read_text(encoding="utf-8")
-            if LAUNCH_SUCCESS_MESSAGE in content:
+            if expected_marker in content:
                 return True
         except Exception:
             continue
@@ -180,7 +191,7 @@ def apply_update(new_exe: Path) -> None:
             cwd=str(exe.parent),
             close_fds=False,
         )
-        write_launcher_log(LAUNCH_SUCCESS_MESSAGE, exe=exe)
+        write_launcher_log(_launch_success_marker(new_exe), exe=exe)
     except Exception as exc:
         write_launcher_log(f"ERROR: Failed to launch updater helper: {exc!r}", exe=exe)
         raise RuntimeError(

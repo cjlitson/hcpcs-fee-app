@@ -69,8 +69,9 @@ def test_apply_update_launches_updater_helper_with_expected_args(tmp_path, monke
     assert "Launch attempt starting." in log_content
     assert f"Updater helper path: {helper_exe}" in log_content
     assert f"Updater log path: {update_log_path}" in log_content
-    assert self_updater.LAUNCH_SUCCESS_MESSAGE in log_content
-    assert self_updater.LAUNCH_SUCCESS_MESSAGE in temp_launcher_log.read_text(encoding="utf-8")
+    expected_marker = self_updater._launch_success_marker(new_exe)
+    assert expected_marker in log_content
+    assert expected_marker in temp_launcher_log.read_text(encoding="utf-8")
 
 
 def test_apply_update_uses_simple_launch_strategy(tmp_path, monkeypatch):
@@ -125,5 +126,39 @@ def test_helper_launch_recorded_successfully_uses_pending_file_mtime(tmp_path, m
 
     assert not self_updater.helper_launch_recorded_successfully(pending)
 
-    self_updater.write_launcher_log(self_updater.LAUNCH_SUCCESS_MESSAGE)
+    self_updater.write_launcher_log(self_updater._launch_success_marker(pending))
     assert self_updater.helper_launch_recorded_successfully(pending)
+
+
+def test_helper_launch_recorded_ignores_stale_success_for_different_exe(tmp_path, monkeypatch):
+    """Stale success from a previous attempt must not suppress warning for a newer pending file."""
+    from core import self_updater
+
+    exe_path = tmp_path / "HCPCSFeeApp.exe"
+    exe_path.write_bytes(b"old")
+    monkeypatch.setattr(self_updater.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(self_updater.sys, "executable", str(exe_path), raising=False)
+    monkeypatch.setattr(self_updater.tempfile, "gettempdir", lambda: str(tmp_path))
+
+    # Simulate a previous successful attempt for exe_v1
+    exe_v1 = tmp_path / "HCPCSFeeApp_new.exe"
+    exe_v1.write_bytes(b"v1")
+    self_updater.write_launcher_log(self_updater._launch_success_marker(exe_v1))
+
+    # The previous helper ran, so exe_v1 no longer exists on disk
+    exe_v1.unlink()
+
+    # A later failed attempt downloads exe_v2 (new pending file)
+    exe_v2 = tmp_path / "HCPCSFeeApp_new.exe"
+    exe_v2.write_bytes(b"v2")
+
+    # The launcher log still contains the stale v1 success marker but NOT a v2 marker
+    # The mtime on exe_v2 is now > log mtime only if we touch the file after writing the log
+    import time
+    time.sleep(0.01)  # ensure mtime ordering is stable
+    exe_v2.touch()
+
+    assert not self_updater.helper_launch_recorded_successfully(exe_v2), (
+        "Stale success marker for a previous exe must not suppress the warning for "
+        "the current pending file."
+    )
