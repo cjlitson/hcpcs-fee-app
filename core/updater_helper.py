@@ -174,8 +174,9 @@ def run(argv: list[str] | None = None) -> int:
                 _log_message(log_path, f"Restoring backup after failed verification: {backup_exe} -> {current_exe}")
                 if replace_file_with_retries(backup_exe, current_exe):
                     _log_message(log_path, "Backup executable restored after failed verification.")
-            _log_message(log_path, "ERROR: Replacement verification failed.")
-            return 7
+            if not current_exe.exists():
+                _log_message(log_path, "ERROR: Replacement verification failed.")
+                return 7
 
         if backup_exe is not None and backup_exe.exists():
             _log_message(log_path, f"Removing backup executable: {backup_exe}")
