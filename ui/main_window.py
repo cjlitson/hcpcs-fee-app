@@ -522,12 +522,6 @@ class MainWindow(QMainWindow):
         self._purchase_btn = purchase_btn
         row2.addWidget(purchase_btn)
 
-        self._add_selected_btn = self._styled_button("Select row(s) to add", "accent")
-        self._add_selected_btn.setToolTip("Add selected results rows to the purchase list")
-        self._add_selected_btn.setVisible(False)
-        self._add_selected_btn.setEnabled(False)
-        self._add_selected_btn.clicked.connect(self._add_selected_from_main)
-        row2.addWidget(self._add_selected_btn)
         row2.addStretch()
 
         toolbar_container.addLayout(row2)
@@ -544,11 +538,30 @@ class MainWindow(QMainWindow):
         heading = QLabel("Fee Schedule Results")
         heading.setStyleSheet("font-size: 14px; font-weight: 700;")
         heading_row.addWidget(heading)
-        hint = QLabel("Click HCPCS for history  \u00b7  Select rows then use Add Selected  \u00b7  Right-click for copy actions")
+        hint = QLabel("Click HCPCS for history  \u00b7  Select rows to reveal table actions  \u00b7  Right-click for copy actions")
         hint.setProperty("subtle", True)
         heading_row.addStretch()
         heading_row.addWidget(hint)
         results_layout.addLayout(heading_row)
+
+        self._selection_action_bar = QFrame()
+        self._selection_action_bar.setObjectName("resultsSelectionBar")
+        selection_layout = QHBoxLayout(self._selection_action_bar)
+        selection_layout.setContentsMargins(10, 6, 10, 6)
+        selection_layout.setSpacing(8)
+        self._selection_count_label = QLabel("")
+        self._selection_count_label.setProperty("subtle", True)
+        selection_layout.addWidget(self._selection_count_label)
+        self._add_selected_btn = self._styled_button("Add Selected", "accent")
+        self._add_selected_btn.setToolTip("Add selected results rows to the purchase list")
+        self._add_selected_btn.clicked.connect(self._add_selected_from_main)
+        selection_layout.addWidget(self._add_selected_btn)
+        self._clear_selection_btn = self._styled_button("Clear Selection", "ghost")
+        self._clear_selection_btn.clicked.connect(self._deselect_all_main_rows)
+        selection_layout.addWidget(self._clear_selection_btn)
+        selection_layout.addStretch()
+        self._selection_action_bar.setVisible(False)
+        results_layout.addWidget(self._selection_action_bar)
 
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels([
@@ -969,7 +982,10 @@ class MainWindow(QMainWindow):
             hcpcs_group=group,
         )
         self._populate_table(self._records)
-        self._set_status(f"{len(self._records):,} records found.")
+        if self._records:
+            self._set_status("Results updated.")
+        else:
+            self._set_status("No results found for the current filters.")
         self._save_filter_preferences()
 
     def _clear_filters(self):
@@ -1383,23 +1399,28 @@ class MainWindow(QMainWindow):
             self._purchase_btn.setText(f"Purchase List ({count})")
 
     def _update_add_selected_button_state(self, *_args):
-        btn = getattr(self, "_add_selected_btn", None)
-        if btn is None:
+        bar = getattr(self, "_selection_action_bar", None)
+        if bar is None:
             return
         selection_model = self.table.selectionModel()
         if selection_model is None:
             return
-        visible = bool(getattr(self, "_purchase_list_panel_visible", False))
-        btn.setVisible(visible)
-        if not visible:
-            return
         selected_count = len({idx.row() for idx in selection_model.selectedRows()})
-        if selected_count > 0:
-            btn.setText(f"Add {selected_count} item(s) to List")
-            btn.setEnabled(True)
-        else:
-            btn.setText("Select row(s) to add")
-            btn.setEnabled(False)
+        has_selection = selected_count > 0
+        add_btn = getattr(self, "_add_selected_btn", None)
+        clear_btn = getattr(self, "_clear_selection_btn", None)
+        if add_btn is not None:
+            add_btn.setEnabled(has_selection)
+        if clear_btn is not None:
+            clear_btn.setEnabled(has_selection)
+        label = getattr(self, "_selection_count_label", None)
+        if label is not None:
+            if has_selection:
+                noun = "row" if selected_count == 1 else "rows"
+                label.setText(f"{selected_count} {noun} selected")
+            else:
+                label.setText("")
+        bar.setVisible(has_selection)
 
     def _create_backup(self):
         from core.backup import create_backup
@@ -1616,9 +1637,10 @@ class MainWindow(QMainWindow):
                 <h3>Application Layout</h3>
                 <ul>
                     <li><b>Top Toolbar (Row 1):</b> Sync from CMS, Year filter, State filter, ZIP code entry</li>
-                    <li><b>Top Toolbar (Row 2):</b> HCPCS Group filter, HCPCS code search, Keyword search, Export button, Purchase List toggle, and contextual Add Selected action</li>
+                    <li><b>Top Toolbar (Row 2):</b> HCPCS Group filter, HCPCS code search, Keyword search, Export button, and Purchase List toggle</li>
+                    <li><b>Results Selection Bar:</b> Appears above the table when rows are selected and provides Add Selected and Clear Selection actions</li>
                     <li><b>Main Table:</b> HCPCS code, description, state, year, allowable amount, modifier, and source</li>
-                    <li><b>Status Bar:</b> Record count and operation status</li>
+                    <li><b>Status Bar:</b> Contextual operation feedback (e.g., loading, sync, and no-results messages)</li>
                 </ul>
             </div>
 

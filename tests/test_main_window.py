@@ -148,7 +148,7 @@ class TestDeferredLoading:
         window.close()
 
     def test_status_updated_after_load(self, qapp, tmp_db):
-        """Status bar should show a record count after the deferred load completes."""
+        """Status bar should show contextual no-results feedback after an empty load."""
         from ui.main_window import MainWindow
 
         with patch("core.database.get_fees", return_value=[]):
@@ -157,10 +157,22 @@ class TestDeferredLoading:
             _pump_events(qapp)
 
         status = window.status_bar.currentMessage()
-        # After an empty result the status should contain "0 records" or similar.
-        assert "record" in status.lower(), (
-            f"Expected record-count message in status bar after load, got: {status!r}"
+        assert status == "No results found for the current filters.", (
+            f"Expected no-results contextual message in status bar after load, got: {status!r}"
         )
+        window.close()
+
+    def test_status_updated_message_for_non_empty_results(self, qapp, tmp_db):
+        """Status bar should show a contextual updated message for non-empty results."""
+        from ui.main_window import MainWindow
+
+        with patch("ui.main_window.get_fees", return_value=[{"hcpcs_code": "E0601"}]):
+            window = MainWindow()
+            window.show()
+            _pump_events(qapp)
+
+        status = window.status_bar.currentMessage()
+        assert status == "Results updated."
         window.close()
 
 
@@ -234,7 +246,7 @@ class TestRestorePreferencesSignals:
 
 
 class TestUiAdjustments:
-    def test_state_dropdown_sized_and_add_selected_button_tracks_panel_visibility(self, qapp, tmp_db):
+    def test_state_dropdown_sized_and_contextual_selection_bar_tracks_table_selection(self, qapp, tmp_db):
         from ui.main_window import MainWindow
         from PyQt6.QtWidgets import QTableWidgetItem
 
@@ -247,25 +259,57 @@ class TestUiAdjustments:
         assert window.state_combo.minimumWidth() >= 100
         assert window.state_combo.maximumWidth() <= 220
 
-        # Add-selected CTA should stay hidden until Purchase List panel is shown
-        panel = window._purchase_list_panel
+        # Selection bar should be hidden until at least one row is selected
         assert window._add_selected_btn is not None
-        assert not panel.isVisible()
-        assert not window._add_selected_btn.isVisible()
+        assert window._clear_selection_btn is not None
+        assert not window._selection_action_bar.isVisible()
+        assert window._add_selected_btn.text() == "Add Selected"
 
-        window._set_purchase_list_panel_visible(True)
-        qapp.processEvents()
-        assert panel.isVisible()
-        assert window._add_selected_btn.isVisible()
-        assert not window._add_selected_btn.isEnabled()
-        assert window._add_selected_btn.text() == "Select row(s) to add"
-
-        window.table.setRowCount(1)
+        window.table.setRowCount(2)
         window.table.setItem(0, 0, QTableWidgetItem("L5301"))
+        window.table.setItem(1, 0, QTableWidgetItem("E0601"))
         window.table.selectRow(0)
         qapp.processEvents()
+        assert window._selection_action_bar.isVisible()
         assert window._add_selected_btn.isEnabled()
-        assert window._add_selected_btn.text() == "Add 1 item(s) to List"
+        assert window._selection_count_label.text() == "1 row selected"
+
+        window.table.selectAll()
+        qapp.processEvents()
+        assert window._selection_count_label.text() == "2 rows selected"
+
+        window._clear_selection_btn.click()
+        qapp.processEvents()
+        assert not window._selection_action_bar.isVisible()
+        window.close()
+
+    def test_contextual_add_selected_keeps_existing_add_behavior(self, qapp, tmp_db):
+        from ui.main_window import MainWindow
+        from PyQt6.QtWidgets import QTableWidgetItem
+
+        with patch("core.database.get_fees", return_value=[]):
+            window = MainWindow()
+        window.show()
+        qapp.processEvents()
+
+        calls = []
+        window._purchase_list_panel.is_context_ready = lambda: True
+        window._purchase_list_panel.add_code = lambda code, desc="": calls.append((code, desc))
+
+        window.table.setRowCount(1)
+        window.table.setItem(0, 0, QTableWidgetItem("E0601"))
+        window.table.setItem(0, 1, QTableWidgetItem("Oxygen concentrator"))
+        window.table.selectRow(0)
+        qapp.processEvents()
+
+        assert window._selection_action_bar.isVisible()
+        window._add_selected_btn.click()
+        qapp.processEvents()
+
+        assert calls == [("E0601", "Oxygen concentrator")]
+        assert len(window.table.selectionModel().selectedRows()) == 0
+        assert window._purchase_list_panel.isVisible()
+        assert not window._selection_action_bar.isVisible()
         window.close()
 
     def test_modernized_sections_exist_and_purchase_toggle_property_tracks_visibility(self, qapp, tmp_db):
