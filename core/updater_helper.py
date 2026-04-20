@@ -128,26 +128,34 @@ def run(argv: list[str] | None = None) -> int:
         _log_message(log_path, "Waiting 2 seconds for file handles to release.")
         time.sleep(2.0)
 
-        _log_message(log_path, f"Removing existing executable: {current_exe}")
-        if not remove_file_with_retries(current_exe):
-            _log_message(log_path, "ERROR: Unable to remove old executable.")
+        if not new_exe.exists():
+            _log_message(log_path, f"ERROR: Downloaded update file does not exist: {new_exe}")
             return 3
 
-        _log_message(log_path, f"Replacing executable: {new_exe} -> {current_exe}")
-        if not replace_file_with_retries(new_exe, current_exe):
-            _log_message(log_path, "ERROR: Unable to replace executable.")
-            return 4
+        _log_message(log_path, f"Replacing executable in-place: {new_exe} -> {current_exe}")
+        replaced = replace_file_with_retries(new_exe, current_exe)
+        if not replaced:
+            _log_message(log_path, "WARNING: In-place replace failed; attempting remove+replace fallback.")
+            _log_message(log_path, f"Removing existing executable: {current_exe}")
+            if not remove_file_with_retries(current_exe):
+                _log_message(log_path, "ERROR: Unable to remove old executable.")
+                return 4
+
+            _log_message(log_path, f"Retrying replacement: {new_exe} -> {current_exe}")
+            if not replace_file_with_retries(new_exe, current_exe):
+                _log_message(log_path, "ERROR: Unable to replace executable after fallback.")
+                return 5
 
         if not current_exe.exists():
             _log_message(log_path, "ERROR: Replacement verification failed.")
-            return 5
+            return 6
 
         _log_message(log_path, "Replacement verified. Relaunching application.")
         try:
             subprocess.Popen([str(current_exe)], close_fds=True)
         except Exception as exc:
             _log_message(log_path, f"ERROR: Failed to relaunch application: {exc!r}")
-            return 6
+            return 7
         _log_message(log_path, "Relaunch command issued successfully.")
         _log_message(log_path, "Helper finished.")
         return 0
