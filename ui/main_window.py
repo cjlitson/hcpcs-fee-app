@@ -1671,8 +1671,8 @@ class MainWindow(QMainWindow):
 
                 <h3>Application Layout</h3>
                 <ul>
-                    <li><b>Top Toolbar (Row 1):</b> Sync from CMS, Year filter, State filter, ZIP code entry</li>
-                    <li><b>Top Toolbar (Row 2):</b> HCPCS Group filter, HCPCS code search, Keyword search, Export button, and Purchase List toggle</li>
+                    <li><b>Unified Top Bar:</b> Sync from CMS, Year/State filters, ZIP code entry, HCPCS Group, HCPCS code search, Keyword search, Export, and Purchase List controls</li>
+                    <li><b>Selector Controls:</b> Year, State, Group, and search selectors use the current refreshed control styling for consistency</li>
                     <li><b>Results Selection Bar:</b> Appears above the table when rows are selected and provides Add Selected and Clear Selection actions</li>
                     <li><b>Main Table:</b> HCPCS code, description, state, year, allowable amount, modifier, and source</li>
                     <li><b>Status Bar:</b> Contextual operation feedback (e.g., loading, sync, and no-results messages)</li>
@@ -1872,8 +1872,8 @@ class MainWindow(QMainWindow):
                     <li><b>Update Now</b> button (visible when running the installed .exe) starts the automatic in-place update:
                         <ol>
                             <li>Downloads the new exe next to the current one.</li>
-                            <li>Launches a detached helper script and exits the app.</li>
-                            <li>The helper waits for the app to fully close, removes the old exe, renames the new one into place, and relaunches it.</li>
+                            <li>Launches the detached helper executable (<span class="shortcut">HCPCSFeeAppUpdater.exe</span>) and exits the app.</li>
+                            <li>The helper waits for the app to fully close, replaces the old exe in place, and relaunches it (with backup/retry fallback if needed).</li>
                             <li>Each step is logged to <span class="shortcut">%TEMP%\\HCPCSFeeApp_update.log</span> for diagnostics.</li>
                             <li>If replacement fails, the log contains step-by-step manual recovery instructions.</li>
                         </ol>
