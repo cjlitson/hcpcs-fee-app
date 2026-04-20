@@ -329,6 +329,10 @@ class TestUiAdjustments:
         window._set_purchase_list_panel_visible(True)
         qapp.processEvents()
         assert window._purchase_btn.property("active") == "true"
+        app_qss = window.styleSheet()
+        assert "QFrame#appHeader" in app_qss
+        assert "QFrame#filterCard { border-color:" in app_qss
+        assert "QToolButton::menu-indicator" in app_qss
         window.close()
 
     def test_top_bar_uses_rural_pill_badge(self, qapp, tmp_db):
@@ -358,6 +362,23 @@ class TestUiAdjustments:
         assert panel.table.columnCount() == 6
         assert actions == ["Save Current Bundle", "Load / Manage Bundles…"]
         window.close()
+
+    def test_bundle_picker_buttons_use_refreshed_roles(self, qapp, tmp_db):
+        from PyQt6.QtWidgets import QPushButton, QToolButton
+        from ui.purchase_list_dialog import BundlePickerDialog
+
+        dlg = BundlePickerDialog()
+
+        manage_btn = next((btn for btn in dlg.findChildren(QToolButton) if btn.text() == "Manage"), None)
+        assert manage_btn is not None
+        assert manage_btn.property("role") == "ghost"
+
+        load_btn = next((btn for btn in dlg.findChildren(QPushButton) if btn.text() == "Load Bundle"), None)
+        cancel_btn = next((btn for btn in dlg.findChildren(QPushButton) if btn.text() == "Cancel"), None)
+        assert load_btn is not None and cancel_btn is not None
+        assert load_btn.property("role") == "primary"
+        assert cancel_btn.property("role") == "ghost"
+        dlg.close()
 
 class TestPurchaseListPanelStartup:
     def test_refresh_does_not_run_before_required_widgets_exist(self, qapp, tmp_db, monkeypatch):
