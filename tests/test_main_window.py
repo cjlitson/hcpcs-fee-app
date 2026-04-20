@@ -361,6 +361,8 @@ class TestUiAdjustments:
 
         assert panel.table.columnCount() == 6
         assert actions == ["Save Current Bundle", "Load / Manage Bundles…"]
+        assert panel._bundles_btn.property("role") == "selector"
+        assert panel._bundles_btn.minimumWidth() >= 132
         window.close()
 
     def test_bundle_picker_buttons_use_refreshed_roles(self, qapp, tmp_db):
@@ -371,7 +373,8 @@ class TestUiAdjustments:
 
         manage_btn = next((btn for btn in dlg.findChildren(QToolButton) if btn.text() == "Manage"), None)
         assert manage_btn is not None
-        assert manage_btn.property("role") == "ghost"
+        assert manage_btn.property("role") == "selector"
+        assert manage_btn.minimumWidth() >= 132
 
         load_btn = next((btn for btn in dlg.findChildren(QPushButton) if btn.text() == "Load Bundle"), None)
         cancel_btn = next((btn for btn in dlg.findChildren(QPushButton) if btn.text() == "Cancel"), None)
