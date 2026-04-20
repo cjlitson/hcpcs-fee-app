@@ -14,6 +14,8 @@ from pathlib import Path
 
 DOWNLOAD_PROGRESS_LOG_STEP_BYTES = 10 * 1024 * 1024
 ASSET_DOWNLOAD_TIMEOUT_SECONDS = 120
+MB_ICONERROR = 0x10
+MB_ICONINFORMATION = 0x40
 
 
 def _log_message(log_path: Path, message: str) -> None:
@@ -98,8 +100,9 @@ def replace_file_with_retries(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="HCPCSFeeApp updater helper")
     parser.add_argument("--current-exe", required=True)
-    parser.add_argument("--new-exe")
-    parser.add_argument("--asset-url")
+    payload_group = parser.add_mutually_exclusive_group(required=True)
+    payload_group.add_argument("--new-exe")
+    payload_group.add_argument("--asset-url")
     parser.add_argument("--pid", required=True, type=int)
     parser.add_argument("--log-path")
     parser.add_argument("--version")
@@ -112,7 +115,7 @@ def _show_message_box(title: str, message: str, *, error: bool = False) -> None:
     if os.name != "nt":
         return
     try:
-        flags = 0x10 if error else 0x40  # MB_ICONERROR / MB_ICONINFORMATION
+        flags = MB_ICONERROR if error else MB_ICONINFORMATION
         ctypes.windll.user32.MessageBoxW(None, message, title, flags)
     except Exception:
         pass
@@ -215,12 +218,6 @@ def run(argv: list[str] | None = None) -> int:
         if args.log_path
         else Path(tempfile.gettempdir()) / "HCPCSFeeApp_update.log"
     )
-    if (args.new_exe is None) == (args.asset_url is None):
-        _log_message(
-            log_path,
-            "ERROR: Exactly one of --new-exe or --asset-url must be provided.",
-        )
-        return 2
     new_exe = Path(args.new_exe) if args.new_exe else None
 
     backup_exe: Path | None = None

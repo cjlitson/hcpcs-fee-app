@@ -256,7 +256,7 @@ def launch_updater_workflow(
     if not helper_exe.exists():
         write_launcher_log("ERROR: Updater helper executable not found.", exe=exe)
         raise RuntimeError(f"Updater helper not found: {helper_exe}")
-    if not asset_url:
+    if not asset_url.strip():
         write_launcher_log("ERROR: Empty updater asset URL.", exe=exe)
         raise RuntimeError("Updater asset URL is empty.")
 
