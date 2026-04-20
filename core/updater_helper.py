@@ -16,6 +16,9 @@ DOWNLOAD_PROGRESS_LOG_STEP_BYTES = 10 * 1024 * 1024
 ASSET_DOWNLOAD_TIMEOUT_SECONDS = 120
 MB_ICONERROR = 0x10
 MB_ICONINFORMATION = 0x40
+UPDATER_PROGRESS_WINDOW_GEOMETRY = "560x180"
+UPDATER_PROGRESS_BAR_LENGTH = 520
+UPDATER_PROGRESS_ANIMATION_INTERVAL_MS = 12
 
 
 def _log_message(log_path: Path, message: str) -> None:
@@ -179,7 +182,7 @@ class _UpdaterProgressUI:
         try:
             self._root = tk.Tk()
             self._root.title("HCPCS Fee App Update")
-            self._root.geometry("560x180")
+            self._root.geometry(UPDATER_PROGRESS_WINDOW_GEOMETRY)
             self._root.resizable(False, False)
             self._root.attributes("-topmost", True)
 
@@ -189,27 +192,28 @@ class _UpdaterProgressUI:
             title = ttk.Label(
                 container,
                 text="Installing update…",
-                font=("Segoe UI", 12, "bold"),
             )
             title.pack(anchor="w")
 
-            self._phase_var = tk.StringVar(value="Preparing updater workflow…")
+            self._phase_var = tk.StringVar(value="Initializing updater window…")
             phase_label = ttk.Label(
                 container,
                 textvariable=self._phase_var,
-                font=("Segoe UI", 10),
             )
             phase_label.pack(anchor="w", pady=(10, 2))
 
-            self._detail_var = tk.StringVar(value="Starting…")
+            self._detail_var = tk.StringVar(value="Preparing status updates…")
             detail_label = ttk.Label(
                 container,
                 textvariable=self._detail_var,
-                font=("Segoe UI", 9),
             )
             detail_label.pack(anchor="w", pady=(0, 10))
 
-            self._progress = ttk.Progressbar(container, mode="indeterminate", length=520)
+            self._progress = ttk.Progressbar(
+                container,
+                mode="indeterminate",
+                length=UPDATER_PROGRESS_BAR_LENGTH,
+            )
             self._progress.pack(fill="x")
             self._set_indeterminate()
             self._pump()
@@ -232,7 +236,7 @@ class _UpdaterProgressUI:
         try:
             self._progress.configure(mode="indeterminate")
             if not self._indeterminate_running:
-                self._progress.start(12)
+                self._progress.start(UPDATER_PROGRESS_ANIMATION_INTERVAL_MS)
                 self._indeterminate_running = True
         except Exception:
             self.close()
@@ -265,7 +269,7 @@ class _UpdaterProgressUI:
             if total > 0:
                 pct = min(100.0, (downloaded / total) * 100)
                 self._detail_var.set(
-                    f"Downloaded {downloaded:,} of {total:,} bytes ({pct:.1f}%)."
+                    f"Downloaded {downloaded:,} of {total:,} bytes ({pct:.1f}%)…"
                 )
             else:
                 self._detail_var.set(f"Downloaded {downloaded:,} bytes…")

@@ -65,11 +65,13 @@ def test_run_invokes_wait_replace_and_relaunch(tmp_path, monkeypatch):
     new_exe.write_bytes(b"new")
 
     calls = {}
+    elapsed_seconds = 0.5
+    timeout_seconds = 30.0
 
     def _wait(pid, progress_callback=None):
         calls["wait_pid"] = pid
         if progress_callback is not None:
-            progress_callback(0.5, 30.0)
+            progress_callback(elapsed_seconds, timeout_seconds)
         return True
 
     def _remove(path):
@@ -356,7 +358,9 @@ def test_wait_for_process_exit_reports_progress(tmp_path):
         timeout_seconds=1.0,
         poll_interval=0.0,
         process_running=_running,
-        progress_callback=lambda elapsed, timeout: calls.append((elapsed, timeout)),
+        progress_callback=lambda elapsed_seconds, timeout_seconds: calls.append(
+            (elapsed_seconds, timeout_seconds)
+        ),
     )
     assert len(calls) == 2
     assert all(timeout == 1.0 for _elapsed, timeout in calls)
@@ -369,6 +373,8 @@ def test_run_updates_progress_ui_phases(tmp_path, monkeypatch):
     downloaded_exe = tmp_path / "HCPCSFeeApp_new.exe"
 
     events = []
+    elapsed_seconds = 1.2
+    timeout_seconds = 30.0
 
     class _DummyProgressUI:
         def __init__(self, _log_path):
@@ -389,7 +395,9 @@ def test_run_updates_progress_ui_phases(tmp_path, monkeypatch):
         updater_helper,
         "wait_for_process_exit",
         lambda _pid, progress_callback=None: (
-            progress_callback(1.2, 30.0) if progress_callback else None
+            progress_callback(elapsed_seconds, timeout_seconds)
+            if progress_callback
+            else None
         )
         or True,
     )
