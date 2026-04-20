@@ -12,6 +12,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+DOWNLOAD_PROGRESS_LOG_STEP_BYTES = 10 * 1024 * 1024
+
 
 def _log_message(log_path: Path, message: str) -> None:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -153,12 +155,18 @@ def _download_release_asset(
     dest = current_exe.parent / "HCPCSFeeApp_new.exe"
     _log_message(log_path, f"Downloading update asset: {asset_url}")
 
-    resp = requests.get(asset_url, stream=True, timeout=30, verify=True)
-    resp.raise_for_status()
+    try:
+        resp = requests.get(asset_url, stream=True, timeout=30, verify=True)
+        resp.raise_for_status()
+    except Exception as exc:
+        raise RuntimeError(
+            "Unable to download update asset. Check your internet connection and "
+            f"release URL: {asset_url}"
+        ) from exc
 
     total = int(resp.headers.get("content-length", 0))
     downloaded = 0
-    next_log_bytes = 10 * 1024 * 1024
+    next_log_bytes = DOWNLOAD_PROGRESS_LOG_STEP_BYTES
 
     with open(dest, "wb") as fh:
         for chunk in resp.iter_content(chunk_size=65536):
@@ -175,7 +183,7 @@ def _download_release_asset(
                     )
                 else:
                     _log_message(log_path, f"Download progress: {downloaded:,} bytes.")
-                next_log_bytes += 10 * 1024 * 1024
+                next_log_bytes += DOWNLOAD_PROGRESS_LOG_STEP_BYTES
 
     if total > 0 and downloaded != total:
         raise RuntimeError(
@@ -201,7 +209,7 @@ def run(argv: list[str] | None = None) -> int:
         if args.log_path
         else Path(tempfile.gettempdir()) / "HCPCSFeeApp_update.log"
     )
-    if bool(args.new_exe) == bool(args.asset_url):
+    if (args.new_exe is None) == (args.asset_url is None):
         _log_message(
             log_path,
             "ERROR: Exactly one of --new-exe or --asset-url must be provided.",
