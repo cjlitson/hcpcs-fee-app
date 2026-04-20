@@ -1,7 +1,7 @@
 VA HCPCS Fee Schedule Manager — Installation
 =============================================
 
-Release line: v2.0.0 relaunch
+Release line: v1.0.0 relaunch
 
 1. Extract this ZIP file to any temporary location
 2. Close any running "HCPCSFeeApp.exe" from older installs
