@@ -151,7 +151,7 @@ def run(argv: list[str] | None = None) -> int:
                 _log_message(log_path, f"Removing stale backup executable: {backup_exe}")
                 if not remove_file_with_retries(backup_exe):
                     _log_message(log_path, "ERROR: Unable to remove stale backup executable.")
-                    return 5
+                    return 11
 
             _log_message(log_path, f"Backing up existing executable: {current_exe} -> {backup_exe}")
             if not replace_file_with_retries(current_exe, backup_exe):
@@ -174,6 +174,8 @@ def run(argv: list[str] | None = None) -> int:
                 _log_message(log_path, f"Restoring backup after failed verification: {backup_exe} -> {current_exe}")
                 if replace_file_with_retries(backup_exe, current_exe):
                     _log_message(log_path, "Backup executable restored after failed verification.")
+                else:
+                    _log_message(log_path, "ERROR: Unable to restore backup after failed verification.")
             if not current_exe.exists():
                 _log_message(log_path, "ERROR: Replacement verification failed.")
                 return 7
