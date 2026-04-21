@@ -502,6 +502,85 @@ def get_available_hcpcs_prefixes():
 
 
 # ---------------------------------------------------------------------------
+# User-input custom HCPCS helpers
+# ---------------------------------------------------------------------------
+
+def save_custom_code(hcpcs_code, description="", price=0.0):
+    code = (hcpcs_code or "").strip().upper()
+    if not code:
+        raise ValueError("HCPCS code is required.")
+    desc = (description or "").strip()
+    try:
+        normalized_price = max(0.0, float(price or 0.0))
+    except (TypeError, ValueError):
+        normalized_price = 0.0
+
+    conn = _get_conn()
+    with conn:
+        conn.execute(
+            "DELETE FROM hcpcs_fees WHERE UPPER(hcpcs_code) = ? AND data_source = 'UserInput'",
+            (code,),
+        )
+        conn.execute(
+            """
+            INSERT INTO hcpcs_fees
+                (hcpcs_code, description, state_abbr, year, allowable,
+                 allowable_nr, allowable_r, modifier, data_source)
+            VALUES (?, ?, 'USER', 0, ?, ?, ?, NULL, 'UserInput')
+            """,
+            (code, desc, normalized_price, normalized_price, normalized_price),
+        )
+    conn.close()
+    return {
+        "hcpcs_code": code,
+        "description": desc,
+        "price": normalized_price,
+        "data_source": "UserInput",
+    }
+
+
+def list_custom_codes(search_term=None):
+    conn = _get_conn()
+    query = """
+        SELECT hcpcs_code, description, allowable, imported_at, data_source
+        FROM hcpcs_fees
+        WHERE data_source = 'UserInput'
+    """
+    params = []
+    term = (search_term or "").strip()
+    if term:
+        query += " AND (UPPER(hcpcs_code) LIKE ? OR LOWER(description) LIKE ?)"
+        params.extend([f"%{term.upper()}%", f"%{term.lower()}%"])
+    query += " ORDER BY UPPER(hcpcs_code)"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [
+        {
+            "hcpcs_code": (r["hcpcs_code"] or "").upper(),
+            "description": r["description"] or "",
+            "price": float(r["allowable"] or 0.0),
+            "source": r["data_source"] or "",
+            "imported_at": r["imported_at"],
+        }
+        for r in rows
+    ]
+
+
+def delete_custom_code(hcpcs_code):
+    code = (hcpcs_code or "").strip().upper()
+    if not code:
+        return 0
+    conn = _get_conn()
+    with conn:
+        cur = conn.execute(
+            "DELETE FROM hcpcs_fees WHERE UPPER(hcpcs_code) = ? AND data_source = 'UserInput'",
+            (code,),
+        )
+    conn.close()
+    return cur.rowcount
+
+
+# ---------------------------------------------------------------------------
 # Purchase list bundle helpers
 # ---------------------------------------------------------------------------
 
