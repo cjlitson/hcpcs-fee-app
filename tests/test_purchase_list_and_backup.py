@@ -238,3 +238,39 @@ def test_bundle_categories_crud_and_move(tmp_db):
 
     delete_bundle_category(cat_id)
     assert all(c["id"] != cat_id for c in list_bundle_categories())
+
+
+def test_custom_codes_are_saved_as_user_input_and_bundle_compatible(tmp_db):
+    from core.database import (
+        delete_custom_code,
+        get_fees,
+        list_custom_codes,
+        load_bundle,
+        save_bundle,
+        save_custom_code,
+    )
+
+    save_custom_code("SHIP01", "Shipping", 19.99)
+    save_custom_code("SHIP01", "Shipping and handling", 24.50)
+
+    custom_rows = list_custom_codes()
+    assert len(custom_rows) == 1
+    assert custom_rows[0]["hcpcs_code"] == "SHIP01"
+    assert custom_rows[0]["description"] == "Shipping and handling"
+    assert custom_rows[0]["price"] == pytest.approx(24.50)
+    assert custom_rows[0]["source"] == "UserInput"
+
+    fee_rows = get_fees(hcpcs_code="SHIP01")
+    exact = [r for r in fee_rows if (r.get("hcpcs_code") or "").upper() == "SHIP01"]
+    assert len(exact) == 1
+    assert exact[0]["data_source"] == "UserInput"
+    assert exact[0]["allowable"] == pytest.approx(24.50)
+
+    bundle_id = save_bundle("Custom Input Bundle", [{"hcpcs_code": "SHIP01", "quantity": 2, "sort_order": 0}])
+    loaded = load_bundle(bundle_id)
+    assert loaded is not None
+    assert loaded["items"][0]["hcpcs_code"] == "SHIP01"
+    assert loaded["items"][0]["quantity"] == 2
+
+    assert delete_custom_code("SHIP01") == 1
+    assert list_custom_codes() == []

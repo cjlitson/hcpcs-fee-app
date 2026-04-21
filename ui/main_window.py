@@ -736,6 +736,12 @@ class MainWindow(QMainWindow):
 
         settings_menu.addSeparator()
 
+        custom_inputs_action = QAction("Manage &Custom Inputs…", self)
+        custom_inputs_action.triggered.connect(self._manage_custom_inputs)
+        settings_menu.addAction(custom_inputs_action)
+
+        settings_menu.addSeparator()
+
         db_path_action = QAction("Change &Database Path…", self)
         db_path_action.triggered.connect(self._change_db_path)
         settings_menu.addAction(db_path_action)
@@ -1224,6 +1230,11 @@ class MainWindow(QMainWindow):
     def _browse_groups(self):
         from ui.group_browser_dialog import GroupBrowserDialog
         dlg = GroupBrowserDialog(self)
+        dlg.exec()
+
+    def _manage_custom_inputs(self):
+        from ui.custom_inputs_dialog import CustomInputsDialog
+        dlg = CustomInputsDialog(self)
         dlg.exec()
 
     def _create_desktop_shortcut(self):
@@ -1762,12 +1773,15 @@ class MainWindow(QMainWindow):
                 <p>Click <b>Generate Document</b> to open the procurement worksheet builder:</p>
                 <ul>
                     <li>Shows all items with quantities and CMS allowable prices</li>
+                    <li>Add custom items (for shipping/in-house codes) with custom HCPCS code, quantity, price, and description</li>
+                    <li>Optionally save custom codes as <b>UserInput</b> for reuse in quick-add and bundles</li>
                     <li>Enter vendor information, contact details, and delivery destination</li>
                     <li><b>Deliver To:</b> Choose from standard delivery options or select <b>Other</b> and type a custom destination</li>
                     <li>Copy the completed table to clipboard for pasting into emails or procurement forms</li>
                     <li>Export to Word document (.docx) for a formatted printable worksheet</li>
                     <li>Attach to email directly from the dialog</li>
                 </ul>
+                <p>Manage saved custom inputs from <b>Settings → Manage Custom Inputs…</b>.</p>
 
                 <h3>Exporting the Purchase List</h3>
                 <ul>

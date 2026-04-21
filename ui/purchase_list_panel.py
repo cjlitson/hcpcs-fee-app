@@ -501,8 +501,13 @@ class PurchaseListPanel(QWidget):
         )
         exact = [r for r in records if (r.get("hcpcs_code") or "").upper() == code.upper()]
         if not exact:
+            fallback_records = get_fees(hcpcs_code=code)
+            exact = [r for r in fallback_records if (r.get("hcpcs_code") or "").upper() == code.upper()]
+        if not exact:
             return None
-        preferred = next((r for r in exact if not r.get("modifier")), exact[0])
+        preferred = next((r for r in exact if (r.get("data_source") or "") == "UserInput"), None)
+        if preferred is None:
+            preferred = next((r for r in exact if not r.get("modifier")), exact[0])
         if self._is_rural():
             return preferred.get("allowable_r") or preferred.get("allowable_nr") or preferred.get("allowable")
         return preferred.get("allowable_nr") or preferred.get("allowable")

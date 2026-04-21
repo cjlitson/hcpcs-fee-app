@@ -5,6 +5,7 @@ from datetime import date
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDateEdit,
     QDialog,
@@ -21,6 +22,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from core.database import save_custom_code
 from core.document_generator import generate_purchase_document_docx
 from core.email_helper import open_email_with_attachment
 from core.vendor_store import list_saved_vendors, save_vendor_name
@@ -112,6 +114,38 @@ class GenerateDocumentDialog(QDialog):
         root.addWidget(self.items_table, 1)
         self._populate_items()
 
+        custom_label = QLabel("Add Custom Item (e.g., shipping, in-house)")
+        custom_label.setStyleSheet("font-weight: 600;")
+        root.addWidget(custom_label)
+        custom_row = QGridLayout()
+        custom_row.setHorizontalSpacing(8)
+        self.custom_code_edit = QLineEdit()
+        self.custom_code_edit.setPlaceholderText("HCPCS code")
+        self.custom_qty_edit = QLineEdit()
+        self.custom_qty_edit.setPlaceholderText("Qty")
+        self.custom_qty_edit.setText("1")
+        self.custom_price_edit = QLineEdit()
+        self.custom_price_edit.setPlaceholderText("Price")
+        self.custom_description_edit = QLineEdit()
+        self.custom_description_edit.setPlaceholderText("Description")
+        self.custom_save_checkbox = QCheckBox("Save code to custom database list")
+        add_custom_btn = QPushButton("Add Custom Item")
+        manage_custom_btn = QPushButton("Manage Custom Inputs")
+        add_custom_btn.clicked.connect(self._add_custom_item)
+        manage_custom_btn.clicked.connect(self._open_custom_inputs)
+        custom_row.addWidget(QLabel("Code"), 0, 0)
+        custom_row.addWidget(self.custom_code_edit, 0, 1)
+        custom_row.addWidget(QLabel("Qty"), 0, 2)
+        custom_row.addWidget(self.custom_qty_edit, 0, 3)
+        custom_row.addWidget(QLabel("Price"), 0, 4)
+        custom_row.addWidget(self.custom_price_edit, 0, 5)
+        custom_row.addWidget(QLabel("Description"), 1, 0)
+        custom_row.addWidget(self.custom_description_edit, 1, 1, 1, 5)
+        custom_row.addWidget(self.custom_save_checkbox, 2, 0, 1, 4)
+        custom_row.addWidget(add_custom_btn, 2, 4)
+        custom_row.addWidget(manage_custom_btn, 2, 5)
+        root.addLayout(custom_row)
+
         root.addWidget(QLabel("Additional Comments"))
         self.comments_edit = QTextEdit()
         self.comments_edit.setPlaceholderText("Enter any additional notes for the generated document.")
@@ -152,6 +186,43 @@ class GenerateDocumentDialog(QDialog):
 
     def _on_deliver_to_changed(self, text: str):
         self.deliver_to_other_edit.setVisible(text == "Other")
+
+    def _add_custom_item(self):
+        code = self.custom_code_edit.text().strip().upper()
+        if not code:
+            QMessageBox.warning(self, "Code Required", "Enter an HCPCS code for the custom item.")
+            return
+        try:
+            qty = max(1, int(float((self.custom_qty_edit.text() or "1").strip())))
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Quantity", "Enter a valid quantity.")
+            return
+        try:
+            price = max(0.0, float((self.custom_price_edit.text() or "0").replace("$", "").replace(",", "").strip()))
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Price", "Enter a valid numeric price.")
+            return
+        description = self.custom_description_edit.text().strip()
+
+        row = self.items_table.rowCount()
+        self.items_table.insertRow(row)
+        self.items_table.setItem(row, 0, QTableWidgetItem(code))
+        self.items_table.setItem(row, 1, QTableWidgetItem(str(qty)))
+        self.items_table.setItem(row, 2, QTableWidgetItem(f"{price:.2f}"))
+        self.items_table.setItem(row, 3, QTableWidgetItem(description))
+
+        if self.custom_save_checkbox.isChecked():
+            save_custom_code(code, description, price)
+
+        self.custom_code_edit.clear()
+        self.custom_qty_edit.setText("1")
+        self.custom_price_edit.clear()
+        self.custom_description_edit.clear()
+
+    def _open_custom_inputs(self):
+        from ui.custom_inputs_dialog import CustomInputsDialog
+        dlg = CustomInputsDialog(self)
+        dlg.exec()
 
     def _save_vendor(self):
         vendor = self.vendor_combo.currentText().strip()
